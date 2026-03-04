@@ -45,7 +45,7 @@ git --no-pager diff
 
 ## Git Workflow
 
-- Commit working code as you go.
+- Commit working code as you go. Run `make test` before each commit to confirm all tests pass.
 - `.scratch/` is gitignored.
 - Use the `.scratch` directory for notes, temporary tests, or experimental code that should not
   be committed.
@@ -64,6 +64,7 @@ git --no-pager diff
 - Use the body to explain what and why, not how.
 - Focus on the change itself, not the process of making it.
 - Write as if completing the sentence: "If applied, this commit will..."
+- Do not mention test counts or pass rates in commit messages.
 
 ## Writing Style
 
