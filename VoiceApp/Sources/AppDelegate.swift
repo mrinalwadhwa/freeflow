@@ -6,7 +6,6 @@ import VoiceKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
-    private var menu: NSMenu?
 
     // MARK: - Services
 
@@ -14,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permissionProvider = MicrophonePermissionProvider()
     private let hotkeyProvider = CGEventTapHotkeyProvider()
     private let transcriptBuffer = TranscriptBuffer()
+    private let textInjector = AppTextInjector()
     private var pipeline: DictationPipeline?
 
     // MARK: - Controllers
@@ -51,23 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
-        let menu = NSMenu()
-        menu.addItem(
-            withTitle: "About Voice",
-            action: #selector(showAbout),
-            keyEquivalent: ""
-        )
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(
-            withTitle: "Quit Voice",
-            action: #selector(NSApplication.terminate(_:)),
-            keyEquivalent: "q"
-        )
-
-        statusItem.menu = menu
-
         self.statusItem = statusItem
-        self.menu = menu
     }
 
     // MARK: - Pipeline
@@ -77,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             audioProvider: AudioCaptureProvider(),
             contextProvider: AXAppContextProvider(),
             sttProvider: VoiceServiceSTTProvider(),
-            textInjector: AppTextInjector(),
+            textInjector: textInjector,
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer
         )
@@ -96,7 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenuBarState() {
         guard let statusItem else { return }
         let controller = MenuBarController()
-        controller.start(statusItem: statusItem, coordinator: coordinator)
+        controller.start(
+            statusItem: statusItem,
+            coordinator: coordinator,
+            transcriptBuffer: transcriptBuffer,
+            textInjector: textInjector,
+            shortcuts: .default
+        )
         menuBarController = controller
     }
 
@@ -121,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let pipelineRef = pipeline
         let hudRef = hudController
+        let menuRef = menuBarController
 
         do {
             try hotkeyProvider.register { event in
@@ -136,9 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+            menuRef?.setHotkeyRegistered(true)
             debugPrint("[AppDelegate] Global hotkey registered (Right Option)")
         } catch {
             debugPrint("[AppDelegate] Failed to register hotkey: \(error)")
+            menuRef?.setHotkeyRegistered(false)
             Task { @MainActor in
                 self.showHotkeyRegistrationFailedAlert(error: error)
             }
@@ -164,12 +157,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if response == .alertFirstButtonReturn {
             permissionProvider.openAccessibilitySettings()
         }
-    }
-
-    // MARK: - Actions
-
-    @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 }
