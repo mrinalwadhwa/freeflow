@@ -162,7 +162,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Multiple cycles
 
     func testMultipleConsecutiveCycles() async {
-        let (pipeline, audio, context, stt, injector, coordinator) = makePipeline()
+        let (pipeline, audio, context, _, injector, coordinator) = makePipeline()
 
         for cycle in 1...3 {
             await pipeline.activate()
@@ -199,7 +199,7 @@ final class DictationPipelineTests: XCTestCase {
         let (pipeline, _, _, _, _, coordinator) = makePipeline()
 
         await pipeline.cancel()
-        var currentState = await coordinator.state
+        let currentState = await coordinator.state
         XCTAssertEqual(currentState, .idle)
     }
 
@@ -245,7 +245,7 @@ final class DictationPipelineTests: XCTestCase {
 
         // Complete without activate should be a no-op.
         await pipeline.complete()
-        var currentState = await coordinator.state
+        let currentState = await coordinator.state
         XCTAssertEqual(currentState, .idle)
         XCTAssertEqual(audio.stopCallCount, 0)
         XCTAssertEqual(injector.injectionCount, 0)
@@ -359,7 +359,7 @@ final class DictationPipelineTests: XCTestCase {
         for _ in 0..<5 {
             await pipeline.activate()
             await pipeline.cancel()
-            var currentState = await coordinator.state
+            let currentState = await coordinator.state
             XCTAssertEqual(currentState, .idle)
         }
 
