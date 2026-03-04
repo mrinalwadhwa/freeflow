@@ -166,6 +166,152 @@ struct PipelineIntegrationTests {
     }
 }
 
+
+@Suite("DictationPipeline integration with MockSTTProvider")
+struct DictationPipelineIntegrationTests {
+
+    private func makePipeline(
+        audioProvider: MockAudioProvider = MockAudioProvider(),
+        contextProvider: MockAppContextProvider = MockAppContextProvider(),
+        sttProvider: MockSTTProvider = MockSTTProvider(),
+        textInjector: MockTextInjector = MockTextInjector(),
+        coordinator: RecordingCoordinator = RecordingCoordinator()
+    ) -> (
+        DictationPipeline, MockAudioProvider, MockAppContextProvider, MockSTTProvider,
+        MockTextInjector, RecordingCoordinator
+    ) {
+        let pipeline = DictationPipeline(
+            audioProvider: audioProvider,
+            contextProvider: contextProvider,
+            sttProvider: sttProvider,
+            textInjector: textInjector,
+            coordinator: coordinator
+        )
+        return (pipeline, audioProvider, contextProvider, sttProvider, textInjector, coordinator)
+    }
+
+    @Test("Full cycle transcribes audio and injects text")
+    func fullCycleTranscribes() async {
+        let stt = MockSTTProvider(stubbedText: "Hello world")
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        let recording = await coordinator.state
+        #expect(recording == .recording)
+
+        await pipeline.complete()
+        let idle = await coordinator.state
+        #expect(idle == .idle)
+
+        #expect(stt.transcribeCallCount == 1)
+        #expect(injector.injectionCount == 1)
+        #expect(injector.lastInjectedText == "Hello world")
+    }
+
+    @Test("STT receives audio data captured by the provider")
+    func sttReceivesAudioData() async {
+        let stt = MockSTTProvider(stubbedText: "test")
+        let (pipeline, _, _, _, _, _) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        #expect(stt.transcribeCallCount == 1)
+        #expect(stt.lastReceivedAudio != nil)
+        #expect(stt.lastReceivedAudio!.isEmpty == false)
+    }
+
+    @Test("STT failure resets pipeline to idle")
+    func sttFailureResetsToIdle() async {
+        let stt = MockSTTProvider()
+        stt.stubbedError = STTError.transcriptionFailed(statusCode: 502, message: "bad gateway")
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        #expect(state == .idle)
+        #expect(injector.injectionCount == 0)
+    }
+
+    @Test("Empty transcription skips injection")
+    func emptyTranscriptionSkipsInjection() async {
+        let stt = MockSTTProvider(stubbedText: "   ")
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        #expect(state == .idle)
+        #expect(stt.transcribeCallCount == 1)
+        #expect(injector.injectionCount == 0)
+    }
+
+    @Test("Context is passed to text injector")
+    func contextPassedToInjector() async {
+        let ctx = AppContext(
+            bundleID: "com.apple.Notes",
+            appName: "Notes",
+            windowTitle: "My Note",
+            focusedFieldContent: "Dear team,",
+            cursorPosition: 10
+        )
+        let stt = MockSTTProvider(stubbedText: "transcribed text")
+        let (pipeline, _, _, _, injector, _) = makePipeline(
+            contextProvider: MockAppContextProvider(context: ctx),
+            sttProvider: stt
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        #expect(injector.injectionCount == 1)
+        #expect(injector.injections[0].context.bundleID == "com.apple.Notes")
+        #expect(injector.injections[0].context.windowTitle == "My Note")
+    }
+
+    @Test("Cancel during recording skips STT")
+    func cancelDuringRecordingSkipsSTT() async {
+        let stt = MockSTTProvider(stubbedText: "should not appear")
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        let recording = await coordinator.state
+        #expect(recording == .recording)
+
+        await pipeline.cancel()
+        let state = await coordinator.state
+        #expect(state == .idle)
+        #expect(stt.transcribeCallCount == 0)
+        #expect(injector.injectionCount == 0)
+    }
+
+    @Test("Multiple cycles with different transcriptions")
+    func multipleCyclesWithDifferentTranscriptions() async {
+        let stt = MockSTTProvider(stubbedText: "first")
+        let (pipeline, _, _, _, injector, _) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+        #expect(injector.lastInjectedText == "first")
+
+        stt.stubbedText = "second"
+        await pipeline.activate()
+        await pipeline.complete()
+        #expect(injector.lastInjectedText == "second")
+
+        stt.stubbedText = "third"
+        await pipeline.activate()
+        await pipeline.complete()
+        #expect(injector.lastInjectedText == "third")
+
+        #expect(stt.transcribeCallCount == 3)
+        #expect(injector.injectionCount == 3)
+    }
+}
+
 @Suite("Timeout helper")
 struct TimeoutHelperTests {
 
