@@ -2,22 +2,35 @@ import AppKit
 import SwiftUI
 import VoiceKit
 
-/// A floating borderless window that displays recording state as a pill-shaped HUD.
+/// A floating borderless panel that displays the always-visible HUD overlay.
 ///
-/// The HUD appears near the bottom-center of the screen and shows:
-/// - A pulsing red dot during recording
-/// - A spinning indicator during processing
-/// - A brief checkmark during injection before dismissing
-///
-/// Driven by `RecordingCoordinator.stateStream`.
+/// The HUD is a pill-shaped overlay anchored at the bottom center of the
+/// active screen. It resizes smoothly between a minimized capsule and an
+/// expanded pill depending on the current `HUDVisualState`. Mouse tracking
+/// is enabled so the HUD can detect hover for the Ready state and accept
+/// clicks for hands-free activation.
 final class HUDOverlayWindow: NSPanel {
 
-    private let hudViewModel: HUDViewModel
+    private let viewModel: HUDViewModel
+    private var trackingArea: NSTrackingArea?
+    private var hostingView: NSHostingView<HUDContentView>?
+
+    /// Width of the minimized capsule.
+    private static let minimizedWidth: CGFloat = 80
+    private static let minimizedHeight: CGFloat = 28
+
+    /// Width of the expanded pill (listening, processing, ready, no-target).
+    private static let expandedWidth: CGFloat = 280
+    private static let expandedHeight: CGFloat = 48
 
     init(viewModel: HUDViewModel) {
-        self.hudViewModel = viewModel
+        self.viewModel = viewModel
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 160, height: 48),
+            contentRect: NSRect(
+                x: 0, y: 0,
+                width: Self.minimizedWidth,
+                height: Self.minimizedHeight
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -28,192 +41,122 @@ final class HUDOverlayWindow: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        ignoresMouseEvents = true
+        ignoresMouseEvents = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
         animationBehavior = .utilityWindow
 
-        let hostingView = NSHostingView(rootView: HUDOverlayView(viewModel: viewModel))
-        hostingView.frame = contentRect(forFrameRect: frame)
-        contentView = hostingView
+        let hosting = NSHostingView(rootView: HUDContentView(viewModel: viewModel))
+        hosting.frame = contentRect(forFrameRect: frame)
+        hosting.autoresizingMask = [.width, .height]
+        contentView = hosting
+        hostingView = hosting
 
+        setupMouseTracking()
         positionAtBottomCenter()
-    }
-
-    /// Position the HUD near the bottom center of the main screen.
-    func positionAtBottomCenter() {
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.visibleFrame
-        let x = screenFrame.midX - frame.width / 2
-        let y = screenFrame.origin.y + 80
-        setFrameOrigin(NSPoint(x: x, y: y))
-    }
-
-    /// Show the HUD with a fade-in animation.
-    func showAnimated() {
-        alphaValue = 0
         orderFrontRegardless()
-        positionAtBottomCenter()
+    }
+
+    // MARK: - Positioning
+
+    /// Position the HUD at the bottom center of the screen containing the
+    /// frontmost application window.
+    func positionAtBottomCenter() {
+        let screen = activeScreen()
+        let screenFrame = screen.visibleFrame
+        let size = currentSize()
+        let x = screenFrame.midX - size.width / 2
+        let y = screenFrame.origin.y + 40
+        setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+    }
+
+    /// Animate the pill to the correct size for the current visual state,
+    /// keeping it centered at the bottom of the screen.
+    func animateToCurrentState() {
+        let size = currentSize()
+        let screen = activeScreen()
+        let screenFrame = screen.visibleFrame
+        let x = screenFrame.midX - size.width / 2
+        let y = screenFrame.origin.y + 40
+        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
+
+        ignoresMouseEvents = !viewModel.visualState.acceptsMouseEvents
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let duration: TimeInterval = reduceMotion ? 0.1 : 0.25
+
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            animator().alphaValue = 1
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .default)
+            context.allowsImplicitAnimation = true
+            animator().setFrame(newFrame, display: true)
+        }
+
+        updateMouseTracking()
+    }
+
+    // MARK: - Mouse tracking
+
+    private func setupMouseTracking() {
+        guard let contentView else { return }
+        let area = NSTrackingArea(
+            rect: contentView.bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        contentView.addTrackingArea(area)
+        trackingArea = area
+    }
+
+    private func updateMouseTracking() {
+        guard let contentView, let old = trackingArea else { return }
+        contentView.removeTrackingArea(old)
+        let area = NSTrackingArea(
+            rect: contentView.bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        contentView.addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        viewModel.mouseEntered()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        viewModel.mouseExited()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Click on the minimized capsule starts hands-free dictation.
+        // Action closures live on the view model, set by the HUD controller.
+        if viewModel.visualState == .minimized || viewModel.visualState == .ready {
+            viewModel.onClickToRecord?()
         }
     }
 
-    /// Hide the HUD with a fade-out animation.
-    func hideAnimated(completion: (() -> Void)? = nil) {
-        NSAnimationContext.runAnimationGroup(
-            { context in
-                context.duration = 0.15
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                animator().alphaValue = 0
-            },
-            completionHandler: { [weak self] in
-                self?.orderOut(nil)
-                completion?()
-            })
-    }
-}
+    // MARK: - Helpers
 
-// MARK: - View model
-
-/// Publish recording state changes on the main actor for SwiftUI observation.
-@MainActor
-final class HUDViewModel: ObservableObject {
-
-    @Published var recordingState: RecordingState = .idle
-    @Published var isVisible: Bool = false
-
-    private var observationTask: Task<Void, Never>?
-
-    /// Begin observing a `RecordingCoordinator`'s state stream.
-    func observe(coordinator: RecordingCoordinator) {
-        observationTask?.cancel()
-        observationTask = Task { [weak self] in
-            for await state in await coordinator.stateStream {
-                guard !Task.isCancelled else { break }
-                self?.recordingState = state
-                self?.isVisible = state != .idle
-            }
+    private func currentSize() -> NSSize {
+        if viewModel.visualState.isExpanded {
+            return NSSize(width: Self.expandedWidth, height: Self.expandedHeight)
         }
+        return NSSize(width: Self.minimizedWidth, height: Self.minimizedHeight)
     }
 
-    func stop() {
-        observationTask?.cancel()
-        observationTask = nil
-    }
-
-    deinit {
-        observationTask?.cancel()
-    }
-}
-
-// MARK: - SwiftUI HUD view
-
-/// The pill-shaped HUD overlay rendered with SwiftUI.
-struct HUDOverlayView: View {
-    @ObservedObject var viewModel: HUDViewModel
-
-    var body: some View {
-        Group {
-            if viewModel.isVisible {
-                HStack(spacing: 8) {
-                    stateIndicator
-                    stateLabel
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                )
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-            }
+    private func activeScreen() -> NSScreen {
+        // Use the screen containing the frontmost app window if available.
+        if let frontApp = NSWorkspace.shared.frontmostApplication,
+            let window = NSApp.windows.first(where: { _ in true }),
+            let screen = window.screen
+        {
+            _ = frontApp  // silence unused warning
+            return screen
         }
-        .animation(.easeInOut(duration: 0.2), value: viewModel.recordingState)
-        .animation(.easeInOut(duration: 0.15), value: viewModel.isVisible)
-    }
-
-    @ViewBuilder
-    private var stateIndicator: some View {
-        switch viewModel.recordingState {
-        case .recording:
-            PulsingDot(color: .red)
-        case .processing:
-            SpinnerView()
-        case .injecting:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
-                .font(.system(size: 14, weight: .semibold))
-        case .idle:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
-    private var stateLabel: some View {
-        switch viewModel.recordingState {
-        case .recording:
-            Text("Recording")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white)
-        case .processing:
-            Text("Processing")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white)
-        case .injecting:
-            Text("Done")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white)
-        case .idle:
-            EmptyView()
-        }
-    }
-}
-
-// MARK: - Pulsing dot
-
-/// An animated red dot that pulses while recording.
-struct PulsingDot: View {
-    let color: Color
-    @State private var isPulsing = false
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 10, height: 10)
-            .scaleEffect(isPulsing ? 1.3 : 1.0)
-            .opacity(isPulsing ? 0.7 : 1.0)
-            .animation(
-                .easeInOut(duration: 0.6).repeatForever(autoreverses: true),
-                value: isPulsing
-            )
-            .onAppear { isPulsing = true }
-    }
-}
-
-// MARK: - Spinner
-
-/// A small spinning activity indicator for the processing state.
-struct SpinnerView: View {
-    @State private var isSpinning = false
-
-    var body: some View {
-        Image(systemName: "arrow.trianglehead.2.clockwise")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(.white)
-            .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .animation(
-                .linear(duration: 1.0).repeatForever(autoreverses: false),
-                value: isSpinning
-            )
-            .onAppear { isSpinning = true }
+        return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
     }
 }

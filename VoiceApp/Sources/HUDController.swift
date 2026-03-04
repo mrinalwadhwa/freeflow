@@ -1,85 +1,145 @@
 import AppKit
 import VoiceKit
 
-/// Manage the HUD overlay window lifecycle based on recording state.
+/// Drive the HUD overlay window based on pipeline state and UI-local signals.
 ///
-/// `HUDController` observes a `RecordingCoordinator`'s state stream and
-/// shows or hides the floating HUD window as the state changes. It runs
-/// all UI work on the main actor.
+/// `HUDController` observes `RecordingCoordinator.stateStream` and combines it
+/// with hover, activation mode, and slow-processing timer (via `HUDViewModel`)
+/// to produce the current `HUDVisualState`. It owns the `HUDOverlayWindow`
+/// lifecycle and wires cancel/complete buttons to the pipeline.
 @MainActor
 final class HUDController {
 
     private var hudWindow: HUDOverlayWindow?
-    private let hudViewModel = HUDViewModel()
-    private var observationTask: Task<Void, Never>?
-    private var dismissTask: Task<Void, Never>?
+    private let viewModel: HUDViewModel
 
-    /// Begin observing the coordinator and drive the HUD accordingly.
-    func start(coordinator: RecordingCoordinator) {
-        hudViewModel.observe(coordinator: coordinator)
+    private weak var coordinator: RecordingCoordinator?
+    private weak var pipeline: DictationPipeline?
 
-        observationTask?.cancel()
-        observationTask = Task { [weak self] in
-            for await state in await coordinator.stateStream {
+    private var visualStateObservation: Task<Void, Never>?
+
+    // MARK: - Init
+
+    init(
+        shortcuts: ShortcutConfiguration = .default,
+        slowProcessingThreshold: TimeInterval = 3.0
+    ) {
+        self.viewModel = HUDViewModel(
+            shortcuts: shortcuts,
+            slowProcessingThreshold: slowProcessingThreshold
+        )
+        setupViewModelActions()
+    }
+
+    // MARK: - Lifecycle
+
+    /// Begin observing the coordinator and pipeline to drive the HUD.
+    func start(coordinator: RecordingCoordinator, pipeline: DictationPipeline? = nil) {
+        self.coordinator = coordinator
+        self.pipeline = pipeline
+
+        viewModel.observe(coordinator: coordinator)
+        ensureWindow()
+
+        // Watch visual state changes to animate the window.
+        visualStateObservation?.cancel()
+        visualStateObservation = Task { [weak self] in
+            var previousState: HUDVisualState?
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 16_000_000)  // ~60fps
                 guard !Task.isCancelled else { break }
-                self?.handleStateChange(state)
+                guard let self else { break }
+                let current = self.viewModel.visualState
+                if current != previousState {
+                    previousState = current
+                    self.hudWindow?.animateToCurrentState()
+                }
             }
         }
     }
 
-    /// Stop observing and dismiss the HUD.
+    /// Stop observing and remove the HUD from screen.
     func stop() {
-        observationTask?.cancel()
-        observationTask = nil
-        dismissTask?.cancel()
-        dismissTask = nil
-        hudViewModel.stop()
+        visualStateObservation?.cancel()
+        visualStateObservation = nil
+        viewModel.stop()
         hudWindow?.orderOut(nil)
         hudWindow = nil
     }
 
-    // MARK: - State handling
+    // MARK: - Activation helpers
 
-    private func handleStateChange(_ state: RecordingState) {
-        dismissTask?.cancel()
-        dismissTask = nil
+    /// Call when push-to-talk recording begins (hotkey held).
+    func hotkeyHeld() {
+        viewModel.hotkeyHeld()
+    }
 
-        switch state {
-        case .recording, .processing:
-            showHUD()
-        case .injecting:
-            showHUD()
-            scheduleAutoDismiss()
-        case .idle:
-            hideHUD()
+    /// Call when hands-free recording begins via toggle shortcut.
+    func toggledHandsFree() {
+        viewModel.toggledHandsFree()
+    }
+
+    // MARK: - Pipeline actions
+
+    /// Cancel the current pipeline operation. Called from ✕ buttons and Escape.
+    func cancelPipeline() {
+        guard let pipeline else { return }
+        Task {
+            await pipeline.cancel()
         }
     }
 
-    private func showHUD() {
-        if hudWindow == nil {
-            let window = HUDOverlayWindow(viewModel: hudViewModel)
-            hudWindow = window
-        }
-        hudWindow?.showAnimated()
-    }
-
-    private func hideHUD() {
-        hudWindow?.hideAnimated { [weak self] in
-            self?.hudWindow = nil
+    /// Complete the current recording. Called from the ■ stop button.
+    func completePipeline() {
+        guard let pipeline else { return }
+        Task {
+            await pipeline.complete()
         }
     }
 
-    /// Dismiss the HUD automatically after a brief delay when injection completes.
-    private func scheduleAutoDismiss() {
-        dismissTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)  // 0.6s
-            guard !Task.isCancelled else { return }
-            self?.hideHUD()
+    /// Dismiss the no-target state and return to minimized.
+    func dismissNoTarget() {
+        viewModel.dismissNoTarget()
+        guard let coordinator else { return }
+        Task {
+            await coordinator.reset()
+        }
+    }
+
+    // MARK: - View model wiring
+
+    private func setupViewModelActions() {
+        viewModel.onCancel = { [weak self] in
+            self?.cancelPipeline()
+        }
+        viewModel.onStop = { [weak self] in
+            self?.completePipeline()
+        }
+        viewModel.onDismiss = { [weak self] in
+            self?.dismissNoTarget()
+        }
+        viewModel.onClickToRecord = { [weak self] in
+            self?.startHandsFreeFromClick()
+        }
+    }
+
+    // MARK: - Window lifecycle
+
+    private func ensureWindow() {
+        guard hudWindow == nil else { return }
+        hudWindow = HUDOverlayWindow(viewModel: viewModel)
+    }
+
+    /// Start hands-free dictation from a click on the minimized/ready HUD.
+    private func startHandsFreeFromClick() {
+        viewModel.clickedToStartHandsFree()
+        guard let pipeline else { return }
+        Task {
+            await pipeline.activate()
         }
     }
 
     deinit {
-        observationTask?.cancel()
-        dismissTask?.cancel()
+        visualStateObservation?.cancel()
     }
 }

@@ -54,6 +54,9 @@ final class MenuBarController {
         case .injecting:
             symbolName = "text.cursor"
             accessibilityLabel = "Voice — Injecting"
+        case .injectionFailed:
+            symbolName = "exclamationmark.triangle"
+            accessibilityLabel = "Voice — No Target"
         }
 
         let image = NSImage(

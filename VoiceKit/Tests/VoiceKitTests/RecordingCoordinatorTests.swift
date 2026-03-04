@@ -381,6 +381,105 @@ final class RecordingCoordinatorTests: XCTestCase {
         XCTAssertEqual(collected2, [.idle, .recording, .processing])
     }
 
+    // MARK: - failInjection
+
+    func testFailInjectionFromInjectingSucceeds() async {
+        let coordinator = RecordingCoordinator()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        await coordinator.startInjecting()
+
+        let result = await coordinator.failInjection()
+        XCTAssertTrue(result)
+        await assertState(coordinator, .injectionFailed)
+    }
+
+    func testFailInjectionFromIdleFails() async {
+        let coordinator = RecordingCoordinator()
+
+        let result = await coordinator.failInjection()
+        XCTAssertFalse(result)
+        await assertState(coordinator, .idle)
+    }
+
+    func testFailInjectionFromRecordingFails() async {
+        let coordinator = RecordingCoordinator()
+        await coordinator.startRecording()
+
+        let result = await coordinator.failInjection()
+        XCTAssertFalse(result)
+        await assertState(coordinator, .recording)
+    }
+
+    func testFailInjectionFromProcessingFails() async {
+        let coordinator = RecordingCoordinator()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+
+        let result = await coordinator.failInjection()
+        XCTAssertFalse(result)
+        await assertState(coordinator, .processing)
+    }
+
+    func testFinishInjectingFromInjectionFailedSucceeds() async {
+        let coordinator = RecordingCoordinator()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        await coordinator.startInjecting()
+        await coordinator.failInjection()
+
+        let result = await coordinator.finishInjecting()
+        XCTAssertTrue(result)
+        await assertState(coordinator, .idle)
+    }
+
+    func testResetFromInjectionFailed() async {
+        let coordinator = RecordingCoordinator()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        await coordinator.startInjecting()
+        await coordinator.failInjection()
+
+        await coordinator.reset()
+        await assertState(coordinator, .idle)
+    }
+
+    func testCycleAfterInjectionFailure() async {
+        let coordinator = RecordingCoordinator()
+
+        // Full cycle through injection failure and recovery.
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        await coordinator.startInjecting()
+        await coordinator.failInjection()
+        await assertState(coordinator, .injectionFailed)
+        await coordinator.finishInjecting()
+        await assertState(coordinator, .idle)
+
+        // A fresh cycle should work.
+        let started = await coordinator.startRecording()
+        XCTAssertTrue(started)
+        let stopped = await coordinator.stopRecording()
+        XCTAssertTrue(stopped)
+        let injecting = await coordinator.startInjecting()
+        XCTAssertTrue(injecting)
+        let finished = await coordinator.finishInjecting()
+        XCTAssertTrue(finished)
+        await assertState(coordinator, .idle)
+    }
+
+    func testStartRecordingFromInjectionFailedFails() async {
+        let coordinator = RecordingCoordinator()
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        await coordinator.startInjecting()
+        await coordinator.failInjection()
+
+        let result = await coordinator.startRecording()
+        XCTAssertFalse(result)
+        await assertState(coordinator, .injectionFailed)
+    }
+
     // MARK: - Rapid transitions
 
     func testRapidStartStopCycles() async {

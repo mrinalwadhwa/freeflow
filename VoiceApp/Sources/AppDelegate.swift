@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupHUD() {
         let controller = HUDController()
-        controller.start(coordinator: coordinator)
+        controller.start(coordinator: coordinator, pipeline: pipeline)
         hudController = controller
     }
 
@@ -118,13 +118,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let pipelineRef = pipeline
+        let hudRef = hudController
 
         do {
             try hotkeyProvider.register { event in
-                Task {
+                Task { @MainActor in
                     switch event {
                     case .pressed:
                         debugPrint("[Hotkey] Right Option pressed — activating pipeline")
+                        hudRef?.hotkeyHeld()
                         await pipelineRef.activate()
                     case .released:
                         debugPrint("[Hotkey] Right Option released — completing pipeline")

@@ -79,13 +79,30 @@ public actor RecordingCoordinator {
         return true
     }
 
-    /// Transition to `.idle`. Valid from `.injecting` (normal completion)
-    /// or `.processing` (cancellation / error recovery).
+    /// Transition to `.injectionFailed`. Only valid from `.injecting`.
+    ///
+    /// The HUD shows the no-target recovery state until the user dismisses
+    /// it or pastes via the special shortcut, then call `reset()`.
+    ///
+    /// - Returns: `true` if the transition succeeded.
+    @discardableResult
+    public func failInjection() -> Bool {
+        guard _state == .injecting else { return false }
+        transition(to: .injectionFailed)
+        return true
+    }
+
+    /// Transition to `.idle`. Valid from `.injecting` (normal completion),
+    /// `.processing` (cancellation / error recovery), or `.injectionFailed`
+    /// (user dismissed the no-target state).
     ///
     /// - Returns: `true` if the transition succeeded.
     @discardableResult
     public func finishInjecting() -> Bool {
-        guard _state == .injecting || _state == .processing else { return false }
+        guard
+            _state == .injecting || _state == .processing
+                || _state == .injectionFailed
+        else { return false }
         transition(to: .idle)
         return true
     }

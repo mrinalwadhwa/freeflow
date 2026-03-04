@@ -6,4 +6,5 @@ public enum RecordingState: Sendable, Equatable {
     case recording
     case processing
     case injecting
+    case injectionFailed
 }
