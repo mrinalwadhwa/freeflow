@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hudController: HUDController?
     private var menuBarController: MenuBarController?
     private var permissionController: PermissionController?
+    private var doubleTapDetector: DoubleTapDetector?
 
     // MARK: - Lifecycle
 
@@ -113,18 +114,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hudRef = hudController
         let menuRef = menuBarController
 
+        let detector = DoubleTapDetector(
+            doubleTapInterval: ShortcutConfiguration.default.doubleTapInterval)
+
+        detector.onGesture = { gesture in
+            switch gesture {
+            case .hold:
+                debugPrint("[Hotkey] Hold detected — push-to-talk")
+                hudRef?.hotkeyHeld()
+                Task { await pipelineRef.activate() }
+            case .doubleTap:
+                debugPrint("[Hotkey] Double-tap detected — hands-free toggle")
+                hudRef?.toggledHandsFree()
+                Task { await pipelineRef.activate() }
+            }
+        }
+
+        detector.onHoldRelease = {
+            debugPrint("[Hotkey] Hold released — completing pipeline")
+            Task { await pipelineRef.complete() }
+        }
+
+        self.doubleTapDetector = detector
+
         do {
-            try hotkeyProvider.register { event in
+            try hotkeyProvider.register { [weak detector] event in
                 Task { @MainActor in
-                    switch event {
-                    case .pressed:
-                        debugPrint("[Hotkey] Right Option pressed — activating pipeline")
-                        hudRef?.hotkeyHeld()
-                        await pipelineRef.activate()
-                    case .released:
-                        debugPrint("[Hotkey] Right Option released — completing pipeline")
-                        await pipelineRef.complete()
-                    }
+                    detector?.handleEvent(event)
                 }
             }
             menuRef?.setHotkeyRegistered(true)
