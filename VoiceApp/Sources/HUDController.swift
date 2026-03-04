@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import VoiceKit
 
 /// Drive the HUD overlay window based on pipeline state and UI-local signals.
@@ -17,6 +18,8 @@ final class HUDController {
     private weak var pipeline: DictationPipeline?
 
     private var visualStateObservation: Task<Void, Never>?
+    private var localEscapeMonitor: Any?
+    private var globalEscapeMonitor: Any?
 
     // MARK: - Init
 
@@ -41,6 +44,8 @@ final class HUDController {
         viewModel.observe(coordinator: coordinator)
         ensureWindow()
 
+        installEscapeMonitors()
+
         // Watch visual state changes to animate the window.
         visualStateObservation?.cancel()
         visualStateObservation = Task { [weak self] in
@@ -62,6 +67,7 @@ final class HUDController {
     func stop() {
         visualStateObservation?.cancel()
         visualStateObservation = nil
+        removeEscapeMonitors()
         viewModel.stop()
         hudWindow?.orderOut(nil)
         hudWindow = nil
@@ -139,7 +145,71 @@ final class HUDController {
         }
     }
 
+    // MARK: - Escape key handling
+
+    /// Install local and global key event monitors to handle Escape.
+    ///
+    /// A local monitor catches Escape when the app is frontmost. A global
+    /// monitor catches Escape when another app is frontmost (the typical
+    /// case — the user is dictating into another app). Both route to
+    /// `handleEscape()` which checks the current visual state.
+    private func installEscapeMonitors() {
+        localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                if self?.handleEscape() == true {
+                    return nil  // Consume the event.
+                }
+            }
+            return event
+        }
+
+        globalEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                self?.handleEscape()
+            }
+        }
+    }
+
+    private func removeEscapeMonitors() {
+        if let monitor = localEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEscapeMonitor = nil
+        }
+        if let monitor = globalEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalEscapeMonitor = nil
+        }
+    }
+
+    /// Route Escape to the appropriate action based on the current visual state.
+    ///
+    /// - Returns: `true` if Escape was handled (the event should be consumed).
+    @discardableResult
+    private func handleEscape() -> Bool {
+        switch viewModel.visualState {
+        case .listeningHandsFree:
+            cancelPipeline()
+            return true
+        case .processingSlow:
+            cancelPipeline()
+            return true
+        case .noTarget:
+            dismissNoTarget()
+            return true
+        case .minimized, .ready, .listeningHeld, .processing:
+            return false
+        }
+    }
+
     deinit {
         visualStateObservation?.cancel()
+        if let monitor = localEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = globalEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 }
