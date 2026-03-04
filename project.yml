@@ -1,0 +1,41 @@
+name: Voice
+options:
+  bundleIdPrefix: com.buildtrust
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+packages:
+  VoiceKit:
+    path: VoiceKit
+
+targets:
+  VoiceApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: VoiceApp/Sources
+    settings:
+      base:
+        PRODUCT_NAME: Voice
+        PRODUCT_BUNDLE_IDENTIFIER: com.buildtrust.voice
+        INFOPLIST_FILE: VoiceApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VoiceApp/Voice.entitlements
+        ENABLE_APP_SANDBOX: false
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+        COMBINE_HIDPI_IMAGES: true
+    dependencies:
+      - package: VoiceKit
+    entitlements:
+      path: VoiceApp/Voice.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
