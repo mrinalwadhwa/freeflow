@@ -47,6 +47,9 @@ __pycache__/
 .env
 .env.*
 
+# Autonomy secrets
+secrets.yaml
+
 # IDE
 .idea/
 .vscode/

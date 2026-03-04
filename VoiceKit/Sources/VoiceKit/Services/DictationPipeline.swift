@@ -3,13 +3,14 @@ import Foundation
 /// Orchestrate the full dictation flow from hotkey press to text injection.
 ///
 /// `DictationPipeline` implements `PipelineProviding` by coordinating an
-/// `AudioProviding`, `AppContextProviding`, and `TextInjecting` service.
-/// It drives the `RecordingCoordinator` state machine through each phase:
+/// `AudioProviding`, `AppContextProviding`, `STTProviding`, and
+/// `TextInjecting` service. It drives the `RecordingCoordinator` state
+/// machine through each phase:
 ///
 ///   1. `activate()` — transition to `.recording`, start audio capture,
 ///      begin reading app context in parallel.
 ///   2. `complete()` — transition to `.processing`, stop audio capture,
-///      await context, run processing (STT stub), inject text, return to `.idle`.
+///      await context, transcribe audio via STT, inject text, return to `.idle`.
 ///   3. `cancel()` — abort any in-progress pipeline run and reset to `.idle`.
 ///
 /// The pipeline holds captured context from the `activate()` call so it is
@@ -18,8 +19,12 @@ public actor DictationPipeline: PipelineProviding {
 
     private let audioProvider: AudioProviding
     private let contextProvider: AppContextProviding
+    private let sttProvider: STTProviding
     private let textInjector: TextInjecting
     private let coordinator: RecordingCoordinator
+
+    /// Minimum audio duration (in seconds) worth transcribing.
+    private let minimumAudioDuration: TimeInterval = 0.1
 
     /// Context captured concurrently during the recording phase.
     private var pendingContext: Task<AppContext, Never>?
@@ -30,11 +35,13 @@ public actor DictationPipeline: PipelineProviding {
     public init(
         audioProvider: AudioProviding,
         contextProvider: AppContextProviding,
+        sttProvider: STTProviding,
         textInjector: TextInjecting,
         coordinator: RecordingCoordinator
     ) {
         self.audioProvider = audioProvider
         self.contextProvider = contextProvider
+        self.sttProvider = sttProvider
         self.textInjector = textInjector
         self.coordinator = coordinator
     }
@@ -84,7 +91,8 @@ public actor DictationPipeline: PipelineProviding {
         let stopped = await coordinator.stopRecording()
         guard stopped else { return }
 
-        let task = Task { [pendingContext, audioProvider, textInjector, coordinator] in
+        let task = Task { [pendingContext, audioProvider, sttProvider, textInjector, coordinator,
+                           minimumAudioDuration] in
             // Stop audio capture and retrieve the buffer.
             let audioBuffer: AudioBuffer
             do {
@@ -95,7 +103,14 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
-            // Await context (with a timeout so we don't block forever).
+            // Skip transcription for empty or very short audio.
+            guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
+                debugPrint("[Pipeline] Audio too short (\(audioBuffer.duration)s), skipping STT")
+                await coordinator.reset()
+                return
+            }
+
+            // Await context (with a timeout so we do not block forever).
             let context: AppContext
             if let pendingContext {
                 let result = await withTimeout(seconds: 0.5) {
@@ -111,8 +126,23 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
-            // Process audio (STT stub — returns placeholder text).
-            let transcribedText = processAudio(audioBuffer, context: context)
+            // Transcribe audio via STT service.
+            let transcribedText: String
+            do {
+                transcribedText = try await sttProvider.transcribe(audio: audioBuffer.data)
+            } catch {
+                debugPrint("[Pipeline] STT failed: \(error)")
+                await coordinator.reset()
+                return
+            }
+
+            // Skip injection for empty or whitespace-only transcriptions.
+            let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                debugPrint("[Pipeline] Empty transcription, skipping injection")
+                await coordinator.reset()
+                return
+            }
 
             guard !Task.isCancelled else {
                 await coordinator.reset()
@@ -128,7 +158,7 @@ public actor DictationPipeline: PipelineProviding {
 
             // Inject the transcribed text.
             do {
-                try await textInjector.inject(text: transcribedText, into: context)
+                try await textInjector.inject(text: trimmed, into: context)
             } catch {
                 debugPrint("[Pipeline] Text injection failed: \(error)")
             }
@@ -159,15 +189,3 @@ public actor DictationPipeline: PipelineProviding {
     }
 }
 
-// MARK: - Audio processing stub
-
-/// Process captured audio into text.
-///
-/// This is a placeholder that returns a fixed string. A real implementation
-/// will send the audio buffer to a speech-to-text service and optionally
-/// run the result through an LLM for context-aware refinement.
-private func processAudio(_ buffer: AudioBuffer, context: AppContext) -> String {
-    let durationStr = String(format: "%.1f", buffer.duration)
-    let app = context.appName.isEmpty ? "unknown app" : context.appName
-    return "[Transcribed \(durationStr)s of audio from \(app)]"
-}

@@ -9,25 +9,27 @@ final class DictationPipelineTests: XCTestCase {
     private func makePipeline(
         audioProvider: MockAudioProvider = MockAudioProvider(),
         contextProvider: MockAppContextProvider = MockAppContextProvider(),
+        sttProvider: MockSTTProvider = MockSTTProvider(),
         textInjector: MockTextInjector = MockTextInjector(),
         coordinator: RecordingCoordinator = RecordingCoordinator()
     ) -> (
-        DictationPipeline, MockAudioProvider, MockAppContextProvider, MockTextInjector,
-        RecordingCoordinator
+        DictationPipeline, MockAudioProvider, MockAppContextProvider, MockSTTProvider,
+        MockTextInjector, RecordingCoordinator
     ) {
         let pipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: contextProvider,
+            sttProvider: sttProvider,
             textInjector: textInjector,
             coordinator: coordinator
         )
-        return (pipeline, audioProvider, contextProvider, textInjector, coordinator)
+        return (pipeline, audioProvider, contextProvider, sttProvider, textInjector, coordinator)
     }
 
     // MARK: - Initial state
 
     func testInitialStateIsIdle() async {
-        let (pipeline, _, _, _, _) = makePipeline()
+        let (pipeline, _, _, _, _, _) = makePipeline()
         let state = await pipeline.state
         XCTAssertEqual(state, .idle)
     }
@@ -35,7 +37,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Full cycle: activate → complete → idle
 
     func testFullCycleTransitionsToIdleAfterCompletion() async {
-        let (pipeline, _, _, _, coordinator) = makePipeline()
+        let (pipeline, _, _, _, _, coordinator) = makePipeline()
 
         await pipeline.activate()
         var currentState = await coordinator.state
@@ -47,7 +49,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testFullCycleStartsAndStopsAudioCapture() async {
-        let (pipeline, audio, _, _, _) = makePipeline()
+        let (pipeline, audio, _, _, _, _) = makePipeline()
 
         await pipeline.activate()
         XCTAssertEqual(audio.startCallCount, 1)
@@ -61,7 +63,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testFullCycleReadsContext() async {
-        let (pipeline, _, context, _, _) = makePipeline()
+        let (pipeline, _, context, _, _, _) = makePipeline()
 
         await pipeline.activate()
         await pipeline.complete()
@@ -70,7 +72,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testFullCycleInjectsText() async {
-        let (pipeline, _, _, injector, _) = makePipeline()
+        let (pipeline, _, _, _, injector, _) = makePipeline()
 
         await pipeline.activate()
         await pipeline.complete()
@@ -79,35 +81,32 @@ final class DictationPipelineTests: XCTestCase {
         XCTAssertNotNil(injector.lastInjectedText)
     }
 
-    func testInjectedTextContainsAppName() async {
-        let context = MockAppContextProvider(
-            context: AppContext(
-                bundleID: "com.example.test",
-                appName: "TestApp",
-                windowTitle: "Test Window"
-            ))
-        let (pipeline, _, _, injector, _) = makePipeline(contextProvider: context)
+    func testInjectedTextMatchesMockSTTOutput() async {
+        let stt = MockSTTProvider(stubbedText: "Hello from STT")
+        let (pipeline, _, _, _, injector, _) = makePipeline(sttProvider: stt)
 
         await pipeline.activate()
         await pipeline.complete()
 
-        let text = injector.lastInjectedText ?? ""
-        XCTAssertTrue(text.contains("TestApp"), "Injected text should mention the app name")
+        XCTAssertEqual(injector.lastInjectedText, "Hello from STT")
+        XCTAssertEqual(stt.transcribeCallCount, 1)
     }
 
-    func testInjectedTextContainsAudioDuration() async {
+    func testSTTReceivesAudioData() async {
         let buffer = AudioBuffer(
             data: Data(repeating: 0, count: 64000),
             duration: 2.0
         )
         let audio = MockAudioProvider(stubbedBuffer: buffer)
-        let (pipeline, _, _, injector, _) = makePipeline(audioProvider: audio)
+        let stt = MockSTTProvider()
+        let (pipeline, _, _, _, injector, _) = makePipeline(audioProvider: audio, sttProvider: stt)
 
         await pipeline.activate()
         await pipeline.complete()
 
-        let text = injector.lastInjectedText ?? ""
-        XCTAssertTrue(text.contains("2.0"), "Injected text should mention the audio duration")
+        XCTAssertEqual(stt.transcribeCallCount, 1)
+        XCTAssertEqual(stt.lastReceivedAudio, buffer.data)
+        XCTAssertEqual(injector.injectionCount, 1)
     }
 
     func testInjectedContextMatchesStubbedContext() async {
@@ -117,7 +116,7 @@ final class DictationPipelineTests: XCTestCase {
             windowTitle: "Document 1"
         )
         let contextProvider = MockAppContextProvider(context: stubbedContext)
-        let (pipeline, _, _, injector, _) = makePipeline(contextProvider: contextProvider)
+        let (pipeline, _, _, _, injector, _) = makePipeline(contextProvider: contextProvider)
 
         await pipeline.activate()
         await pipeline.complete()
@@ -131,7 +130,7 @@ final class DictationPipelineTests: XCTestCase {
 
     func testStatePassesThroughAllPhases() async {
         let coordinator = RecordingCoordinator()
-        let (pipeline, _, _, _, _) = makePipeline(coordinator: coordinator)
+        let (pipeline, _, _, _, _, _) = makePipeline(coordinator: coordinator)
 
         var collected: [RecordingState] = []
         let expectation = XCTestExpectation(description: "Collect all state transitions")
@@ -163,7 +162,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Multiple cycles
 
     func testMultipleConsecutiveCycles() async {
-        let (pipeline, audio, context, injector, coordinator) = makePipeline()
+        let (pipeline, audio, context, stt, injector, coordinator) = makePipeline()
 
         for cycle in 1...3 {
             await pipeline.activate()
@@ -184,7 +183,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Cancellation
 
     func testCancelFromRecordingResetsToIdle() async {
-        let (pipeline, audio, _, _, coordinator) = makePipeline()
+        let (pipeline, audio, _, _, _, coordinator) = makePipeline()
 
         await pipeline.activate()
         var currentState = await coordinator.state
@@ -197,7 +196,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testCancelFromIdleRemainsIdle() async {
-        let (pipeline, _, _, _, coordinator) = makePipeline()
+        let (pipeline, _, _, _, _, coordinator) = makePipeline()
 
         await pipeline.cancel()
         var currentState = await coordinator.state
@@ -205,7 +204,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testCycleWorksAfterCancel() async {
-        let (pipeline, audio, _, injector, coordinator) = makePipeline()
+        let (pipeline, audio, _, _, injector, coordinator) = makePipeline()
 
         // Start and cancel.
         await pipeline.activate()
@@ -228,7 +227,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Edge cases: activate/complete out of order
 
     func testActivateWhileRecordingIsIgnored() async {
-        let (pipeline, audio, _, _, coordinator) = makePipeline()
+        let (pipeline, audio, _, _, _, coordinator) = makePipeline()
 
         await pipeline.activate()
         var currentState = await coordinator.state
@@ -242,7 +241,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testCompleteFromIdleIsIgnored() async {
-        let (pipeline, audio, _, injector, coordinator) = makePipeline()
+        let (pipeline, audio, _, _, injector, coordinator) = makePipeline()
 
         // Complete without activate should be a no-op.
         await pipeline.complete()
@@ -253,7 +252,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testDoubleCompleteIsIgnored() async {
-        let (pipeline, audio, _, injector, coordinator) = makePipeline()
+        let (pipeline, audio, _, _, injector, coordinator) = makePipeline()
 
         await pipeline.activate()
         await pipeline.complete()
@@ -272,7 +271,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Context uses stub context
 
     func testDefaultStubContextUsesTextEdit() async {
-        let (pipeline, _, _, injector, _) = makePipeline()
+        let (pipeline, _, _, _, injector, _) = makePipeline()
 
         await pipeline.activate()
         await pipeline.complete()
@@ -285,17 +284,20 @@ final class DictationPipelineTests: XCTestCase {
 
     // MARK: - Empty audio buffer
 
-    func testEmptyAudioBufferStillCompletesFullCycle() async {
+    func testEmptyAudioBufferSkipsSTTAndResetsToIdle() async {
         let audio = MockAudioProvider(stubbedBuffer: .empty)
-        let (pipeline, _, _, injector, coordinator) = makePipeline(audioProvider: audio)
+        let stt = MockSTTProvider()
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(
+            audioProvider: audio, sttProvider: stt)
 
         await pipeline.activate()
         await pipeline.complete()
 
         let currentState = await coordinator.state
         XCTAssertEqual(currentState, .idle)
-        // Even with empty audio, the pipeline should still inject (the stub text).
-        XCTAssertEqual(injector.injectionCount, 1)
+        // Empty audio should skip STT entirely and not inject.
+        XCTAssertEqual(stt.transcribeCallCount, 0)
+        XCTAssertEqual(injector.injectionCount, 0)
     }
 
     // MARK: - Hotkey-driven simulation
@@ -306,9 +308,11 @@ final class DictationPipelineTests: XCTestCase {
         let context = MockAppContextProvider()
         let injector = MockTextInjector()
         let coordinator = RecordingCoordinator()
+        let stt = MockSTTProvider()
         let pipeline = DictationPipeline(
             audioProvider: audio,
             contextProvider: context,
+            sttProvider: stt,
             textInjector: injector,
             coordinator: coordinator
         )
@@ -350,7 +354,7 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Rapid press/release cycles
 
     func testRapidActivateCancelCycles() async {
-        let (pipeline, _, _, _, coordinator) = makePipeline()
+        let (pipeline, _, _, _, _, coordinator) = makePipeline()
 
         for _ in 0..<5 {
             await pipeline.activate()

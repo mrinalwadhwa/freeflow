@@ -72,13 +72,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Pipeline
 
     private func setupPipeline() {
-        let contextProvider = MockAppContextProvider()
-        let textInjector = LoggingTextInjector()
-
         pipeline = DictationPipeline(
             audioProvider: AudioCaptureProvider(),
-            contextProvider: contextProvider,
-            textInjector: textInjector,
+            contextProvider: AXAppContextProvider(),
+            sttProvider: VoiceServiceSTTProvider(),
+            textInjector: AppTextInjector(),
             coordinator: coordinator
         )
     }
@@ -169,20 +167,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-}
-
-// MARK: - Logging text injector
-
-/// A text injector that logs to the console instead of injecting into an app.
-///
-/// Used during development to verify the pipeline produces output without
-/// requiring a real text injection target.
-private final class LoggingTextInjector: TextInjecting, @unchecked Sendable {
-
-    func inject(text: String, into context: AppContext) async throws {
-        let app = context.appName.isEmpty ? "unknown app" : context.appName
-        let window = context.windowTitle.isEmpty ? "" : " — \(context.windowTitle)"
-        print("[Voice] Injected into \(app)\(window): \(text)")
     }
 }
