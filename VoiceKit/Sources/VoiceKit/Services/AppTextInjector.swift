@@ -205,8 +205,10 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
             // Simulate Cmd+V
             simulatePaste()
 
-            // Wait for the paste to complete before restoring
-            Thread.sleep(forTimeInterval: 0.05)
+            // Wait for the paste to complete before restoring.
+            // Electron apps (Slack, Discord, VS Code) need extra time to
+            // read the pasteboard after Cmd+V is posted.
+            Thread.sleep(forTimeInterval: 0.2)
 
             // Restore previous clipboard content
             restorePasteboardContents(pasteboard, items: savedItems)
