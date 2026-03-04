@@ -16,8 +16,8 @@ final class HUDOverlayWindow: NSPanel {
     private var hostingView: NSHostingView<HUDContentView>?
 
     /// Width of the minimized capsule.
-    private static let minimizedWidth: CGFloat = 80
-    private static let minimizedHeight: CGFloat = 28
+    private static let minimizedWidth: CGFloat = 56
+    private static let minimizedHeight: CGFloat = 10
 
     /// Width of the expanded pill (listening, processing, ready, no-target).
     private static let expandedWidth: CGFloat = 280
@@ -70,7 +70,7 @@ final class HUDOverlayWindow: NSPanel {
         let screenFrame = screen.visibleFrame
         let size = currentSize()
         let x = screenFrame.midX - size.width / 2
-        let y = screenFrame.origin.y + 40
+        let y = screenFrame.origin.y + 12
         setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
     }
 
@@ -81,7 +81,7 @@ final class HUDOverlayWindow: NSPanel {
         let screen = activeScreen()
         let screenFrame = screen.visibleFrame
         let x = screenFrame.midX - size.width / 2
-        let y = screenFrame.origin.y + 40
+        let y = screenFrame.origin.y + 12
         let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
 
         ignoresMouseEvents = !viewModel.visualState.acceptsMouseEvents
@@ -96,6 +96,20 @@ final class HUDOverlayWindow: NSPanel {
             animator().setFrame(newFrame, display: true)
         }
 
+        updateMouseTracking()
+    }
+
+    /// Jump the pill to the correct screen instantly without animation.
+    /// Used when the mouse moves between monitors.
+    func repositionToCurrentScreen() {
+        let size = currentSize()
+        let screen = activeScreen()
+        let screenFrame = screen.visibleFrame
+        let x = screenFrame.midX - size.width / 2
+        let y = screenFrame.origin.y + 12
+        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
+
+        setFrame(newFrame, display: true)
         updateMouseTracking()
     }
 
@@ -159,38 +173,13 @@ final class HUDOverlayWindow: NSPanel {
     }
 
     private func activeScreen() -> NSScreen {
-        // Find the screen containing the frontmost application's main window.
-        // CGWindowListCopyWindowInfo gives us the bounds of the frontmost app's
-        // windows so we can match them to an NSScreen.
-        if let frontApp = NSWorkspace.shared.frontmostApplication {
-            let pid = frontApp.processIdentifier
-            let windowList =
-                CGWindowListCopyWindowInfo(
-                    [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
-                ) as? [[CFString: Any]] ?? []
-
-            for entry in windowList {
-                guard
-                    let ownerPID = entry[kCGWindowOwnerPID] as? Int32,
-                    ownerPID == pid,
-                    let boundsDict = entry[kCGWindowBounds] as? [String: CGFloat],
-                    let x = boundsDict["X"],
-                    let y = boundsDict["Y"],
-                    let w = boundsDict["Width"],
-                    let h = boundsDict["Height"],
-                    w > 0, h > 0
-                else { continue }
-
-                let windowCenter = CGPoint(x: x + w / 2, y: y + h / 2)
-
-                for screen in NSScreen.screens {
-                    if screen.frame.contains(windowCenter) {
-                        return screen
-                    }
-                }
+        // Follow the mouse cursor to match the screen the user is working on.
+        let mouseLocation = NSEvent.mouseLocation
+        for screen in NSScreen.screens {
+            if screen.frame.contains(mouseLocation) {
+                return screen
             }
         }
-
         return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
     }
 }

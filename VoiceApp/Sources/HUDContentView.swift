@@ -47,8 +47,8 @@ struct HUDContentView: View {
     /// Tiny capsule outline — the app is alive and idle.
     private var minimizedView: some View {
         Capsule()
-            .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
-            .frame(width: 64, height: 22)
+            .strokeBorder(Color.cyan, lineWidth: 2)
+            .frame(width: 46, height: 8)
     }
 
     // MARK: - Ready

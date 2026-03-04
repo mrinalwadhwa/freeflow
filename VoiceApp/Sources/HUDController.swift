@@ -61,15 +61,29 @@ final class HUDController {
 
         installEscapeMonitors()
 
-        // Watch visual state changes to animate the window.
+        // Watch visual state changes and mouse screen to animate the window.
         visualStateObservation?.cancel()
         visualStateObservation = Task { [weak self] in
             var previousState: HUDVisualState?
+            var previousScreenFrame: NSRect?
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 16_000_000)  // ~60fps
                 guard !Task.isCancelled else { break }
                 guard let self else { break }
+
+                // Detect if the mouse moved to a different screen.
+                let mouseLocation = NSEvent.mouseLocation
+                let currentScreen = NSScreen.screens.first { $0.frame.contains(mouseLocation) }
+                let currentScreenFrame = currentScreen?.frame
+                let screenChanged = currentScreenFrame != previousScreenFrame
+                if screenChanged {
+                    previousScreenFrame = currentScreenFrame
+                }
+
                 let current = self.viewModel.visualState
+                if screenChanged {
+                    self.hudWindow?.repositionToCurrentScreen()
+                }
                 if current != previousState {
                     previousState = current
                     self.hudWindow?.animateToCurrentState()
