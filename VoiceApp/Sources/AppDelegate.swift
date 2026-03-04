@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = RecordingCoordinator()
     private let permissionProvider = MicrophonePermissionProvider()
     private let hotkeyProvider = CGEventTapHotkeyProvider()
+    private let transcriptBuffer = TranscriptBuffer()
     private var pipeline: DictationPipeline?
 
     // MARK: - Controllers
@@ -77,7 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             contextProvider: AXAppContextProvider(),
             sttProvider: VoiceServiceSTTProvider(),
             textInjector: AppTextInjector(),
-            coordinator: coordinator
+            coordinator: coordinator,
+            transcriptBuffer: transcriptBuffer
         )
     }
 

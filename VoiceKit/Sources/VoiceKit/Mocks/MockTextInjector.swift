@@ -9,6 +9,10 @@ public final class MockTextInjector: TextInjecting, @unchecked Sendable {
     private let lock = NSLock()
     private var _injections: [(text: String, context: AppContext)] = []
 
+    /// If set, `inject(text:into:)` throws this error instead of recording
+    /// the injection. Use to simulate injection failures in tests.
+    public var stubbedError: (any Error)?
+
     public init() {}
 
     /// All injections that have been performed, in order.
@@ -27,6 +31,9 @@ public final class MockTextInjector: TextInjecting, @unchecked Sendable {
     }
 
     public func inject(text: String, into context: AppContext) async throws {
+        if let error = stubbedError {
+            throw error
+        }
         lock.withLock {
             _injections.append((text: text, context: context))
         }

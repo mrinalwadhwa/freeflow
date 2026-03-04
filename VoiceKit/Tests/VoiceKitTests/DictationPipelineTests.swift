@@ -11,7 +11,8 @@ final class DictationPipelineTests: XCTestCase {
         contextProvider: MockAppContextProvider = MockAppContextProvider(),
         sttProvider: MockSTTProvider = MockSTTProvider(),
         textInjector: MockTextInjector = MockTextInjector(),
-        coordinator: RecordingCoordinator = RecordingCoordinator()
+        coordinator: RecordingCoordinator = RecordingCoordinator(),
+        transcriptBuffer: TranscriptBuffer? = nil
     ) -> (
         DictationPipeline, MockAudioProvider, MockAppContextProvider, MockSTTProvider,
         MockTextInjector, RecordingCoordinator
@@ -21,7 +22,8 @@ final class DictationPipelineTests: XCTestCase {
             contextProvider: contextProvider,
             sttProvider: sttProvider,
             textInjector: textInjector,
-            coordinator: coordinator
+            coordinator: coordinator,
+            transcriptBuffer: transcriptBuffer
         )
         return (pipeline, audioProvider, contextProvider, sttProvider, textInjector, coordinator)
     }
@@ -368,5 +370,172 @@ final class DictationPipelineTests: XCTestCase {
         await pipeline.complete()
         let finalState = await coordinator.state
         XCTAssertEqual(finalState, .idle)
+    }
+
+    // MARK: - TranscriptBuffer wiring
+
+    func testSuccessfulCycleStoresTranscriptInBuffer() async {
+        let buffer = TranscriptBuffer()
+        let stt = MockSTTProvider(stubbedText: "Hello from buffer")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            sttProvider: stt, transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        XCTAssertEqual(stored, "Hello from buffer")
+    }
+
+    func testTranscriptBufferUpdatedOnEachCycle() async {
+        let buffer = TranscriptBuffer()
+        let stt = MockSTTProvider(stubbedText: "first")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            sttProvider: stt, transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        await pipeline.complete()
+        var stored = await buffer.lastTranscript
+        XCTAssertEqual(stored, "first")
+
+        stt.stubbedText = "second"
+        await pipeline.activate()
+        await pipeline.complete()
+        stored = await buffer.lastTranscript
+        XCTAssertEqual(stored, "second")
+    }
+
+    func testEmptyTranscriptionDoesNotStoreInBuffer() async {
+        let buffer = TranscriptBuffer()
+        let stt = MockSTTProvider(stubbedText: "   ")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            sttProvider: stt, transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        XCTAssertNil(stored, "Empty transcription should not be stored in buffer")
+    }
+
+    func testSTTFailureDoesNotStoreInBuffer() async {
+        let buffer = TranscriptBuffer()
+        let stt = MockSTTProvider()
+        stt.stubbedError = STTError.transcriptionFailed(statusCode: 500, message: "fail")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            sttProvider: stt, transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        XCTAssertNil(stored, "STT failure should not store anything in buffer")
+    }
+
+    func testPipelineWorksWithoutTranscriptBuffer() async {
+        // Passing nil (the default) should not change existing behavior.
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline()
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(injector.injectionCount, 1)
+    }
+
+    // MARK: - Injection failure → injectionFailed
+
+    func testInjectionFailureTransitionsToInjectionFailed() async {
+        let buffer = TranscriptBuffer()
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let stt = MockSTTProvider(stubbedText: "dictated text")
+        let (pipeline, _, _, _, _, coordinator) = makePipeline(
+            sttProvider: stt, textInjector: injector, transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(
+            state, .injectionFailed,
+            "Pipeline should transition to injectionFailed when injection throws")
+    }
+
+    func testInjectionFailurePreservesTranscriptInBuffer() async {
+        let buffer = TranscriptBuffer()
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let stt = MockSTTProvider(stubbedText: "preserved text")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            sttProvider: stt, textInjector: injector, transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        XCTAssertEqual(
+            stored, "preserved text",
+            "Transcript should remain in buffer after injection failure")
+    }
+
+    func testInjectionFailureStatePassesThroughAllPhases() async {
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let coordinator = RecordingCoordinator()
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            textInjector: injector, coordinator: coordinator)
+
+        var collected: [RecordingState] = []
+        let expectation = XCTestExpectation(description: "Collect all state transitions")
+
+        let streamTask = Task {
+            for await state in await coordinator.stateStream {
+                collected.append(state)
+                if collected.count >= 5 {
+                    break
+                }
+            }
+            expectation.fulfill()
+        }
+
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        await fulfillment(of: [expectation], timeout: 5.0)
+        streamTask.cancel()
+
+        // Expected: idle (initial), recording, processing, injecting, injectionFailed
+        XCTAssertEqual(collected, [.idle, .recording, .processing, .injecting, .injectionFailed])
+    }
+
+    func testCycleWorksAfterInjectionFailureAndReset() async {
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let coordinator = RecordingCoordinator()
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            textInjector: injector, coordinator: coordinator)
+
+        // First cycle: injection fails.
+        await pipeline.activate()
+        await pipeline.complete()
+        var state = await coordinator.state
+        XCTAssertEqual(state, .injectionFailed)
+
+        // Reset (simulates user dismissing no-target HUD).
+        await coordinator.reset()
+        state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+
+        // Second cycle: injection succeeds.
+        injector.stubbedError = nil
+        await pipeline.activate()
+        await pipeline.complete()
+        state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(injector.injectionCount, 1)
     }
 }

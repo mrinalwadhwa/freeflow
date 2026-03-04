@@ -166,7 +166,6 @@ struct PipelineIntegrationTests {
     }
 }
 
-
 @Suite("DictationPipeline integration with MockSTTProvider")
 struct DictationPipelineIntegrationTests {
 
@@ -338,5 +337,207 @@ struct TimeoutHelperTests {
             return "hello"
         }
         #expect(result == "hello")
+    }
+}
+
+@Suite("Pipeline transcript buffer integration")
+struct PipelineTranscriptBufferIntegrationTests {
+
+    private func makePipeline(
+        audioProvider: MockAudioProvider = MockAudioProvider(),
+        contextProvider: MockAppContextProvider = MockAppContextProvider(),
+        sttProvider: MockSTTProvider = MockSTTProvider(),
+        textInjector: MockTextInjector = MockTextInjector(),
+        coordinator: RecordingCoordinator = RecordingCoordinator(),
+        transcriptBuffer: TranscriptBuffer = TranscriptBuffer()
+    ) -> (
+        DictationPipeline, MockAudioProvider, MockAppContextProvider, MockSTTProvider,
+        MockTextInjector, RecordingCoordinator, TranscriptBuffer
+    ) {
+        let pipeline = DictationPipeline(
+            audioProvider: audioProvider,
+            contextProvider: contextProvider,
+            sttProvider: sttProvider,
+            textInjector: textInjector,
+            coordinator: coordinator,
+            transcriptBuffer: transcriptBuffer
+        )
+        return (
+            pipeline, audioProvider, contextProvider, sttProvider, textInjector, coordinator,
+            transcriptBuffer
+        )
+    }
+
+    @Test("Successful cycle stores transcript in buffer")
+    func successfulCycleStoresTranscript() async {
+        let stt = MockSTTProvider(stubbedText: "Hello from buffer")
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        #expect(stored == "Hello from buffer")
+    }
+
+    @Test("Buffer holds trimmed transcript text")
+    func bufferHoldsTrimmedText() async {
+        let stt = MockSTTProvider(stubbedText: "  trimmed text  ")
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        #expect(stored == "trimmed text")
+    }
+
+    @Test("Injection failure leaves transcript in buffer for recovery")
+    func injectionFailurePreservesBuffer() async {
+        let stt = MockSTTProvider(stubbedText: "preserved text")
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let (pipeline, _, _, _, _, coordinator, buffer) = makePipeline(
+            sttProvider: stt, textInjector: injector)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        #expect(state == .injectionFailed)
+
+        let stored = await buffer.lastTranscript
+        #expect(stored == "preserved text")
+    }
+
+    @Test("Injection failure transitions coordinator to injectionFailed")
+    func injectionFailureTransitionsState() async {
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let (pipeline, _, _, _, _, coordinator, _) = makePipeline(textInjector: injector)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        #expect(state == .injectionFailed)
+    }
+
+    @Test("Successful injection returns to idle, not injectionFailed")
+    func successfulInjectionReturnsToIdle() async {
+        let stt = MockSTTProvider(stubbedText: "good text")
+        let (pipeline, _, _, _, _, coordinator, _) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        #expect(state == .idle)
+    }
+
+    @Test("Buffer updated across multiple cycles")
+    func bufferUpdatedAcrossCycles() async {
+        let stt = MockSTTProvider(stubbedText: "first")
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+        var stored = await buffer.lastTranscript
+        #expect(stored == "first")
+
+        stt.stubbedText = "second"
+        await pipeline.activate()
+        await pipeline.complete()
+        stored = await buffer.lastTranscript
+        #expect(stored == "second")
+    }
+
+    @Test("Empty transcription skips buffer store")
+    func emptyTranscriptionSkipsBuffer() async {
+        let stt = MockSTTProvider(stubbedText: "   ")
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        #expect(stored == nil)
+    }
+
+    @Test("STT failure does not store in buffer")
+    func sttFailureSkipsBuffer() async {
+        let stt = MockSTTProvider()
+        stt.stubbedError = STTError.transcriptionFailed(statusCode: 500, message: "fail")
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(sttProvider: stt)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        #expect(stored == nil)
+    }
+
+    @Test("Cancel does not store in buffer")
+    func cancelSkipsBuffer() async {
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline()
+
+        await pipeline.activate()
+        await pipeline.cancel()
+
+        let stored = await buffer.lastTranscript
+        #expect(stored == nil)
+    }
+
+    @Test("Full cycle after injection failure and reset works normally")
+    func cycleAfterFailureAndReset() async {
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let stt = MockSTTProvider(stubbedText: "first attempt")
+        let coordinator = RecordingCoordinator()
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(
+            sttProvider: stt, textInjector: injector, coordinator: coordinator)
+
+        // First cycle fails injection.
+        await pipeline.activate()
+        await pipeline.complete()
+        var state = await coordinator.state
+        #expect(state == .injectionFailed)
+
+        // User dismisses no-target state.
+        await coordinator.reset()
+        state = await coordinator.state
+        #expect(state == .idle)
+
+        // Second cycle succeeds.
+        injector.stubbedError = nil
+        stt.stubbedText = "second attempt"
+        await pipeline.activate()
+        await pipeline.complete()
+        state = await coordinator.state
+        #expect(state == .idle)
+
+        #expect(injector.injectionCount == 1)
+        let stored = await buffer.lastTranscript
+        #expect(stored == "second attempt")
+    }
+
+    @Test("Consume clears buffer after recovery paste")
+    func consumeClearsBuffer() async {
+        let stt = MockSTTProvider(stubbedText: "to be consumed")
+        let injector = MockTextInjector()
+        injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
+        let (pipeline, _, _, _, _, _, buffer) = makePipeline(
+            sttProvider: stt, textInjector: injector)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        // Simulate no-target recovery: consume the transcript.
+        let consumed = await buffer.consume()
+        #expect(consumed == "to be consumed")
+
+        // Buffer is now empty.
+        let remaining = await buffer.lastTranscript
+        #expect(remaining == nil)
     }
 }

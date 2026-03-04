@@ -15,6 +15,11 @@ import Foundation
 ///
 /// The pipeline holds captured context from the `activate()` call so it is
 /// available immediately when `complete()` runs.
+///
+/// After successful STT, the transcript is stored in a `TranscriptBuffer`
+/// before injection. If injection fails (no focused text field), the pipeline
+/// transitions to `.injectionFailed` so the HUD can show no-target recovery.
+/// The transcript remains in the buffer for re-paste via the special shortcut.
 public actor DictationPipeline: PipelineProviding {
 
     private let audioProvider: AudioProviding
@@ -22,6 +27,7 @@ public actor DictationPipeline: PipelineProviding {
     private let sttProvider: STTProviding
     private let textInjector: TextInjecting
     private let coordinator: RecordingCoordinator
+    private let transcriptBuffer: TranscriptBuffer?
 
     /// Minimum audio duration (in seconds) worth transcribing.
     private let minimumAudioDuration: TimeInterval = 0.1
@@ -37,13 +43,15 @@ public actor DictationPipeline: PipelineProviding {
         contextProvider: AppContextProviding,
         sttProvider: STTProviding,
         textInjector: TextInjecting,
-        coordinator: RecordingCoordinator
+        coordinator: RecordingCoordinator,
+        transcriptBuffer: TranscriptBuffer? = nil
     ) {
         self.audioProvider = audioProvider
         self.contextProvider = contextProvider
         self.sttProvider = sttProvider
         self.textInjector = textInjector
         self.coordinator = coordinator
+        self.transcriptBuffer = transcriptBuffer
     }
 
     // MARK: - PipelineProviding
@@ -91,8 +99,11 @@ public actor DictationPipeline: PipelineProviding {
         let stopped = await coordinator.stopRecording()
         guard stopped else { return }
 
-        let task = Task { [pendingContext, audioProvider, sttProvider, textInjector, coordinator,
-                           minimumAudioDuration] in
+        let task = Task {
+            [
+                pendingContext, audioProvider, sttProvider, textInjector, coordinator,
+                minimumAudioDuration, transcriptBuffer
+            ] in
             // Stop audio capture and retrieve the buffer.
             let audioBuffer: AudioBuffer
             do {
@@ -149,6 +160,10 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
+            // Store the transcript before injection so it survives injection
+            // failure and is available for no-target recovery or re-paste.
+            await transcriptBuffer?.store(trimmed)
+
             // Transition to injecting.
             let injecting = await coordinator.startInjecting()
             guard injecting else {
@@ -161,9 +176,13 @@ public actor DictationPipeline: PipelineProviding {
                 try await textInjector.inject(text: trimmed, into: context)
             } catch {
                 debugPrint("[Pipeline] Text injection failed: \(error)")
+                // Signal injection failure so the HUD shows no-target recovery.
+                // The transcript stays in the buffer for re-paste.
+                await coordinator.failInjection()
+                return
             }
 
-            // Return to idle.
+            // Successful injection — return to idle.
             await coordinator.finishInjecting()
         }
 
@@ -188,4 +207,3 @@ public actor DictationPipeline: PipelineProviding {
         await coordinator.reset()
     }
 }
-
