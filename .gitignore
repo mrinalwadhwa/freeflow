@@ -1,6 +1,9 @@
 # Scratch/research docs
 .scratch/
 
+# Temp test output (created by make test)
+.test_output
+
 # macOS
 .DS_Store
 *.swp

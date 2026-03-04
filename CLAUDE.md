@@ -22,6 +22,23 @@ In source code, README, CLAUDE.md, and commit messages:
 - do not mention planning docs, reference docs, or tracking docs.
 - do not reference phase numbers, track names, or internal project tracking.
 
+## Testing
+
+The project uses two test frameworks side by side:
+
+- **XCTest** — used by capture-track tests (RecordingCoordinatorTests, WAVEncoderTests,
+  DictationPipelineTests).
+- **Swift Testing** — used by context-track tests (ContextAssemblyTests, MockTests, etc.).
+
+`swift test` runs both in a single invocation, but its final summary line only counts Swift
+Testing tests. Always use `make test`, which parses the full output and prints a combined total
+from both frameworks. Verify the "Combined" line at the end to confirm all tests passed.
+
+```bash
+make test
+# ── Combined: 219 tests (77 XCTest + 142 Swift Testing), 0 failures ──
+```
+
 ## Interactive Commands
 
 Some git commands open an interactive pager that blocks terminal execution. Always pipe output
