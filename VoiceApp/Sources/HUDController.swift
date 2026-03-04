@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Foundation
 import VoiceKit
 
 /// Drive the HUD overlay window based on pipeline state and UI-local signals.
@@ -16,6 +17,7 @@ final class HUDController {
 
     private weak var coordinator: RecordingCoordinator?
     private weak var pipeline: DictationPipeline?
+    private var audioDeviceProvider: (any AudioDeviceProviding)?
 
     private var visualStateObservation: Task<Void, Never>?
     private var localEscapeMonitor: Any?
@@ -37,9 +39,22 @@ final class HUDController {
     // MARK: - Lifecycle
 
     /// Begin observing the coordinator and pipeline to drive the HUD.
-    func start(coordinator: RecordingCoordinator, pipeline: DictationPipeline? = nil) {
+    func start(
+        coordinator: RecordingCoordinator,
+        pipeline: DictationPipeline? = nil,
+        audioDeviceProvider: (any AudioDeviceProviding)? = nil
+    ) {
         self.coordinator = coordinator
         self.pipeline = pipeline
+        self.audioDeviceProvider = audioDeviceProvider
+
+        // Seed the view model with the current mic name.
+        if let provider = audioDeviceProvider {
+            Task {
+                let device = await provider.currentDevice()
+                self.viewModel.activeMicName = device?.name
+            }
+        }
 
         viewModel.observe(coordinator: coordinator)
         ensureWindow()
@@ -86,6 +101,18 @@ final class HUDController {
     }
 
     // MARK: - Pipeline actions
+
+    /// Notify the view model that the user switched microphones and refresh
+    /// the active mic name. Called from the menu bar after `selectDevice`.
+    func microphoneSwitched() {
+        viewModel.requestMicCallout()
+        if let provider = audioDeviceProvider {
+            Task {
+                let device = await provider.currentDevice()
+                self.viewModel.activeMicName = device?.name
+            }
+        }
+    }
 
     /// Cancel the current pipeline operation. Called from ✕ buttons and Escape.
     func cancelPipeline() {

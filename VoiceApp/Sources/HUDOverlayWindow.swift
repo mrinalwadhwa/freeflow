@@ -23,6 +23,9 @@ final class HUDOverlayWindow: NSPanel {
     private static let expandedWidth: CGFloat = 280
     private static let expandedHeight: CGFloat = 48
 
+    /// Extra height added when the mic callout tooltip is visible above the pill.
+    private static let micCalloutExtraHeight: CGFloat = 30
+
     init(viewModel: HUDViewModel) {
         self.viewModel = viewModel
         super.init(
@@ -142,21 +145,52 @@ final class HUDOverlayWindow: NSPanel {
     // MARK: - Helpers
 
     private func currentSize() -> NSSize {
+        let calloutExtra: CGFloat =
+            viewModel.micCalloutName != nil
+            ? Self.micCalloutExtraHeight : 0
+
         if viewModel.visualState.isExpanded {
-            return NSSize(width: Self.expandedWidth, height: Self.expandedHeight)
+            return NSSize(
+                width: Self.expandedWidth,
+                height: Self.expandedHeight + calloutExtra
+            )
         }
         return NSSize(width: Self.minimizedWidth, height: Self.minimizedHeight)
     }
 
     private func activeScreen() -> NSScreen {
-        // Use the screen containing the frontmost app window if available.
-        if let frontApp = NSWorkspace.shared.frontmostApplication,
-            let window = NSApp.windows.first(where: { _ in true }),
-            let screen = window.screen
-        {
-            _ = frontApp  // silence unused warning
-            return screen
+        // Find the screen containing the frontmost application's main window.
+        // CGWindowListCopyWindowInfo gives us the bounds of the frontmost app's
+        // windows so we can match them to an NSScreen.
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            let pid = frontApp.processIdentifier
+            let windowList =
+                CGWindowListCopyWindowInfo(
+                    [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+                ) as? [[CFString: Any]] ?? []
+
+            for entry in windowList {
+                guard
+                    let ownerPID = entry[kCGWindowOwnerPID] as? Int32,
+                    ownerPID == pid,
+                    let boundsDict = entry[kCGWindowBounds] as? [String: CGFloat],
+                    let x = boundsDict["X"],
+                    let y = boundsDict["Y"],
+                    let w = boundsDict["Width"],
+                    let h = boundsDict["Height"],
+                    w > 0, h > 0
+                else { continue }
+
+                let windowCenter = CGPoint(x: x + w / 2, y: y + h / 2)
+
+                for screen in NSScreen.screens {
+                    if screen.frame.contains(windowCenter) {
+                        return screen
+                    }
+                }
+            }
         }
+
         return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
     }
 }

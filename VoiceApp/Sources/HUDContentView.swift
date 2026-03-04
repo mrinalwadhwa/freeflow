@@ -13,9 +13,13 @@ struct HUDContentView: View {
     @ObservedObject var viewModel: HUDViewModel
 
     var body: some View {
-        pillContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.2), value: viewModel.visualState)
+        VStack(spacing: 6) {
+            micCalloutView
+            pillContent
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.visualState)
+        .animation(.easeInOut(duration: 0.25), value: viewModel.micCalloutName)
     }
 
     @ViewBuilder
@@ -198,6 +202,40 @@ struct HUDContentView: View {
     private var pillBorder: some View {
         Capsule()
             .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+    }
+
+    // MARK: - Mic callout
+
+    /// A small tooltip above the pill showing the active microphone name.
+    /// Visible on the first recording after launch and after mic switches.
+    @ViewBuilder
+    private var micCalloutView: some View {
+        if let micName = viewModel.micCalloutName {
+            HStack(spacing: 4) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.7))
+                Text(micName)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .onTapGesture {
+                viewModel.dismissMicCallout()
+            }
+        }
     }
 }
 

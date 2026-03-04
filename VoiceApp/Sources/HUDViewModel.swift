@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Foundation
 import SwiftUI
 import VoiceKit
 
@@ -19,6 +20,9 @@ final class HUDViewModel: ObservableObject {
 
     @Published private(set) var visualState: HUDVisualState = .minimized
     @Published private(set) var isHovering: Bool = false
+
+    /// The active microphone name to show in the callout, or nil when hidden.
+    @Published private(set) var micCalloutName: String?
 
     // MARK: - Action closures (set by HUDController)
 
@@ -46,6 +50,10 @@ final class HUDViewModel: ObservableObject {
     /// Whether this is the first recording since app launch (for mic callout).
     private(set) var isFirstRecording: Bool = true
 
+    /// Whether the mic callout should show on the next recording transition.
+    /// Set to true after a mic switch via the menu, reset after showing.
+    private(set) var showMicCalloutOnNextRecording: Bool = false
+
     // MARK: - Pipeline references
 
     private var pipelineState: RecordingState = .idle
@@ -55,10 +63,14 @@ final class HUDViewModel: ObservableObject {
     /// Duration before the slow-processing message appears.
     private let slowProcessingThreshold: TimeInterval
 
+    /// Duration the mic callout stays visible before auto-dismissing.
+    private let micCalloutDuration: TimeInterval
+
     private var slowProcessingTask: Task<Void, Never>?
     private var slowProcessingFired = false
 
     private var hoverGraceTask: Task<Void, Never>?
+    private var micCalloutTask: Task<Void, Never>?
 
     // MARK: - Observation
 
@@ -68,10 +80,12 @@ final class HUDViewModel: ObservableObject {
 
     init(
         shortcuts: ShortcutConfiguration = .default,
-        slowProcessingThreshold: TimeInterval = 3.0
+        slowProcessingThreshold: TimeInterval = 3.0,
+        micCalloutDuration: TimeInterval = 3.0
     ) {
         self.shortcuts = shortcuts
         self.slowProcessingThreshold = slowProcessingThreshold
+        self.micCalloutDuration = micCalloutDuration
     }
 
     // MARK: - Observation lifecycle
@@ -95,8 +109,11 @@ final class HUDViewModel: ObservableObject {
         slowProcessingTask = nil
         hoverGraceTask?.cancel()
         hoverGraceTask = nil
+        micCalloutTask?.cancel()
+        micCalloutTask = nil
         pipelineState = .idle
         slowProcessingFired = false
+        micCalloutName = nil
         visualState = .minimized
     }
 
@@ -167,10 +184,11 @@ final class HUDViewModel: ObservableObject {
             visualState = .minimized
 
         case .recording:
-            // Mark first-recording flag consumed after the first transition.
-            // The flag stays true during this recording; cleared on the next idle.
             if previous == .idle {
-                // isHandsFree was set by the caller before pipeline.activate().
+                // Show mic callout on first recording or after a mic switch.
+                if isFirstRecording || showMicCalloutOnNextRecording {
+                    showMicCallout()
+                }
             }
             recalculate()
 
@@ -235,17 +253,47 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
-    // MARK: - First recording tracking
+    // MARK: - Mic callout
 
-    /// Mark that the first recording has been shown. Call after the mic
-    /// callout is displayed.
-    func markFirstRecordingShown() {
+    /// The name of the active microphone. Set by the controller when a
+    /// device provider is available.
+    var activeMicName: String?
+
+    /// Mark that the user switched microphones, so the callout shows on the
+    /// next recording.
+    func requestMicCallout() {
+        showMicCalloutOnNextRecording = true
+    }
+
+    /// Show the mic callout tooltip and schedule auto-dismiss.
+    private func showMicCallout() {
+        guard let name = activeMicName, !name.isEmpty else { return }
+
         isFirstRecording = false
+        showMicCalloutOnNextRecording = false
+        micCalloutName = name
+
+        micCalloutTask?.cancel()
+        micCalloutTask = Task { [weak self, micCalloutDuration] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(micCalloutDuration * 1_000_000_000)
+            )
+            guard !Task.isCancelled else { return }
+            self?.micCalloutName = nil
+        }
+    }
+
+    /// Dismiss the mic callout immediately (e.g. when the user taps it).
+    func dismissMicCallout() {
+        micCalloutTask?.cancel()
+        micCalloutTask = nil
+        micCalloutName = nil
     }
 
     deinit {
         observationTask?.cancel()
         slowProcessingTask?.cancel()
         hoverGraceTask?.cancel()
+        micCalloutTask?.cancel()
     }
 }
