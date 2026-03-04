@@ -1,0 +1,49 @@
+# Scratch/research docs
+.scratch/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+
+# CocoaPods
+Pods/
+
+# Signing
+*.mobileprovision
+*.p12
+
+# Archives
+*.xcarchive
+
+# App bundles
+*.app
+*.ipa
+*.dmg
+
+# Python (for any tooling)
+__pycache__/
+*.pyc
+.venv/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
