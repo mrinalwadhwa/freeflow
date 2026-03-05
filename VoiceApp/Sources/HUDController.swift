@@ -28,7 +28,7 @@ final class HUDController {
 
     init(
         shortcuts: ShortcutConfiguration = .default,
-        slowProcessingThreshold: TimeInterval = 3.0
+        slowProcessingThreshold: TimeInterval = 5.0
     ) {
         self.viewModel = HUDViewModel(
             shortcuts: shortcuts,

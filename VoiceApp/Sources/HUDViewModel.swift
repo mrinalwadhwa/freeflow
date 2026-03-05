@@ -99,7 +99,7 @@ final class HUDViewModel: ObservableObject {
 
     init(
         shortcuts: ShortcutConfiguration = .default,
-        slowProcessingThreshold: TimeInterval = 3.0,
+        slowProcessingThreshold: TimeInterval = 5.0,
         micCalloutDuration: TimeInterval = 3.0
     ) {
         self.shortcuts = shortcuts

@@ -34,8 +34,8 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # Configuration
 # ---------------------------------------------------------------------------
 
-STT_MODEL = "whisper-1"
-COMPOSE_MODEL = "claude-sonnet-4-5"
+STT_MODEL = "gpt-4o-mini-transcribe"
+COMPOSE_MODEL = "claude-haiku-4-5"
 
 
 # ---------------------------------------------------------------------------
