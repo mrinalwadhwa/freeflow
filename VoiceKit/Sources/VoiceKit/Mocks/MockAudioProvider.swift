@@ -11,7 +11,8 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     private var _startCallCount = 0
     private var _stopCallCount = 0
 
-    /// The audio buffer returned by `stopRecording()`. Defaults to a short silent buffer.
+    /// The audio buffer returned by `stopRecording()`. Defaults to a short
+    /// non-silent buffer so the silence gate does not reject it.
     public var stubbedBuffer: AudioBuffer
 
     /// Number of times `startRecording()` has been called.
@@ -27,10 +28,47 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     public init(stubbedBuffer: AudioBuffer? = nil) {
         self.stubbedBuffer =
             stubbedBuffer
-            ?? AudioBuffer(
-                data: Data(repeating: 0, count: 32000),  // 1 second of silence at 16kHz 16-bit mono
-                duration: 1.0
-            )
+            ?? Self.makeNonSilentBuffer()
+    }
+
+    /// Build a 1-second WAV buffer with audible samples.
+    ///
+    /// Alternates ±3000 samples so the RMS (~0.09) is well above the
+    /// default silence threshold (0.005). Uses WAVEncoder to produce a
+    /// valid WAV file with a proper RIFF header.
+    private static func makeNonSilentBuffer() -> AudioBuffer {
+        let sampleRate = 16000
+        let channels = 1
+        let bitsPerSample = 16
+        let sampleCount = sampleRate  // 1 second
+
+        var pcmData = Data(capacity: sampleCount * (bitsPerSample / 8))
+        for i in 0..<sampleCount {
+            let sample: Int16 = i % 2 == 0 ? 3000 : -3000
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData,
+            sampleRate: sampleRate,
+            channels: channels,
+            bitsPerSample: bitsPerSample
+        )
+
+        let duration = WAVEncoder.duration(
+            byteCount: pcmData.count,
+            sampleRate: sampleRate,
+            channels: channels,
+            bitsPerSample: bitsPerSample
+        )
+
+        return AudioBuffer(
+            data: wavData,
+            duration: duration,
+            sampleRate: sampleRate,
+            channels: channels,
+            bitsPerSample: bitsPerSample
+        )
     }
 
     public var isRecording: Bool {

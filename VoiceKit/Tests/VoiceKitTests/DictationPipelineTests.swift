@@ -9,23 +9,25 @@ final class DictationPipelineTests: XCTestCase {
     private func makePipeline(
         audioProvider: MockAudioProvider = MockAudioProvider(),
         contextProvider: MockAppContextProvider = MockAppContextProvider(),
-        sttProvider: MockSTTProvider = MockSTTProvider(),
+        dictationProvider: MockDictationProvider = MockDictationProvider(),
         textInjector: MockTextInjector = MockTextInjector(),
         coordinator: RecordingCoordinator = RecordingCoordinator(),
         transcriptBuffer: TranscriptBuffer? = nil
     ) -> (
-        DictationPipeline, MockAudioProvider, MockAppContextProvider, MockSTTProvider,
+        DictationPipeline, MockAudioProvider, MockAppContextProvider, MockDictationProvider,
         MockTextInjector, RecordingCoordinator
     ) {
         let pipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: contextProvider,
-            sttProvider: sttProvider,
+            dictationProvider: dictationProvider,
             textInjector: textInjector,
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer
         )
-        return (pipeline, audioProvider, contextProvider, sttProvider, textInjector, coordinator)
+        return (
+            pipeline, audioProvider, contextProvider, dictationProvider, textInjector, coordinator
+        )
     }
 
     // MARK: - Initial state
@@ -83,31 +85,43 @@ final class DictationPipelineTests: XCTestCase {
         XCTAssertNotNil(injector.lastInjectedText)
     }
 
-    func testInjectedTextMatchesMockSTTOutput() async {
-        let stt = MockSTTProvider(stubbedText: "Hello from STT")
-        let (pipeline, _, _, _, injector, _) = makePipeline(sttProvider: stt)
+    func testInjectedTextMatchesDictationOutput() async {
+        let dictation = MockDictationProvider(stubbedText: "Hello from dictation")
+        let (pipeline, _, _, _, injector, _) = makePipeline(dictationProvider: dictation)
 
         await pipeline.activate()
         await pipeline.complete()
 
-        XCTAssertEqual(injector.lastInjectedText, "Hello from STT")
-        XCTAssertEqual(stt.transcribeCallCount, 1)
+        XCTAssertEqual(injector.lastInjectedText, "Hello from dictation")
+        XCTAssertEqual(dictation.dictateCallCount, 1)
     }
 
-    func testSTTReceivesAudioData() async {
+    func testDictationReceivesAudioData() async {
+        // Build a non-silent WAV buffer so the silence gate does not reject it.
+        var pcmData = Data(capacity: 64000)
+        for i in 0..<32000 {
+            let sample: Int16 = i % 2 == 0 ? 3000 : -3000
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
         let buffer = AudioBuffer(
-            data: Data(repeating: 0, count: 64000),
-            duration: 2.0
+            data: wavData,
+            duration: 2.0,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
         )
         let audio = MockAudioProvider(stubbedBuffer: buffer)
-        let stt = MockSTTProvider()
-        let (pipeline, _, _, _, injector, _) = makePipeline(audioProvider: audio, sttProvider: stt)
+        let dictation = MockDictationProvider()
+        let (pipeline, _, _, _, injector, _) = makePipeline(
+            audioProvider: audio, dictationProvider: dictation)
 
         await pipeline.activate()
         await pipeline.complete()
 
-        XCTAssertEqual(stt.transcribeCallCount, 1)
-        XCTAssertEqual(stt.lastReceivedAudio, buffer.data)
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+        XCTAssertEqual(dictation.lastReceivedAudio, buffer.data)
         XCTAssertEqual(injector.injectionCount, 1)
     }
 
@@ -126,6 +140,24 @@ final class DictationPipelineTests: XCTestCase {
         let injections = injector.injections
         XCTAssertEqual(injections.count, 1)
         XCTAssertEqual(injections.first?.context, stubbedContext)
+    }
+
+    func testDictationReceivesAppContext() async {
+        let stubbedContext = AppContext(
+            bundleID: "com.apple.mail",
+            appName: "Mail",
+            windowTitle: "New Message"
+        )
+        let contextProvider = MockAppContextProvider(context: stubbedContext)
+        let dictation = MockDictationProvider()
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            contextProvider: contextProvider, dictationProvider: dictation)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+        XCTAssertEqual(dictation.lastReceivedContext, stubbedContext)
     }
 
     // MARK: - State transitions during full cycle
@@ -286,19 +318,19 @@ final class DictationPipelineTests: XCTestCase {
 
     // MARK: - Empty audio buffer
 
-    func testEmptyAudioBufferSkipsSTTAndResetsToIdle() async {
+    func testEmptyAudioBufferSkipsDictationAndResetsToIdle() async {
         let audio = MockAudioProvider(stubbedBuffer: .empty)
-        let stt = MockSTTProvider()
+        let dictation = MockDictationProvider()
         let (pipeline, _, _, _, injector, coordinator) = makePipeline(
-            audioProvider: audio, sttProvider: stt)
+            audioProvider: audio, dictationProvider: dictation)
 
         await pipeline.activate()
         await pipeline.complete()
 
         let currentState = await coordinator.state
         XCTAssertEqual(currentState, .idle)
-        // Empty audio should skip STT entirely and not inject.
-        XCTAssertEqual(stt.transcribeCallCount, 0)
+        // Empty audio should skip dictation entirely and not inject.
+        XCTAssertEqual(dictation.dictateCallCount, 0)
         XCTAssertEqual(injector.injectionCount, 0)
     }
 
@@ -310,11 +342,11 @@ final class DictationPipelineTests: XCTestCase {
         let context = MockAppContextProvider()
         let injector = MockTextInjector()
         let coordinator = RecordingCoordinator()
-        let stt = MockSTTProvider()
+        let dictation = MockDictationProvider()
         let pipeline = DictationPipeline(
             audioProvider: audio,
             contextProvider: context,
-            sttProvider: stt,
+            dictationProvider: dictation,
             textInjector: injector,
             coordinator: coordinator
         )
@@ -376,9 +408,9 @@ final class DictationPipelineTests: XCTestCase {
 
     func testSuccessfulCycleStoresTranscriptInBuffer() async {
         let buffer = TranscriptBuffer()
-        let stt = MockSTTProvider(stubbedText: "Hello from buffer")
+        let dictation = MockDictationProvider(stubbedText: "Hello from buffer")
         let (pipeline, _, _, _, _, _) = makePipeline(
-            sttProvider: stt, transcriptBuffer: buffer)
+            dictationProvider: dictation, transcriptBuffer: buffer)
 
         await pipeline.activate()
         await pipeline.complete()
@@ -389,47 +421,47 @@ final class DictationPipelineTests: XCTestCase {
 
     func testTranscriptBufferUpdatedOnEachCycle() async {
         let buffer = TranscriptBuffer()
-        let stt = MockSTTProvider(stubbedText: "first")
+        let dictation = MockDictationProvider(stubbedText: "first")
         let (pipeline, _, _, _, _, _) = makePipeline(
-            sttProvider: stt, transcriptBuffer: buffer)
+            dictationProvider: dictation, transcriptBuffer: buffer)
 
         await pipeline.activate()
         await pipeline.complete()
         var stored = await buffer.lastTranscript
         XCTAssertEqual(stored, "first")
 
-        stt.stubbedText = "second"
+        dictation.stubbedText = "second"
         await pipeline.activate()
         await pipeline.complete()
         stored = await buffer.lastTranscript
         XCTAssertEqual(stored, "second")
     }
 
-    func testEmptyTranscriptionDoesNotStoreInBuffer() async {
+    func testEmptyDictationResultDoesNotStoreInBuffer() async {
         let buffer = TranscriptBuffer()
-        let stt = MockSTTProvider(stubbedText: "   ")
+        let dictation = MockDictationProvider(stubbedText: "   ")
         let (pipeline, _, _, _, _, _) = makePipeline(
-            sttProvider: stt, transcriptBuffer: buffer)
+            dictationProvider: dictation, transcriptBuffer: buffer)
 
         await pipeline.activate()
         await pipeline.complete()
 
         let stored = await buffer.lastTranscript
-        XCTAssertNil(stored, "Empty transcription should not be stored in buffer")
+        XCTAssertNil(stored, "Empty dictation result should not be stored in buffer")
     }
 
-    func testSTTFailureDoesNotStoreInBuffer() async {
+    func testDictationFailureDoesNotStoreInBuffer() async {
         let buffer = TranscriptBuffer()
-        let stt = MockSTTProvider()
-        stt.stubbedError = STTError.transcriptionFailed(statusCode: 500, message: "fail")
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.requestFailed(statusCode: 500, message: "fail")
         let (pipeline, _, _, _, _, _) = makePipeline(
-            sttProvider: stt, transcriptBuffer: buffer)
+            dictationProvider: dictation, transcriptBuffer: buffer)
 
         await pipeline.activate()
         await pipeline.complete()
 
         let stored = await buffer.lastTranscript
-        XCTAssertNil(stored, "STT failure should not store anything in buffer")
+        XCTAssertNil(stored, "Dictation failure should not store anything in buffer")
     }
 
     func testPipelineWorksWithoutTranscriptBuffer() async {
@@ -450,9 +482,9 @@ final class DictationPipelineTests: XCTestCase {
         let buffer = TranscriptBuffer()
         let injector = MockTextInjector()
         injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
-        let stt = MockSTTProvider(stubbedText: "dictated text")
+        let dictation = MockDictationProvider(stubbedText: "dictated text")
         let (pipeline, _, _, _, _, coordinator) = makePipeline(
-            sttProvider: stt, textInjector: injector, transcriptBuffer: buffer)
+            dictationProvider: dictation, textInjector: injector, transcriptBuffer: buffer)
 
         await pipeline.activate()
         await pipeline.complete()
@@ -467,9 +499,9 @@ final class DictationPipelineTests: XCTestCase {
         let buffer = TranscriptBuffer()
         let injector = MockTextInjector()
         injector.stubbedError = AppTextInjector.InjectionError.noFocusedElement
-        let stt = MockSTTProvider(stubbedText: "preserved text")
+        let dictation = MockDictationProvider(stubbedText: "preserved text")
         let (pipeline, _, _, _, _, _) = makePipeline(
-            sttProvider: stt, textInjector: injector, transcriptBuffer: buffer)
+            dictationProvider: dictation, textInjector: injector, transcriptBuffer: buffer)
 
         await pipeline.activate()
         await pipeline.complete()
@@ -537,5 +569,128 @@ final class DictationPipelineTests: XCTestCase {
         state = await coordinator.state
         XCTAssertEqual(state, .idle)
         XCTAssertEqual(injector.injectionCount, 1)
+    }
+
+    // MARK: - Silence gate
+
+    func testSilentAudioSkipsDictationAndResetsToIdle() async {
+        // Build a WAV buffer with all-zero (silent) samples.
+        let silentPCM = Data(repeating: 0, count: 32000)
+        let silentWAV = WAVEncoder.encode(
+            pcmData: silentPCM, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let silentBuffer = AudioBuffer(
+            data: silentWAV,
+            duration: 1.0,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: silentBuffer)
+        let dictation = MockDictationProvider()
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(
+            audioProvider: audio, dictationProvider: dictation)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Silent audio should skip dictation entirely.
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+        XCTAssertEqual(injector.injectionCount, 0)
+    }
+
+    func testNonSilentAudioProceedsToDictation() async {
+        // The default MockAudioProvider now produces non-silent audio.
+        let dictation = MockDictationProvider(stubbedText: "Hello")
+        let (pipeline, _, _, _, injector, coordinator) = makePipeline(
+            dictationProvider: dictation)
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+        XCTAssertEqual(injector.injectionCount, 1)
+    }
+
+    func testCustomSilenceThresholdRejectsQuietAudio() async {
+        // Build a buffer with low-amplitude samples (±100 → RMS ≈ 0.003).
+        var pcmData = Data(capacity: 3200)
+        for i in 0..<1600 {
+            let sample: Int16 = i % 2 == 0 ? 100 : -100
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let quietBuffer = AudioBuffer(
+            data: wavData,
+            duration: 0.1,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: quietBuffer)
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        // Use a high threshold so the quiet audio is rejected.
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.01
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testCustomSilenceThresholdAllowsQuietAudio() async {
+        // Same quiet buffer as above, but with a very low threshold.
+        var pcmData = Data(capacity: 3200)
+        for i in 0..<1600 {
+            let sample: Int16 = i % 2 == 0 ? 100 : -100
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let quietBuffer = AudioBuffer(
+            data: wavData,
+            duration: 0.1,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: quietBuffer)
+        let dictation = MockDictationProvider(stubbedText: "whisper")
+        let coordinator = RecordingCoordinator()
+
+        // Use a very low threshold so the quiet audio passes through.
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.001
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(dictation.dictateCallCount, 1)
     }
 }

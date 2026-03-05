@@ -1,6 +1,6 @@
 import Foundation
 
-/// Captured audio data ready for speech-to-text processing.
+/// Captured audio data ready for dictation.
 public struct AudioBuffer: Sendable, Equatable {
     /// WAV-encoded PCM audio data.
     public let data: Data

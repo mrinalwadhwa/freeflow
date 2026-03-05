@@ -1,16 +1,16 @@
 import Foundation
 
-/// Errors that can occur during speech-to-text transcription.
-public enum STTError: Error, Sendable, Equatable {
+/// Errors that can occur during dictation.
+public enum DictationError: Error, Sendable, Equatable {
 
-    /// The audio data is empty or too short to transcribe.
+    /// The audio data is empty or too short to process.
     case emptyAudio
 
     /// The server rejected the request due to invalid credentials.
     case authenticationFailed
 
     /// The server returned an error with the given status code and message.
-    case transcriptionFailed(statusCode: Int, message: String)
+    case requestFailed(statusCode: Int, message: String)
 
     /// The server response could not be parsed.
     case invalidResponse

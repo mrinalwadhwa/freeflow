@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
-            sttProvider: VoiceServiceSTTProvider(),
+            dictationProvider: VoiceServiceDictationProvider(),
             textInjector: textInjector,
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer

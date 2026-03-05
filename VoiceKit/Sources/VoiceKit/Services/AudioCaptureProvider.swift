@@ -12,7 +12,7 @@ import Foundation
 /// Requires microphone permission before calling `startRecording()`.
 public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
-    /// Target audio format for STT: 16kHz, mono, 16-bit integer PCM.
+    /// Target audio format for dictation: 16kHz, mono, 16-bit integer PCM.
     static let targetSampleRate: Double = 16000
     static let targetChannels: AVAudioChannelCount = 1
     static let targetBitsPerSample = 16

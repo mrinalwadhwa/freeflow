@@ -3,7 +3,7 @@ import Foundation
 /// Read service connection settings from environment variables.
 ///
 /// Centralizes URL and API key resolution so that all service clients
-/// (STT, future LLM, TTS) use the same configuration source.
+/// use the same configuration source.
 public enum ServiceConfig {
 
     /// Base URL of the VoiceService Autonomy app.

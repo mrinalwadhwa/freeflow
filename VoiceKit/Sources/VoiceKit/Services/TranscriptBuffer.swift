@@ -2,7 +2,7 @@ import Foundation
 
 /// Hold the most recent transcript for no-target recovery and re-paste.
 ///
-/// The pipeline writes to the buffer after STT completes. Consumers:
+/// The pipeline writes to the buffer after dictation completes. Consumers:
 /// - No-target recovery: inject the buffered transcript via a special shortcut.
 /// - Menu bar "Paste last transcript" item.
 ///

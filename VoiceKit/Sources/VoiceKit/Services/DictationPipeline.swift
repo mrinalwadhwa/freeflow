@@ -3,20 +3,21 @@ import Foundation
 /// Orchestrate the full dictation flow from hotkey press to text injection.
 ///
 /// `DictationPipeline` implements `PipelineProviding` by coordinating an
-/// `AudioProviding`, `AppContextProviding`, `STTProviding`, and
+/// `AudioProviding`, `AppContextProviding`, `DictationProviding`, and
 /// `TextInjecting` service. It drives the `RecordingCoordinator` state
 /// machine through each phase:
 ///
 ///   1. `activate()` — transition to `.recording`, start audio capture,
 ///      begin reading app context in parallel.
 ///   2. `complete()` — transition to `.processing`, stop audio capture,
-///      await context, transcribe audio via STT, inject text, return to `.idle`.
+///      await context, send audio + context to the dictation service,
+///      inject text, return to `.idle`.
 ///   3. `cancel()` — abort any in-progress pipeline run and reset to `.idle`.
 ///
 /// The pipeline holds captured context from the `activate()` call so it is
 /// available immediately when `complete()` runs.
 ///
-/// After successful STT, the transcript is stored in a `TranscriptBuffer`
+/// After successful dictation, the final text is stored in a `TranscriptBuffer`
 /// before injection. If injection fails (no focused text field), the pipeline
 /// transitions to `.injectionFailed` so the HUD can show no-target recovery.
 /// The transcript remains in the buffer for re-paste via the special shortcut.
@@ -24,13 +25,20 @@ public actor DictationPipeline: PipelineProviding {
 
     private let audioProvider: AudioProviding
     private let contextProvider: AppContextProviding
-    private let sttProvider: STTProviding
+    private let dictationProvider: DictationProviding
     private let textInjector: TextInjecting
     private let coordinator: RecordingCoordinator
     private let transcriptBuffer: TranscriptBuffer?
 
-    /// Minimum audio duration (in seconds) worth transcribing.
+    /// Minimum audio duration (in seconds) worth sending to the server.
     private let minimumAudioDuration: TimeInterval = 0.1
+
+    /// RMS level at or below which audio is considered silent.
+    /// On 16-bit PCM normalized to 0–1, ambient silence produces
+    /// RMS around 0.0005–0.001 and quiet speech around 0.002–0.01.
+    /// A threshold of 0.001 rejects near-silence while allowing
+    /// even quiet speech through.
+    private let silenceThreshold: Float
 
     /// Context captured concurrently during the recording phase.
     private var pendingContext: Task<AppContext, Never>?
@@ -41,17 +49,19 @@ public actor DictationPipeline: PipelineProviding {
     public init(
         audioProvider: AudioProviding,
         contextProvider: AppContextProviding,
-        sttProvider: STTProviding,
+        dictationProvider: DictationProviding,
         textInjector: TextInjecting,
         coordinator: RecordingCoordinator,
-        transcriptBuffer: TranscriptBuffer? = nil
+        transcriptBuffer: TranscriptBuffer? = nil,
+        silenceThreshold: Float = 0.001
     ) {
         self.audioProvider = audioProvider
         self.contextProvider = contextProvider
-        self.sttProvider = sttProvider
+        self.dictationProvider = dictationProvider
         self.textInjector = textInjector
         self.coordinator = coordinator
         self.transcriptBuffer = transcriptBuffer
+        self.silenceThreshold = silenceThreshold
     }
 
     // MARK: - PipelineProviding
@@ -101,8 +111,8 @@ public actor DictationPipeline: PipelineProviding {
 
         let task = Task {
             [
-                pendingContext, audioProvider, sttProvider, textInjector, coordinator,
-                minimumAudioDuration, transcriptBuffer
+                pendingContext, audioProvider, dictationProvider, textInjector,
+                coordinator, minimumAudioDuration, silenceThreshold, transcriptBuffer
             ] in
             // Stop audio capture and retrieve the buffer.
             let audioBuffer: AudioBuffer
@@ -114,9 +124,20 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
-            // Skip transcription for empty or very short audio.
+            // Skip empty or very short audio.
             guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
-                debugPrint("[Pipeline] Audio too short (\(audioBuffer.duration)s), skipping STT")
+                debugPrint(
+                    "[Pipeline] Audio too short (\(audioBuffer.duration)s), skipping dictation")
+                await coordinator.reset()
+                return
+            }
+
+            // Reject silent or noise-only audio before sending to the server.
+            if AudioLevelAnalyzer.isSilent(audioBuffer, threshold: silenceThreshold) {
+                let rms = AudioLevelAnalyzer.rmsLevel(of: audioBuffer)
+                debugPrint(
+                    "[Pipeline] Audio below silence threshold "
+                        + "(rms: \(rms), threshold: \(silenceThreshold)), skipping dictation")
                 await coordinator.reset()
                 return
             }
@@ -137,20 +158,21 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
-            // Transcribe audio via STT service.
-            let transcribedText: String
+            // Send audio + context to the dictation service.
+            let dictatedText: String
             do {
-                transcribedText = try await sttProvider.transcribe(audio: audioBuffer.data)
+                dictatedText = try await dictationProvider.dictate(
+                    audio: audioBuffer.data, context: context)
             } catch {
-                debugPrint("[Pipeline] STT failed: \(error)")
+                debugPrint("[Pipeline] Dictation failed: \(error)")
                 await coordinator.reset()
                 return
             }
 
-            // Skip injection for empty or whitespace-only transcriptions.
-            let trimmed = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                debugPrint("[Pipeline] Empty transcription, skipping injection")
+            // Skip injection for empty or whitespace-only text.
+            let finalText = dictatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !finalText.isEmpty else {
+                debugPrint("[Pipeline] Empty dictation result, skipping injection")
                 await coordinator.reset()
                 return
             }
@@ -162,7 +184,7 @@ public actor DictationPipeline: PipelineProviding {
 
             // Store the transcript before injection so it survives injection
             // failure and is available for no-target recovery or re-paste.
-            await transcriptBuffer?.store(trimmed)
+            await transcriptBuffer?.store(finalText)
 
             // Transition to injecting.
             let injecting = await coordinator.startInjecting()
@@ -171,9 +193,9 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
-            // Inject the transcribed text.
+            // Inject the composed text.
             do {
-                try await textInjector.inject(text: trimmed, into: context)
+                try await textInjector.inject(text: finalText, into: context)
             } catch {
                 debugPrint("[Pipeline] Text injection failed: \(error)")
                 // Signal injection failure so the HUD shows no-target recovery.

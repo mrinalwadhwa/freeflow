@@ -3,7 +3,7 @@ import Foundation
 /// Encode raw PCM audio samples into WAV format.
 ///
 /// Produces a complete WAV file (RIFF header + raw PCM data) suitable
-/// for speech-to-text APIs that accept WAV input.
+/// for APIs that accept WAV input.
 enum WAVEncoder {
 
     /// Encode raw PCM data into a WAV file.
