@@ -44,6 +44,8 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
         }
     }
 
+    public var audioLevelStream: AsyncStream<Float>? { nil }
+
     public func stopRecording() async throws -> AudioBuffer {
         let buffer = lock.withLock { () -> AudioBuffer in
             _isRecording = false

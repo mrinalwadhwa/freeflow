@@ -45,10 +45,16 @@ enum HUDVisualState: Equatable {
 
     /// Whether the pill should show at its expanded width.
     ///
-    /// Minimized uses a compact capsule; all other states expand the pill
-    /// to show content (hint text, waveform, buttons, or messages).
+    /// Minimized and ready use the compact capsule (ready adds a tooltip
+    /// above it). All other states expand the pill to show content
+    /// (waveform, buttons, or messages).
     var isExpanded: Bool {
-        self != .minimized
+        switch self {
+        case .minimized, .ready:
+            return false
+        case .listeningHeld, .listeningHandsFree, .processing, .processingSlow, .noTarget:
+            return true
+        }
     }
 
     /// Whether waveform dots should animate in this state.

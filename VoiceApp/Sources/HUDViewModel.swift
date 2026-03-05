@@ -4,6 +4,10 @@ import Foundation
 import SwiftUI
 import VoiceKit
 
+/// Smoothing factor for audio level metering. Higher values = more responsive,
+/// lower values = smoother. Range 0.0 (frozen) to 1.0 (no smoothing).
+private let audioLevelSmoothing: Float = 0.6
+
 /// Derive `HUDVisualState` from pipeline state and UI-local signals.
 ///
 /// The view model observes `RecordingCoordinator.stateStream` and combines it
@@ -20,6 +24,10 @@ final class HUDViewModel: ObservableObject {
 
     @Published private(set) var visualState: HUDVisualState = .minimized
     @Published private(set) var isHovering: Bool = false
+
+    /// Current audio input level (0.0 to 1.0) for driving the waveform bars.
+    /// Smoothed to avoid jittery animation. Reset to 0 when not recording.
+    @Published private(set) var audioLevel: Float = 0
 
     /// The active microphone name to show in the callout, or nil when hidden.
     @Published private(set) var micCalloutName: String?
@@ -58,6 +66,12 @@ final class HUDViewModel: ObservableObject {
 
     private var pipelineState: RecordingState = .idle
 
+    // MARK: - Audio level
+
+    /// The audio provider whose `audioLevelStream` we observe while recording.
+    private var audioProvider: AudioProviding?
+    private var audioLevelTask: Task<Void, Never>?
+
     // MARK: - Timers
 
     /// Duration before the slow-processing message appears.
@@ -75,6 +89,11 @@ final class HUDViewModel: ObservableObject {
     // MARK: - Observation
 
     private var observationTask: Task<Void, Never>?
+
+    /// Set the audio provider so we can observe its level stream during recording.
+    func setAudioProvider(_ provider: AudioProviding?) {
+        self.audioProvider = provider
+    }
 
     // MARK: - Init
 
@@ -111,6 +130,7 @@ final class HUDViewModel: ObservableObject {
         hoverGraceTask = nil
         micCalloutTask?.cancel()
         micCalloutTask = nil
+        stopAudioLevelObservation()
         pipelineState = .idle
         slowProcessingFired = false
         micCalloutName = nil
@@ -120,11 +140,15 @@ final class HUDViewModel: ObservableObject {
     // MARK: - UI-local inputs
 
     /// Called when the mouse enters the HUD area.
+    /// A short delay prevents the tooltip from flashing on casual mouse movement.
     func mouseEntered() {
         hoverGraceTask?.cancel()
-        hoverGraceTask = nil
-        isHovering = true
-        recalculate()
+        hoverGraceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)  // 0.6s
+            guard !Task.isCancelled else { return }
+            self?.isHovering = true
+            self?.recalculate()
+        }
     }
 
     /// Called when the mouse exits the HUD area.
@@ -181,6 +205,7 @@ final class HUDViewModel: ObservableObject {
         switch state {
         case .idle:
             // Successful injection or cancellation — collapse to minimized.
+            stopAudioLevelObservation()
             visualState = .minimized
 
         case .recording:
@@ -189,10 +214,12 @@ final class HUDViewModel: ObservableObject {
                 if isFirstRecording || showMicCalloutOnNextRecording {
                     showMicCallout()
                 }
+                startAudioLevelObservation()
             }
             recalculate()
 
         case .processing:
+            stopAudioLevelObservation()
             startSlowProcessingTimer()
             recalculate()
 
@@ -290,10 +317,36 @@ final class HUDViewModel: ObservableObject {
         micCalloutName = nil
     }
 
+    // MARK: - Audio level observation
+
+    private func startAudioLevelObservation() {
+        audioLevelTask?.cancel()
+        audioLevel = 0
+        guard let stream = audioProvider?.audioLevelStream else { return }
+        audioLevelTask = Task { [weak self] in
+            for await level in stream {
+                guard !Task.isCancelled else { break }
+                guard let self else { break }
+                // Exponential smoothing to avoid jitter.
+                let smoothed =
+                    audioLevelSmoothing * level
+                    + (1.0 - audioLevelSmoothing) * self.audioLevel
+                self.audioLevel = smoothed
+            }
+        }
+    }
+
+    private func stopAudioLevelObservation() {
+        audioLevelTask?.cancel()
+        audioLevelTask = nil
+        audioLevel = 0
+    }
+
     deinit {
         observationTask?.cancel()
         slowProcessingTask?.cancel()
         hoverGraceTask?.cancel()
         micCalloutTask?.cancel()
+        audioLevelTask?.cancel()
     }
 }

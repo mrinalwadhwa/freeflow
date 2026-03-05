@@ -19,4 +19,16 @@ public protocol AudioProviding: Sendable {
 
     /// Whether audio is currently being captured.
     var isRecording: Bool { get }
+
+    /// A stream of RMS audio levels (0.0 to 1.0) emitted while recording.
+    ///
+    /// Implementations that support live level metering return a non-nil
+    /// stream. The stream yields values at roughly the audio tap rate
+    /// (~10-15 per second). The stream finishes when recording stops.
+    var audioLevelStream: AsyncStream<Float>? { get }
+}
+
+extension AudioProviding {
+    /// Default implementation returns nil (no live level metering).
+    public var audioLevelStream: AsyncStream<Float>? { nil }
 }

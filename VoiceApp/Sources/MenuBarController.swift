@@ -296,43 +296,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - Icon mapping
 
     private func applyIcon(for state: RecordingState) {
+        // Static waveform icon for all states. The HUD overlay communicates
+        // recording/processing state; the menu bar icon stays simple.
         guard let button = statusItem?.button else { return }
-
-        let symbolName: String
-        let accessibilityLabel: String
-
-        switch state {
-        case .idle:
-            symbolName = "waveform"
-            accessibilityLabel = "Voice — Idle"
-        case .recording:
-            symbolName = "record.circle"
-            accessibilityLabel = "Voice — Recording"
-        case .processing:
-            symbolName = "ellipsis.circle"
-            accessibilityLabel = "Voice — Processing"
-        case .injecting:
-            symbolName = "text.cursor"
-            accessibilityLabel = "Voice — Injecting"
-        case .injectionFailed:
-            symbolName = "exclamationmark.triangle"
-            accessibilityLabel = "Voice — No Target"
-        }
-
-        let image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: accessibilityLabel
+        button.image = NSImage(
+            systemSymbolName: "waveform",
+            accessibilityDescription: "Voice"
         )
-
-        // Tint the recording icon red so it stands out.
-        if state == .recording {
-            let config = NSImage.SymbolConfiguration(
-                paletteColors: [.systemRed]
-            )
-            button.image = image?.withSymbolConfiguration(config)
-        } else {
-            button.image = image
-        }
     }
 
     deinit {

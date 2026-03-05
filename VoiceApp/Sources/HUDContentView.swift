@@ -3,205 +3,290 @@ import VoiceKit
 
 /// The pill-shaped HUD overlay rendered with SwiftUI.
 ///
-/// Displays different content depending on the current `HUDVisualState`:
-/// minimized capsule, ready hint, listening waveform (held or hands-free),
-/// processing indicator, or no-target recovery message. All state
-/// communication uses animation rather than text labels, except for
-/// instructional hints (Ready) and error recovery (No Target).
+/// Uses a single morphing pill anchored at the bottom of a ZStack. The pill
+/// continuously animates its width, height, fill, and border between states.
+/// Content layers cross-fade on top with opacity transitions. The tooltip
+/// and mic callout float above the pill via offset, avoiding VStack layout
+/// shifts that cause downward expansion.
+///
+/// The parent `HUDOverlayWindow` uses a fixed frame that never resizes or
+/// moves during state transitions. All visual size changes are handled here
+/// with SwiftUI animations, eliminating the AppKit/SwiftUI animation
+/// conflict that caused content to "fly" during transitions.
 struct HUDContentView: View {
 
     @ObservedObject var viewModel: HUDViewModel
 
-    var body: some View {
-        VStack(spacing: 6) {
-            micCalloutView
-            pillContent
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.visualState)
-        .animation(.easeInOut(duration: 0.25), value: viewModel.micCalloutName)
-    }
+    // MARK: - Dimensions per state
 
-    @ViewBuilder
-    private var pillContent: some View {
+    private var pillWidth: CGFloat {
         switch viewModel.visualState {
         case .minimized:
-            minimizedView
+            return 46
         case .ready:
-            readyView
+            return 80
         case .listeningHeld:
-            listeningHeldView
+            return 80
         case .listeningHandsFree:
-            listeningHandsFreeView
+            return 140
         case .processing:
-            processingView
-        case .processingSlow:
-            processingSlowView
-        case .noTarget:
-            noTargetView
+            return 80
+        case .processingSlow, .noTarget:
+            return 180
         }
     }
 
-    // MARK: - Minimized
-
-    /// Tiny capsule outline — the app is alive and idle.
-    private var minimizedView: some View {
-        Capsule()
-            .strokeBorder(Color.cyan, lineWidth: 2)
-            .frame(width: 46, height: 8)
+    private var pillHeight: CGFloat {
+        switch viewModel.visualState {
+        case .minimized:
+            return 8
+        case .ready:
+            return 10
+        case .listeningHeld, .listeningHandsFree, .processing,
+            .processingSlow, .noTarget:
+            return 32
+        }
     }
 
-    // MARK: - Ready
+    private var pillFillOpacity: Double {
+        switch viewModel.visualState {
+        case .minimized:
+            return 0.3
+        case .ready, .listeningHeld, .listeningHandsFree, .processing,
+            .processingSlow, .noTarget:
+            return 0.5
+        }
+    }
 
-    /// Expanded pill with hotkey hint on hover.
-    private var readyView: some View {
+    private var pillBorderOpacity: Double {
+        switch viewModel.visualState {
+        case .minimized:
+            return 0.45
+        case .ready, .listeningHeld, .listeningHandsFree, .processing,
+            .processingSlow, .noTarget:
+            return 0.7
+        }
+    }
+
+    private var pillBorderWidth: CGFloat {
+        return 2
+    }
+
+    /// Whether the pill is in a full active state (not minimized/ready).
+    private var isActive: Bool {
+        switch viewModel.visualState {
+        case .minimized, .ready:
+            return false
+        case .listeningHeld, .listeningHandsFree, .processing,
+            .processingSlow, .noTarget:
+            return true
+        }
+    }
+
+    // MARK: - Body
+
+    /// The pill is the sole layout participant, bottom-anchored in the
+    /// window frame. The tooltip and mic callout are overlays that float
+    /// above the pill without affecting its position. The overlay uses
+    /// `.alignmentGuide(.bottom)` to place its bottom edge at the pill's
+    /// top edge, then a negative Y offset adds the gap.
+    var body: some View {
+        morphingPill
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 6) {
+                    micCalloutView
+
+                    if viewModel.visualState == .ready {
+                        readyHintTooltip
+                            .transition(.opacity)
+                    }
+                }
+                .fixedSize()
+                // The overlay's bottom is aligned with the outer frame's
+                // bottom. Shift it up by the pill height + 12px gap so
+                // the tooltip sits above the pill.
+                .offset(y: -(pillHeight + 12))
+            }
+            .animation(
+                .spring(response: 0.3, dampingFraction: 0.82, blendDuration: 0),
+                value: viewModel.visualState
+            )
+            .animation(.easeInOut(duration: 0.25), value: viewModel.micCalloutName)
+    }
+
+    // MARK: - Morphing pill
+
+    /// A single pill that morphs its size, fill, and border between all
+    /// states. Anchored at the bottom of the ZStack so it always grows
+    /// upward.
+    private var morphingPill: some View {
+        ZStack {
+            // Background: solid black fill for all states.
+            Capsule()
+                .fill(Color.black.opacity(pillFillOpacity))
+
+            // Border.
+            Capsule()
+                .strokeBorder(
+                    Color.white.opacity(pillBorderOpacity),
+                    lineWidth: pillBorderWidth
+                )
+
+            // Active state content cross-fades inside the pill.
+            if isActive {
+                activeContent
+            }
+        }
+        .frame(width: pillWidth, height: pillHeight)
+        .clipShape(Capsule())
+    }
+
+    // MARK: - Active content (inside the pill)
+
+    @ViewBuilder
+    private var activeContent: some View {
+        switch viewModel.visualState {
+        case .minimized, .ready:
+            EmptyView()
+        case .listeningHeld:
+            listeningHeldContent
+                .transition(.opacity)
+        case .listeningHandsFree:
+            listeningHandsFreeContent
+                .transition(.opacity)
+        case .processing:
+            processingContent
+                .transition(.opacity)
+        case .processingSlow:
+            processingSlowContent
+                .transition(.opacity)
+        case .noTarget:
+            noTargetContent
+                .transition(.opacity)
+        }
+    }
+
+    // MARK: - Ready hint tooltip
+
+    /// A floating label above the capsule showing the hotkey hint.
+    private var readyHintTooltip: some View {
         HStack(spacing: 4) {
-            Text(readyHintPrefix)
+            Text("Click or hold")
                 .foregroundColor(.white.opacity(0.8))
             Text(viewModel.shortcuts.holdToRecordKeyName)
-                .foregroundColor(.purple.opacity(0.9))
+                .foregroundColor(.orange.opacity(0.85))
                 .fontWeight(.semibold)
-            Text(readyHintSuffix)
+            Text("to start dictating")
                 .foregroundColor(.white.opacity(0.8))
         }
         .font(.system(size: 13, weight: .medium, design: .rounded))
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(pillBackground)
-        .overlay(pillBorder)
-        .transition(.opacity)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.5))
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.7), lineWidth: 2)
+        )
     }
-
-    private var readyHintPrefix: String { "Hold" }
-    private var readyHintSuffix: String { "to dictate" }
 
     // MARK: - Listening (held)
 
-    /// Push-to-talk: waveform dots, no buttons.
-    private var listeningHeldView: some View {
-        WaveformDotsView()
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .background(pillBackground)
-            .overlay(pillBorder)
-            .transition(.opacity)
+    /// Push-to-talk: waveform bars, no buttons.
+    private var listeningHeldContent: some View {
+        WaveformBarsView(audioLevel: viewModel.audioLevel)
+            .padding(.horizontal, 16)
     }
 
     // MARK: - Listening (hands-free)
 
-    /// Toggle mode: ✕ cancel, waveform dots, ■ stop.
-    private var listeningHandsFreeView: some View {
-        HStack(spacing: 16) {
+    /// Toggle mode: cancel, waveform bars, stop.
+    private var listeningHandsFreeContent: some View {
+        HStack(spacing: 10) {
             Button(action: { viewModel.onCancel?() }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 22, height: 22)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel recording")
 
-            WaveformDotsView()
+            WaveformBarsView(audioLevel: viewModel.audioLevel)
                 .frame(maxWidth: .infinity)
 
             Button(action: { viewModel.onStop?() }) {
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: 2)
                     .fill(Color.red.opacity(0.85))
-                    .frame(width: 14, height: 14)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 10, height: 10)
+                    .frame(width: 22, height: 22)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Stop recording")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(pillBackground)
-        .overlay(pillBorder)
-        .transition(.opacity)
+        .padding(.horizontal, 12)
     }
 
     // MARK: - Processing (fast path)
 
     /// STT in flight. Animated indicator, no cancel affordance.
-    private var processingView: some View {
-        ProcessingDotsView()
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .background(pillBackground)
-            .overlay(pillBorder)
-            .transition(.opacity)
+    private var processingContent: some View {
+        BreathingBarView()
+            .padding(.horizontal, 16)
     }
 
     // MARK: - Processing (slow path)
 
-    /// STT taking longer than expected. Reassurance message and ✕ cancel.
-    private var processingSlowView: some View {
-        HStack(spacing: 12) {
+    /// STT taking longer than expected. Reassurance message and cancel.
+    private var processingSlowContent: some View {
+        HStack(spacing: 8) {
             Button(action: { viewModel.onCancel?() }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 24, height: 24)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel processing")
 
-            ProcessingDotsView()
-                .frame(width: 40)
+            BreathingBarView()
+                .frame(width: 32)
 
-            Text("Still working…")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+            Text("Still working\u{2026}")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.7))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(pillBackground)
-        .overlay(pillBorder)
-        .transition(.opacity)
+        .padding(.horizontal, 12)
     }
 
     // MARK: - No Target
 
-    /// Injection failed. Shows paste-shortcut hint and ✕ dismiss.
-    private var noTargetView: some View {
-        HStack(spacing: 12) {
+    /// Injection failed. Shows paste-shortcut hint and dismiss.
+    private var noTargetContent: some View {
+        HStack(spacing: 8) {
             Text(viewModel.shortcuts.noTargetHint)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.85))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
             Button(action: { viewModel.onDismiss?() }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 24, height: 24)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(pillBackground)
-        .overlay(pillBorder)
-        .transition(.opacity)
-    }
-
-    // MARK: - Shared pill chrome
-
-    private var pillBackground: some View {
-        Capsule()
-            .fill(.ultraThinMaterial)
-            .environment(\.colorScheme, .dark)
-    }
-
-    private var pillBorder: some View {
-        Capsule()
-            .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+        .padding(.horizontal, 12)
     }
 
     // MARK: - Mic callout
@@ -239,92 +324,73 @@ struct HUDContentView: View {
     }
 }
 
-// MARK: - Waveform dots (listening animation)
+// MARK: - Waveform bars (listening animation)
 
-/// A row of dots that undulate vertically to indicate active listening.
+/// A row of rounded bars driven by live audio input level.
 ///
-/// Uses a canned animation. Live mic level response is a future polish item.
-/// When Reduce Motion is enabled, dots pulse opacity instead of moving.
-struct WaveformDotsView: View {
+/// Each bar's height is proportional to `audioLevel` (0.0 to 1.0), with
+/// center bars scaled taller for a natural waveform envelope. A small
+/// idle animation keeps the bars gently moving when audio is silent so
+/// the HUD never looks frozen.
+///
+/// When Reduce Motion is enabled, bars pulse opacity instead of changing height.
+struct WaveformBarsView: View {
 
-    private let dotCount = 7
-    private let dotSize: CGFloat = 5
+    /// Current audio input level from the mic (0.0 to 1.0).
+    var audioLevel: Float
 
-    @State private var isAnimating = false
+    private let barCount = 5
+    private let barWidth: CGFloat = 3
+    private let minHeight: CGFloat = 3
+    private let maxHeight: CGFloat = 16
+
+    /// Per-bar random-ish offsets so they don't all look identical at the
+    /// same audio level. Seeded, not truly random.
+    private let barJitter: [Float] = [0.0, 0.15, -0.1, 0.2, -0.05]
 
     private var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<dotCount, id: \.self) { index in
-                Circle()
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { index in
+                let scale = amplitudeScale(for: index)
+                // Cap at 0.8 so jitter always differentiates bar heights,
+                // even at loud volumes. Bars never all pin at max together.
+                let capped = min(Float(audioLevel), 0.8)
+                let jittered = min(max(capped + barJitter[index], 0), 1)
+                let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(jittered) * scale
+                RoundedRectangle(cornerRadius: barWidth / 2)
                     .fill(Color.white.opacity(0.9))
-                    .frame(width: dotSize, height: dotSize)
-                    .modifier(
-                        WaveformDotModifier(
-                            isAnimating: isAnimating,
-                            index: index,
-                            reduceMotion: reduceMotion
-                        )
-                    )
+                    .frame(width: barWidth, height: max(barHeight, minHeight))
             }
         }
-        .onAppear { isAnimating = true }
-        .onDisappear { isAnimating = false }
-    }
-}
-
-/// Apply either vertical offset animation or opacity pulsing to a single
-/// waveform dot, depending on the Reduce Motion accessibility setting.
-struct WaveformDotModifier: ViewModifier {
-
-    let isAnimating: Bool
-    let index: Int
-    let reduceMotion: Bool
-
-    func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-                .opacity(isAnimating ? 0.4 : 1.0)
-                .animation(
-                    .easeInOut(duration: 0.6)
-                        .repeatForever(autoreverses: true)
-                        .delay(Double(index) * 0.08),
-                    value: isAnimating
-                )
-        } else {
-            content
-                .offset(y: isAnimating ? -amplitude(for: index) : amplitude(for: index))
-                .animation(
-                    .easeInOut(duration: 0.4)
-                        .repeatForever(autoreverses: true)
-                        .delay(Double(index) * 0.07),
-                    value: isAnimating
-                )
-        }
+        .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: audioLevel)
     }
 
-    private func amplitude(for index: Int) -> CGFloat {
-        // Center dots have larger amplitude for a natural waveform shape.
-        let center = 3.0
+    /// Center bars get a larger share of the max height.
+    private func amplitudeScale(for index: Int) -> CGFloat {
+        let center = Double(barCount - 1) / 2.0
         let distance = abs(Double(index) - center)
-        return CGFloat(6.0 - distance * 1.2)
+        let maxDistance = center
+        return CGFloat(1.0 - (distance / maxDistance) * 0.4)
     }
 }
 
-// MARK: - Processing dots (processing animation)
+// MARK: - Breathing bar (processing animation)
 
-/// An animated indicator visually distinct from the waveform to signal
-/// that the app has moved from "listening" to "thinking".
+/// A single horizontal bar that gently pulses its width and opacity to
+/// signal that the app is processing (thinking), not listening.
 ///
-/// Dots converge toward center and pulse uniformly. When Reduce Motion is
-/// enabled, dots pulse opacity instead.
-struct ProcessingDotsView: View {
+/// Visually distinct from the waveform bars: one continuous shape instead
+/// of discrete bars, with a slow calm rhythm instead of reactive movement.
+/// When Reduce Motion is enabled, only opacity pulses.
+struct BreathingBarView: View {
 
-    private let dotCount = 5
-    private let dotSize: CGFloat = 5
+    private let barHeight: CGFloat = 3
+    private let minWidth: CGFloat = 16
+    private let maxWidth: CGFloat = 48
 
     @State private var isAnimating = false
 
@@ -333,20 +399,17 @@ struct ProcessingDotsView: View {
     }
 
     var body: some View {
-        HStack(spacing: isAnimating ? 2 : 6) {
-            ForEach(0..<dotCount, id: \.self) { _ in
-                Circle()
-                    .fill(Color.white.opacity(0.8))
-                    .frame(width: dotSize, height: dotSize)
-                    .scaleEffect(isAnimating ? 0.7 : 1.0)
-                    .opacity(reduceMotion ? (isAnimating ? 0.4 : 1.0) : 1.0)
-            }
-        }
-        .animation(
-            .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
-            value: isAnimating
-        )
-        .onAppear { isAnimating = true }
-        .onDisappear { isAnimating = false }
+        RoundedRectangle(cornerRadius: barHeight / 2)
+            .fill(Color.white.opacity(isAnimating ? 0.9 : 0.4))
+            .frame(
+                width: reduceMotion ? maxWidth : (isAnimating ? maxWidth : minWidth),
+                height: barHeight
+            )
+            .animation(
+                .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                value: isAnimating
+            )
+            .onAppear { isAnimating = true }
+            .onDisappear { isAnimating = false }
     }
 }

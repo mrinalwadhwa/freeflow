@@ -22,6 +22,7 @@ final class HUDController {
     private var visualStateObservation: Task<Void, Never>?
     private var localEscapeMonitor: Any?
     private var globalEscapeMonitor: Any?
+    private var globalClickMonitor: Any?
 
     // MARK: - Init
 
@@ -42,11 +43,15 @@ final class HUDController {
     func start(
         coordinator: RecordingCoordinator,
         pipeline: DictationPipeline? = nil,
-        audioDeviceProvider: (any AudioDeviceProviding)? = nil
+        audioDeviceProvider: (any AudioDeviceProviding)? = nil,
+        audioProvider: (any AudioProviding)? = nil
     ) {
         self.coordinator = coordinator
         self.pipeline = pipeline
         self.audioDeviceProvider = audioDeviceProvider
+
+        // Wire audio provider for live level metering.
+        viewModel.setAudioProvider(audioProvider)
 
         // Seed the view model with the current mic name.
         if let provider = audioDeviceProvider {
@@ -60,24 +65,43 @@ final class HUDController {
         ensureWindow()
 
         installEscapeMonitors()
+        installClickMonitor()
 
-        // Watch visual state changes and mouse screen to animate the window.
+        // Watch visual state changes, mouse screen, and hover to animate
+        // the window. Hover detection is done here via global mouse
+        // position polling because NSTrackingArea is unreliable on
+        // transparent non-activating panels with large invisible regions.
         visualStateObservation?.cancel()
         visualStateObservation = Task { [weak self] in
             var previousState: HUDVisualState?
             var previousScreenFrame: NSRect?
+            var wasHovering = false
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 16_000_000)  // ~60fps
                 guard !Task.isCancelled else { break }
                 guard let self else { break }
 
-                // Detect if the mouse moved to a different screen.
                 let mouseLocation = NSEvent.mouseLocation
+
+                // Detect if the mouse moved to a different screen.
                 let currentScreen = NSScreen.screens.first { $0.frame.contains(mouseLocation) }
                 let currentScreenFrame = currentScreen?.frame
                 let screenChanged = currentScreenFrame != previousScreenFrame
                 if screenChanged {
                     previousScreenFrame = currentScreenFrame
+                }
+
+                // Hover detection: check if the mouse is over the visible
+                // content region (capsule when minimized, full pill when
+                // expanded). This replaces NSTrackingArea.
+                let isOverContent =
+                    self.hudWindow?.isMouseOverVisibleContent(mouseLocation) ?? false
+                if isOverContent && !wasHovering {
+                    wasHovering = true
+                    self.viewModel.mouseEntered()
+                } else if !isOverContent && wasHovering {
+                    wasHovering = false
+                    self.viewModel.mouseExited()
                 }
 
                 let current = self.viewModel.visualState
@@ -97,6 +121,7 @@ final class HUDController {
         visualStateObservation?.cancel()
         visualStateObservation = nil
         removeEscapeMonitors()
+        removeClickMonitor()
         viewModel.stop()
         hudWindow?.orderOut(nil)
         hudWindow = nil
@@ -186,6 +211,31 @@ final class HUDController {
         }
     }
 
+    // MARK: - Click-to-record monitor
+
+    /// Install a global mouse click monitor that detects clicks on the
+    /// minimized/ready capsule. Needed because the window has
+    /// `ignoresMouseEvents = true` in these states so clicks pass through.
+    private func installClickMonitor() {
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) {
+            [weak self] event in
+            guard let self else { return }
+            let state = self.viewModel.visualState
+            guard state == .minimized || state == .ready else { return }
+            let mouseLocation = NSEvent.mouseLocation
+            if self.hudWindow?.isMouseOverVisibleContent(mouseLocation) == true {
+                self.startHandsFreeFromClick()
+            }
+        }
+    }
+
+    private func removeClickMonitor() {
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickMonitor = nil
+        }
+    }
+
     // MARK: - Escape key handling
 
     /// Install local and global key event monitors to handle Escape.
@@ -250,6 +300,9 @@ final class HUDController {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = globalEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = globalClickMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }

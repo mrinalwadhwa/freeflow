@@ -57,9 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Pipeline
 
+    private let audioProvider = AudioCaptureProvider()
+
     private func setupPipeline() {
         pipeline = DictationPipeline(
-            audioProvider: AudioCaptureProvider(),
+            audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
             sttProvider: VoiceServiceSTTProvider(),
             textInjector: textInjector,
@@ -72,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupHUD() {
         let controller = HUDController()
-        controller.start(coordinator: coordinator, pipeline: pipeline)
+        controller.start(coordinator: coordinator, pipeline: pipeline, audioProvider: audioProvider)
         hudController = controller
     }
 

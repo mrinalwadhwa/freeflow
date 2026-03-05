@@ -5,34 +5,48 @@ import VoiceKit
 /// A floating borderless panel that displays the always-visible HUD overlay.
 ///
 /// The HUD is a pill-shaped overlay anchored at the bottom center of the
-/// active screen. It resizes smoothly between a minimized capsule and an
-/// expanded pill depending on the current `HUDVisualState`. Mouse tracking
-/// is enabled so the HUD can detect hover for the Ready state and accept
-/// clicks for hands-free activation.
+/// active screen. The window always uses the expanded size so that the
+/// NSPanel frame never moves or resizes during state transitions. All
+/// visual size changes (minimized capsule vs expanded pill) are handled
+/// entirely by SwiftUI within the fixed frame. This eliminates the
+/// AppKit/SwiftUI animation conflict that caused content to "fly" during
+/// state transitions.
+///
+/// Hover detection is handled externally by `HUDController` via global
+/// mouse position polling and the `isMouseOverVisibleContent(_:)` method.
+/// This is more reliable than NSTrackingArea on transparent non-activating
+/// panels with large invisible regions.
 final class HUDOverlayWindow: NSPanel {
 
     private let viewModel: HUDViewModel
-    private var trackingArea: NSTrackingArea?
     private var hostingView: NSHostingView<HUDContentView>?
 
-    /// Width of the minimized capsule.
-    private static let minimizedWidth: CGFloat = 56
-    private static let minimizedHeight: CGFloat = 10
+    /// The window always uses the expanded dimensions so the frame never
+    /// The window is sized large enough to contain the pill at any state
+    /// plus overlays (tooltip, mic callout) above it without clipping.
+    private static let fixedWidth: CGFloat = 400
+    private static let fixedHeight: CGFloat = 120
 
-    /// Width of the expanded pill (listening, processing, ready, no-target).
-    private static let expandedWidth: CGFloat = 280
-    private static let expandedHeight: CGFloat = 48
+    /// Dimensions of the minimized capsule rendered by SwiftUI.
+    private static let minimizedCapsuleWidth: CGFloat = 46
+    private static let minimizedCapsuleHeight: CGFloat = 8
 
     /// Extra height added when the mic callout tooltip is visible above the pill.
     private static let micCalloutExtraHeight: CGFloat = 30
+
+    /// Distance from the bottom of the visible screen frame to the bottom
+    /// of the window. The minimized capsule sits at the bottom of the
+    /// window (bottom-aligned VStack), so this controls how far above the
+    /// screen edge it appears.
+    private static let capsuleBottomInset: CGFloat = 14
 
     init(viewModel: HUDViewModel) {
         self.viewModel = viewModel
         super.init(
             contentRect: NSRect(
                 x: 0, y: 0,
-                width: Self.minimizedWidth,
-                height: Self.minimizedHeight
+                width: Self.fixedWidth,
+                height: Self.fixedHeight
             ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -43,12 +57,12 @@ final class HUDOverlayWindow: NSPanel {
         level = .statusBar
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
-        ignoresMouseEvents = false
+        hasShadow = false
+        ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
-        animationBehavior = .utilityWindow
+        animationBehavior = .none
 
         let hosting = NSHostingView(rootView: HUDContentView(viewModel: viewModel))
         hosting.frame = contentRect(forFrameRect: frame)
@@ -56,105 +70,137 @@ final class HUDOverlayWindow: NSPanel {
         contentView = hosting
         hostingView = hosting
 
-        setupMouseTracking()
-        positionAtBottomCenter()
+        positionOnCurrentScreen()
         orderFrontRegardless()
     }
 
     // MARK: - Positioning
 
     /// Position the HUD at the bottom center of the screen containing the
-    /// frontmost application window.
-    func positionAtBottomCenter() {
+    /// mouse cursor. The window size is always fixed; only the origin changes.
+    func positionOnCurrentScreen() {
         let screen = activeScreen()
         let screenFrame = screen.visibleFrame
         let size = currentSize()
         let x = screenFrame.midX - size.width / 2
-        let y = screenFrame.origin.y + 12
+        let y = screenFrame.origin.y + Self.capsuleBottomInset
         setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
     }
 
-    /// Animate the pill to the correct size for the current visual state,
-    /// keeping it centered at the bottom of the screen.
+    /// Update state-dependent properties (mouse event pass-through) and
+    /// reposition the window if the mic callout changes the required height.
+    /// No frame animation is performed — the window frame only changes when
+    /// the mic callout appears/disappears (a height bump) or on screen change.
     func animateToCurrentState() {
-        let size = currentSize()
-        let screen = activeScreen()
-        let screenFrame = screen.visibleFrame
-        let x = screenFrame.midX - size.width / 2
-        let y = screenFrame.origin.y + 12
-        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
+        let state = viewModel.visualState
 
-        ignoresMouseEvents = !viewModel.visualState.acceptsMouseEvents
-
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let duration: TimeInterval = reduceMotion ? 0.1 : 0.25
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .default)
-            context.allowsImplicitAnimation = true
-            animator().setFrame(newFrame, display: true)
+        // When minimized or ready, the window ignores mouse events so
+        // clicks pass through to apps behind. Hover and click-to-record
+        // are handled by the controller's polling loop. In active expanded
+        // states with buttons, the window accepts mouse events.
+        if state == .minimized || state == .ready {
+            ignoresMouseEvents = true
+        } else {
+            ignoresMouseEvents = !state.acceptsMouseEvents
         }
 
-        updateMouseTracking()
+        // Resize only if the mic callout toggled (height change).
+        let needed = currentSize()
+        if abs(frame.size.height - needed.height) > 1
+            || abs(frame.size.width - needed.width) > 1
+        {
+            let screen = activeScreen()
+            let screenFrame = screen.visibleFrame
+            let x = screenFrame.midX - needed.width / 2
+            let y = screenFrame.origin.y + Self.capsuleBottomInset
+            setFrame(
+                NSRect(x: x, y: y, width: needed.width, height: needed.height),
+                display: true
+            )
+        }
     }
 
     /// Jump the pill to the correct screen instantly without animation.
     /// Used when the mouse moves between monitors.
     func repositionToCurrentScreen() {
-        let size = currentSize()
-        let screen = activeScreen()
-        let screenFrame = screen.visibleFrame
-        let x = screenFrame.midX - size.width / 2
-        let y = screenFrame.origin.y + 12
-        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
-
-        setFrame(newFrame, display: true)
-        updateMouseTracking()
+        positionOnCurrentScreen()
     }
 
-    // MARK: - Mouse tracking
+    // MARK: - Hover hit testing
 
-    private func setupMouseTracking() {
-        guard let contentView else { return }
-        let area = NSTrackingArea(
-            rect: contentView.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
+    /// Check whether a screen-coordinate point falls within the visible
+    /// content area of the HUD.
+    ///
+    /// When minimized, only the small capsule region at the bottom center
+    /// of the window counts as a hit (with generous padding so the user
+    /// does not have to pixel-hunt). When expanded, the full pill area
+    /// is considered a hit.
+    ///
+    /// - Parameter screenPoint: A point in screen (global) coordinates,
+    ///   e.g. from `NSEvent.mouseLocation`.
+    /// - Returns: `true` if the point is over visible content.
+    func isMouseOverVisibleContent(_ screenPoint: NSPoint) -> Bool {
+        // Convert screen point to window coordinates.
+        let windowPoint = convertPoint(fromScreen: screenPoint)
+        let state = viewModel.visualState
+
+        // Determine the visible pill dimensions based on state.
+        let pillWidth: CGFloat
+        let pillHeight: CGFloat
+        let padding: CGFloat
+
+        switch state {
+        case .minimized:
+            pillWidth = Self.minimizedCapsuleWidth
+            pillHeight = Self.minimizedCapsuleHeight
+            padding = 10
+        case .ready:
+            // Use the same small capsule hit rect as minimized so clicks
+            // only register on the actual capsule, not the wider hover area.
+            pillWidth = Self.minimizedCapsuleWidth
+            pillHeight = Self.minimizedCapsuleHeight
+            padding = 10
+        case .listeningHeld, .processing:
+            pillWidth = 80
+            pillHeight = 32
+            padding = 4
+        case .listeningHandsFree:
+            pillWidth = 140
+            pillHeight = 32
+            padding = 4
+        case .processingSlow, .noTarget:
+            pillWidth = 180
+            pillHeight = 32
+            padding = 4
+        }
+
+        // The pill is centered horizontally and bottom-aligned in the window.
+        let pillX = (Self.fixedWidth - pillWidth) / 2
+        let pillY: CGFloat = 0
+        let hitRect = NSRect(
+            x: pillX - padding,
+            y: pillY - padding,
+            width: pillWidth + padding * 2,
+            height: pillHeight + padding * 2
         )
-        contentView.addTrackingArea(area)
-        trackingArea = area
+        return hitRect.contains(windowPoint)
     }
 
-    private func updateMouseTracking() {
-        guard let contentView, let old = trackingArea else { return }
-        contentView.removeTrackingArea(old)
-        let area = NSTrackingArea(
-            rect: contentView.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        contentView.addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        viewModel.mouseEntered()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        viewModel.mouseExited()
-    }
+    // MARK: - Mouse events for expanded interactive states
 
     override func mouseDown(with event: NSEvent) {
-        // Click on the minimized capsule starts hands-free dictation.
-        // Action closures live on the view model, set by the HUD controller.
-        if viewModel.visualState == .minimized || viewModel.visualState == .ready {
+        let screenPoint = NSEvent.mouseLocation
+        guard isMouseOverVisibleContent(screenPoint) else { return }
+        if viewModel.visualState == .ready {
             viewModel.onClickToRecord?()
+            return
         }
+        // Forward to SwiftUI so buttons (cancel, stop, dismiss) receive clicks.
+        super.mouseDown(with: event)
     }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 
     // MARK: - Helpers
 
@@ -163,22 +209,17 @@ final class HUDOverlayWindow: NSPanel {
             viewModel.micCalloutName != nil
             ? Self.micCalloutExtraHeight : 0
 
-        if viewModel.visualState.isExpanded {
-            return NSSize(
-                width: Self.expandedWidth,
-                height: Self.expandedHeight + calloutExtra
-            )
-        }
-        return NSSize(width: Self.minimizedWidth, height: Self.minimizedHeight)
+        return NSSize(
+            width: Self.fixedWidth,
+            height: Self.fixedHeight + calloutExtra
+        )
     }
 
     private func activeScreen() -> NSScreen {
         // Follow the mouse cursor to match the screen the user is working on.
         let mouseLocation = NSEvent.mouseLocation
-        for screen in NSScreen.screens {
-            if screen.frame.contains(mouseLocation) {
-                return screen
-            }
+        for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
+            return screen
         }
         return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
     }

@@ -26,6 +26,15 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         private var converter: AVAudioConverter?
     #endif
 
+    // MARK: - Audio level stream
+
+    private var _audioLevelStream: AsyncStream<Float>?
+    private var levelContinuation: AsyncStream<Float>.Continuation?
+
+    public var audioLevelStream: AsyncStream<Float>? {
+        lock.withLock { _audioLevelStream }
+    }
+
     public init() {}
 
     // MARK: - AudioProviding
@@ -42,6 +51,11 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 }
 
                 pcmChunks = []
+
+                // Set up the audio level stream before starting capture.
+                let (stream, continuation) = AsyncStream<Float>.makeStream()
+                self._audioLevelStream = stream
+                self.levelContinuation = continuation
 
                 let engine = AVAudioEngine()
                 let inputNode = engine.inputNode
@@ -83,6 +97,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 let bufferSize: AVAudioFrameCount = 4096
                 inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: tapFormat) {
                     [weak self] buffer, _ in
+                    self?.emitAudioLevel(buffer)
                     self?.processAudioBuffer(buffer, converter: converter)
                 }
 
@@ -105,6 +120,9 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 engine?.stop()
                 engine = nil
                 converter = nil
+                levelContinuation?.finish()
+                levelContinuation = nil
+                _audioLevelStream = nil
                 _isRecording = false
 
                 // Concatenate all accumulated PCM chunks.
@@ -146,6 +164,34 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             return .empty
         #endif
     }
+
+    // MARK: - Audio level metering
+
+    #if canImport(AVFoundation)
+        /// Compute RMS level from a float32 PCM buffer and emit to the stream.
+        private func emitAudioLevel(_ buffer: AVAudioPCMBuffer) {
+            guard let floatData = buffer.floatChannelData else { return }
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { return }
+
+            let samples = floatData[0]
+            var sumOfSquares: Float = 0
+            for i in 0..<frameLength {
+                let sample = samples[i]
+                sumOfSquares += sample * sample
+            }
+            let rms = sqrtf(sumOfSquares / Float(frameLength))
+
+            // Raw RMS from speech is typically 0.002-0.02. Scale up
+            // aggressively and apply a sqrt curve so quiet speech still
+            // moves the bars while loud speech doesn't just pin at 1.0.
+            let scaled = min(sqrtf(rms * 25.0), 1.0)
+
+            lock.withLock {
+                levelContinuation?.yield(scaled)
+            }
+        }
+    #endif
 
     // MARK: - Internal
 
