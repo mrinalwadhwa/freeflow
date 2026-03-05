@@ -7,6 +7,7 @@ the raw transcription is returned as fallback.
 
 import json
 import os
+import time
 
 from dataclasses import dataclass
 from typing import Optional
@@ -35,7 +36,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # ---------------------------------------------------------------------------
 
 STT_MODEL = "gpt-4o-mini-transcribe"
-COMPOSE_MODEL = "claude-haiku-4-5"
+COMPOSE_MODEL = "gpt-4.1-nano"
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +199,8 @@ async def dictate(
     text ready for injection. The raw transcription is also included
     for logging.
     """
+    t0 = time.monotonic()
+
     audio_bytes = await file.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio file")
@@ -211,11 +214,18 @@ async def dictate(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Transcription failed: {e}")
 
+    t1 = time.monotonic()
+
     if not raw_text or not raw_text.strip():
+        print(f"[dictate] Timing: stt={t1 - t0:.2f}s cleanup=0.00s total={t1 - t0:.2f}s audio={len(audio_bytes)/1024:.0f}KB stt_model={STT_MODEL} cleanup_model={COMPOSE_MODEL} (empty)")
         return {"text": "", "raw": ""}
 
     app_context = parse_context(context)
     composed = await compose_text(raw_text, app_context)
+
+    t2 = time.monotonic()
+    audio_kb = len(audio_bytes) / 1024
+    print(f"[dictate] Timing: stt={t1 - t0:.2f}s cleanup={t2 - t1:.2f}s total={t2 - t0:.2f}s audio={audio_kb:.0f}KB stt_model={STT_MODEL} cleanup_model={COMPOSE_MODEL}")
 
     return {"text": composed, "raw": raw_text}
 

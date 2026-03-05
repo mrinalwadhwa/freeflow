@@ -100,12 +100,14 @@ public actor DictationPipeline: PipelineProviding {
     }
 
     public func complete() async {
+        debugPrint("[Pipeline] complete() entering")
         let currentState = await coordinator.state
         guard currentState == .recording else {
             debugPrint("[Pipeline] complete() ignored — state is \(currentState)")
             return
         }
 
+        debugPrint("[Pipeline] complete() transitioning to processing")
         let stopped = await coordinator.stopRecording()
         guard stopped else { return }
 
@@ -114,7 +116,10 @@ public actor DictationPipeline: PipelineProviding {
                 pendingContext, audioProvider, dictationProvider, textInjector,
                 coordinator, minimumAudioDuration, silenceThreshold, transcriptBuffer
             ] in
+            let t0 = CFAbsoluteTimeGetCurrent()
+
             // Stop audio capture and retrieve the buffer.
+            debugPrint("[Pipeline] stopping audio capture")
             let audioBuffer: AudioBuffer
             do {
                 audioBuffer = try await audioProvider.stopRecording()
@@ -123,6 +128,11 @@ public actor DictationPipeline: PipelineProviding {
                 await coordinator.reset()
                 return
             }
+
+            let t1 = CFAbsoluteTimeGetCurrent()
+            debugPrint(
+                "[Pipeline] audio stopped (\(String(format: "%.2f", audioBuffer.duration))s, \(audioBuffer.data.count)B)"
+            )
 
             // Skip empty or very short audio.
             guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
@@ -142,6 +152,9 @@ public actor DictationPipeline: PipelineProviding {
                 return
             }
 
+            let t2 = CFAbsoluteTimeGetCurrent()
+            debugPrint("[Pipeline] silence gate passed, awaiting context")
+
             // Await context (with a timeout so we do not block forever).
             let context: AppContext
             if let pendingContext {
@@ -152,6 +165,9 @@ public actor DictationPipeline: PipelineProviding {
             } else {
                 context = .empty
             }
+
+            let t3 = CFAbsoluteTimeGetCurrent()
+            debugPrint("[Pipeline] context resolved, sending to dictation service")
 
             guard !Task.isCancelled else {
                 await coordinator.reset()
@@ -168,6 +184,9 @@ public actor DictationPipeline: PipelineProviding {
                 await coordinator.reset()
                 return
             }
+
+            let t4 = CFAbsoluteTimeGetCurrent()
+            debugPrint("[Pipeline] dictation returned, injecting text")
 
             // Skip injection for empty or whitespace-only text.
             let finalText = dictatedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -203,6 +222,22 @@ public actor DictationPipeline: PipelineProviding {
                 await coordinator.failInjection()
                 return
             }
+
+            let t5 = CFAbsoluteTimeGetCurrent()
+
+            // Log timing for each pipeline phase.
+            let fmt = { (dt: Double) -> String in String(format: "%.2fs", dt) }
+            let audioKB = String(format: "%.0f", Double(audioBuffer.data.count) / 1024.0)
+            debugPrint(
+                "[Pipeline] Timing:"
+                    + " stop=\(fmt(t1 - t0))"
+                    + " gate=\(fmt(t2 - t1))"
+                    + " context=\(fmt(t3 - t2))"
+                    + " dictate=\(fmt(t4 - t3))"
+                    + " inject=\(fmt(t5 - t4))"
+                    + " total=\(fmt(t5 - t0))"
+                    + " audio=\(audioKB)KB/\(fmt(audioBuffer.duration))"
+            )
 
             // Successful injection — return to idle.
             await coordinator.finishInjecting()
