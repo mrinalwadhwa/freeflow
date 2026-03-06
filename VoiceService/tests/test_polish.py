@@ -688,6 +688,120 @@ TESTS: list[TestCase] = [
             starts_upper,
         ],
     ),
+    TestCase(
+        name="hyphen",
+        category="dictated-punctuation",
+        input="this is a well hyphen known state hyphen of hyphen the hyphen art technique",
+        validators=[
+            contains("-"),
+            not_contains("hyphen"),
+            contains("well-known"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="ellipsis",
+        category="dictated-punctuation",
+        input="I was thinking ellipsis maybe we should wait",
+        validators=[
+            contains("\u2026"),
+            not_contains("ellipsis"),
+            contains("thinking"),
+            contains("wait"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="dot dot dot",
+        category="dictated-punctuation",
+        input="and then dot dot dot everything changed",
+        validators=[
+            contains("\u2026"),
+            not_contains("dot dot dot"),
+            contains("everything changed"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="at sign",
+        category="dictated-punctuation",
+        input="send it to jane at sign example period com",
+        validators=[
+            contains("@"),
+            not_contains("at sign"),
+            contains("jane"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="hashtag",
+        category="dictated-punctuation",
+        input="check the hashtag trending topic and hashtag 42",
+        validators=[
+            contains("#"),
+            not_contains("hashtag"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="ampersand",
+        category="dictated-punctuation",
+        input="research ampersand development is our focus",
+        validators=[
+            contains("&"),
+            not_contains("ampersand"),
+            contains("development"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="forward slash and backslash",
+        category="dictated-punctuation",
+        input="open the config forward slash settings page and the path is C backslash users",
+        validators=[
+            contains("/"),
+            contains("\\"),
+            not_contains("forward slash"),
+            not_contains("backslash"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="asterisk and underscore",
+        category="dictated-punctuation",
+        input="use asterisk bold asterisk and underscore italic underscore for formatting",
+        validators=[
+            contains("*"),
+            contains("_"),
+            not_contains("asterisk"),
+            not_contains("underscore"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="dollar sign and percent sign",
+        category="dictated-punctuation",
+        input="the price is dollar sign 50 with a 10 percent sign discount",
+        validators=[
+            contains("$"),
+            contains("%"),
+            not_contains("dollar sign"),
+            not_contains("percent sign"),
+            starts_upper,
+        ],
+    ),
+    TestCase(
+        name="equals sign and plus sign",
+        category="dictated-punctuation",
+        input="two plus sign three equals sign five",
+        validators=[
+            contains("+"),
+            contains("="),
+            not_contains("plus sign"),
+            not_contains("equals sign"),
+            starts_upper,
+        ],
+    ),
 
     # ----- Already clean transcripts -----
     TestCase(
