@@ -97,10 +97,23 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         debugPrint("[StreamingProvider] Stop sent, waiting for transcript")
 
         // Read messages until we receive transcript_done or error.
+        // Timeout after 10 seconds to avoid hanging forever if the
+        // server never sends a result (e.g. WebSocket silently died).
+        // On timeout the pipeline falls back to batch mode using the
+        // captured audio buffer.
+        //
+        // URLSessionWebSocketTask.receive() does NOT respond to Swift
+        // structured concurrency cancellation — it keeps blocking even
+        // after the task is cancelled. To actually unblock it, we must
+        // cancel the WebSocket task itself, which causes receive() to
+        // throw immediately.
         let result: String
         do {
-            result = try await waitForResult()
+            result = try await withTranscriptTimeout(seconds: 10) {
+                try await self.waitForResult()
+            }
         } catch {
+            debugPrint("[StreamingProvider] waitForResult failed: \(error)")
             // The connection may have broken during this session.
             // Mark it dead so the next session reconnects.
             lock.withLock {
@@ -161,7 +174,18 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                 do {
                     try await withCheckedThrowingContinuation {
                         (cont: CheckedContinuation<Void, Error>) in
+                        // Guard against double-resume: URLSessionWebSocketTask
+                        // can invoke the sendPing completion more than once when
+                        // the connection is aborting while a ping is in flight.
+                        let pingLock = NSLock()
+                        var resumed = false
                         task.sendPing { error in
+                            let alreadyResumed = pingLock.withLock {
+                                let was = resumed
+                                resumed = true
+                                return was
+                            }
+                            guard !alreadyResumed else { return }
                             if let error {
                                 cont.resume(throwing: error)
                             } else {
@@ -323,6 +347,52 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     }
 
     // MARK: - Receiving
+
+    // MARK: - Timeout
+
+    /// Run an async throwing operation with a timeout. On timeout, cancel
+    /// the WebSocket task to force `receive()` to throw, then tear down.
+    ///
+    /// `URLSessionWebSocketTask.receive()` does not respond to structured
+    /// concurrency cancellation. The only way to unblock it is to cancel
+    /// the underlying task via `task.cancel()`.
+    private func withTranscriptTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let timeoutOccurred = NSLock()
+        var didTimeout = false
+
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask { [weak self] in
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+
+                timeoutOccurred.withLock { didTimeout = true }
+
+                // Force-cancel the WebSocket task so receive() throws.
+                if let self {
+                    let ws: URLSessionWebSocketTask? = self.lock.withLock {
+                        self.webSocketTask
+                    }
+                    ws?.cancel(with: .abnormalClosure, reason: nil)
+                    debugPrint(
+                        "[StreamingProvider] Timeout after \(Int(seconds))s, "
+                            + "cancelled WebSocket to unblock receive()")
+                }
+
+                throw DictationError.networkError(
+                    "Timed out waiting for server response after \(Int(seconds))s")
+            }
+
+            // The first task to finish wins. Cancel the other.
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
 
     /// Read WebSocket messages until `transcript_done` arrives.
     ///

@@ -126,8 +126,18 @@ def _get_headers() -> dict:
 async def connect(model: str, retry_on_auth_error: bool = True):
     """Open a WebSocket to the Realtime API via the gateway.
 
-    Use the same connection parameters as voice.py's VoiceSession.connect:
-    websockets.connect with ping_interval=20, ping_timeout=20.
+    Disable the library's built-in keepalive pings. The Realtime API
+    connection only lives for the duration of a single dictation session
+    (a few seconds). Keepalive pings are unnecessary and caused
+    ConnectionClosedError noise when sessions were close together
+    because the keepalive task outlived the session and fired during
+    the next one.
+
+    Set close_timeout=0 so that abort()/close() returns immediately
+    without waiting for the server's close frame. This prevents the
+    websockets library's background close_connection task from
+    lingering and producing 'keepalive ping timeout' errors in the
+    asyncio event loop after the session ends.
     """
     url = _get_ws_url(model)
     headers = _get_headers()
@@ -136,8 +146,9 @@ async def connect(model: str, retry_on_auth_error: bool = True):
         ws = await websockets.connect(
             url,
             additional_headers=headers,
-            ping_interval=20,
-            ping_timeout=20,
+            ping_interval=None,
+            ping_timeout=None,
+            close_timeout=0,
         )
         return ws
     except Exception as e:
@@ -410,8 +421,23 @@ async def _run_dictation_session(
                 await _forward_chunk(pcm_24k)
             audio_buffer.clear()
 
+        session_start = time.monotonic()
+        SESSION_TIMEOUT = 120  # seconds — absolute limit for a single session
+
         try:
             while not stopped.is_set():
+                # Guard against silent connection death: if the session
+                # has been running longer than the absolute limit, bail.
+                if time.monotonic() - session_start > SESSION_TIMEOUT:
+                    print(
+                        f"[stream] Session {session_id}: "
+                        f"Session timeout ({SESSION_TIMEOUT}s), "
+                        f"treating as client disconnect"
+                    )
+                    stopped.set()
+                    client_disconnected = True
+                    return
+
                 try:
                     raw = await asyncio.wait_for(
                         ws.receive_text(), timeout=0.5
@@ -703,11 +729,18 @@ async def _run_dictation_session(
             pass
     finally:
         # Always close the Realtime API connection at session end.
+        # Use abort() for an immediate TCP-level close instead of the
+        # graceful close handshake. This prevents the websockets
+        # library's background tasks from lingering and producing
+        # ConnectionClosedError noise that delays the next session.
         if realtime_ws is not None:
             try:
-                await realtime_ws.close()
+                realtime_ws.abort()
             except Exception:
-                pass
+                try:
+                    await realtime_ws.close()
+                except Exception:
+                    pass
             print(
                 f"[stream] Session {session_id}: "
                 f"Realtime API connection closed"
