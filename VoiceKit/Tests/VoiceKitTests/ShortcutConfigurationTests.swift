@@ -11,10 +11,8 @@ struct ShortcutConfigurationTests {
         let config = ShortcutConfiguration.default
 
         #expect(config.holdToRecordKeyName == "⌥ Right Option")
-        #expect(config.handsFreeToggleName == "Double-tap ⌥ Right Option")
         #expect(config.pasteShortcutName == "⌃⌥V")
         #expect(config.dismissKeyName == "Escape")
-        #expect(config.doubleTapInterval == 0.35)
     }
 
     @Test("Static default matches parameterless init")
@@ -27,15 +25,11 @@ struct ShortcutConfigurationTests {
     func customValues() {
         let config = ShortcutConfiguration(
             holdToRecordKeyName: "fn",
-            handsFreeToggleName: "Double-tap fn",
-            doubleTapInterval: 0.4,
             pasteShortcutName: "⌘⇧V",
             dismissKeyName: "Esc"
         )
 
         #expect(config.holdToRecordKeyName == "fn")
-        #expect(config.handsFreeToggleName == "Double-tap fn")
-        #expect(config.doubleTapInterval == 0.4)
         #expect(config.pasteShortcutName == "⌘⇧V")
         #expect(config.dismissKeyName == "Esc")
     }
@@ -67,7 +61,7 @@ struct ShortcutConfigurationTests {
     @Test("Equatable distinguishes different configurations")
     func equatable() {
         let a = ShortcutConfiguration.default
-        let b = ShortcutConfiguration(doubleTapInterval: 0.5)
+        let b = ShortcutConfiguration(holdToRecordKeyName: "fn")
         #expect(a != b)
     }
 }

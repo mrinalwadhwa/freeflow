@@ -39,8 +39,10 @@ public actor DictationPipeline: PipelineProviding {
 
     /// RMS level at or below which audio is considered silent.
     /// On 16-bit PCM normalized to 0–1, ambient silence produces
-    /// RMS around 0.0005–0.001 and quiet speech around 0.002–0.01.
-    /// A threshold of 0.001 rejects near-silence while allowing
+    /// RMS around 0.0005–0.001 with a built-in mic. AirPods with
+    /// noise cancellation or nearby fans raise the floor to ~0.002.
+    /// Quiet speech starts around 0.01 and normal speech is 0.03+.
+    /// A threshold of 0.005 rejects ambient noise while allowing
     /// even quiet speech through.
     private let silenceThreshold: Float
 
@@ -53,6 +55,10 @@ public actor DictationPipeline: PipelineProviding {
     /// Background task that forwards PCM chunks to the streaming provider.
     private var audioForwardingTask: Task<Void, Never>?
 
+    /// Task that performs audio setup after activate() returns.
+    /// complete() awaits this to ensure audio is ready before stopping.
+    private var audioSetupTask: Task<Void, Never>?
+
     /// Whether the current recording session is using streaming mode.
     private var isStreamingSession: Bool = false
 
@@ -63,7 +69,7 @@ public actor DictationPipeline: PipelineProviding {
         textInjector: TextInjecting,
         coordinator: RecordingCoordinator,
         transcriptBuffer: TranscriptBuffer? = nil,
-        silenceThreshold: Float = 0.001,
+        silenceThreshold: Float = 0.005,
         streamingProvider: StreamingDictationProviding? = nil
     ) {
         self.audioProvider = audioProvider
@@ -85,31 +91,54 @@ public actor DictationPipeline: PipelineProviding {
     }
 
     public func activate() async {
+        let t0 = CFAbsoluteTimeGetCurrent()
         let currentState = await coordinator.state
         guard currentState == .idle else {
-            debugPrint("[Pipeline] activate() ignored — state is \(currentState)")
+            Log.debug("[Pipeline] activate() ignored — state is \(currentState)")
             return
         }
 
+        let t1 = CFAbsoluteTimeGetCurrent()
         let started = await coordinator.startRecording()
         guard started else { return }
+        let t2 = CFAbsoluteTimeGetCurrent()
+        Log.debug(
+            "[Pipeline] activate() state check: \(String(format: "%.3f", t1 - t0))s, startRecording: \(String(format: "%.3f", t2 - t1))s"
+        )
 
+        // State is now .recording — return immediately so the HUD can animate.
+        // Audio setup runs in a background task to avoid blocking the main actor.
+        // We store the task so complete() can await it before stopping recording.
+        audioSetupTask = Task { [self] in
+            await self.performAudioSetup(activationTime: t0)
+        }
+    }
+
+    /// Perform audio capture setup and streaming initialization.
+    /// This runs after `activate()` returns, so the HUD can animate immediately.
+    private func performAudioSetup(activationTime t0: CFAbsoluteTime) async {
         // Start reading context concurrently. The result is awaited in complete().
         let ctxProvider = contextProvider
         pendingContext = Task {
             await ctxProvider.readContext()
         }
 
-        // Start audio capture.
+        // Start audio capture. This can take 500-900ms due to AVAudioEngine setup.
+        // The UI is already showing "listening" state since activate() returned.
+        let t3 = CFAbsoluteTimeGetCurrent()
         do {
             try await audioProvider.startRecording()
         } catch {
-            debugPrint("[Pipeline] Failed to start recording: \(error)")
+            Log.debug("[Pipeline] Failed to start recording: \(error)")
             pendingContext?.cancel()
             pendingContext = nil
             await coordinator.reset()
             return
         }
+        let t4 = CFAbsoluteTimeGetCurrent()
+        Log.debug(
+            "[Pipeline] performAudioSetup() audioProvider.startRecording: \(String(format: "%.3f", t4 - t3))s"
+        )
 
         // If a streaming provider is available and the audio provider
         // supports PCM streaming, open the streaming session and start
@@ -129,14 +158,62 @@ public actor DictationPipeline: PipelineProviding {
                 context = .empty
             }
 
-            do {
-                try await streaming.startStreaming(context: context, language: nil)
-            } catch {
-                debugPrint("[Pipeline] Failed to start streaming session: \(error)")
-                // Fall back to batch mode.
+            let t5 = CFAbsoluteTimeGetCurrent()
+
+            // Timeout the streaming setup to avoid blocking complete()
+            // indefinitely. ensureConnected()/sendPing can hang when the
+            // WebSocket is in a broken state. On timeout we cancel the
+            // streaming session and fall back to batch mode.
+            //
+            // Uses a single detached task with an internal task-group
+            // timeout. This avoids zombie detached tasks that pile up
+            // when the timeout fires but startStreaming() keeps retrying
+            // ensureConnected() in the background.
+            Log.debug("[Pipeline] Starting streaming setup with 5s timeout")
+            let streamingStarted: Bool = await Task.detached {
+                await withTaskGroup(of: Bool.self) { group in
+                    group.addTask {
+                        do {
+                            Log.debug("[Pipeline] streaming.startStreaming() entering")
+                            try await streaming.startStreaming(context: context, language: nil)
+                            Log.debug("[Pipeline] streaming.startStreaming() returned OK")
+                            return true
+                        } catch {
+                            Log.debug("[Pipeline] streaming.startStreaming() failed: \(error)")
+                            return false
+                        }
+                    }
+                    group.addTask {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)  // 5s
+                        Log.debug("[Pipeline] Streaming setup timeout fired")
+                        return false
+                    }
+                    let first = await group.next() ?? false
+                    // Cancel the losing task. If the timeout won, this
+                    // cancels startStreaming() so it won't keep retrying
+                    // ensureConnected() as a zombie. If startStreaming()
+                    // won, this just cancels the sleeping timeout task.
+                    group.cancelAll()
+                    return first
+                }
+            }.value
+
+            // If streaming timed out, also cancel the session on the
+            // provider so it tears down the broken connection cleanly
+            // rather than leaving stale state for the next session.
+            if !streamingStarted {
+                await streaming.cancelStreaming()
+            }
+
+            guard streamingStarted else {
+                Log.debug("[Pipeline] Streaming setup timed out or failed, falling back to batch")
                 isStreamingSession = false
                 return
             }
+            let t6 = CFAbsoluteTimeGetCurrent()
+            Log.debug(
+                "[Pipeline] performAudioSetup() streaming.startStreaming: \(String(format: "%.3f", t6 - t5))s, total: \(String(format: "%.3f", t6 - t0))s"
+            )
 
             // Start a background task that reads PCM chunks and sends them.
             audioForwardingTask = Task {
@@ -145,7 +222,7 @@ public actor DictationPipeline: PipelineProviding {
                     do {
                         try await streaming.sendAudio(chunk)
                     } catch {
-                        debugPrint("[Pipeline] Error sending audio chunk: \(error)")
+                        Log.debug("[Pipeline] Error sending audio chunk: \(error)")
                         break
                     }
                 }
@@ -156,16 +233,78 @@ public actor DictationPipeline: PipelineProviding {
     }
 
     public func complete() async {
-        debugPrint("[Pipeline] complete() entering")
+        Log.debug("[Pipeline] complete() entering")
         let currentState = await coordinator.state
         guard currentState == .recording else {
-            debugPrint("[Pipeline] complete() ignored — state is \(currentState)")
+            Log.debug("[Pipeline] complete() ignored — state is \(currentState)")
             return
         }
 
-        debugPrint("[Pipeline] complete() transitioning to processing")
+        Log.debug("[Pipeline] complete() transitioning to processing")
         let stopped = await coordinator.stopRecording()
         guard stopped else { return }
+
+        // If audio setup is still in progress, give it a short window
+        // to finish (covers the normal 500-900ms AVAudioEngine start).
+        // If it doesn't complete in time, cancel it and fall back to
+        // batch mode — we already have the audio buffer from the
+        // capture that did start.
+        //
+        // IMPORTANT: We cannot use `await setupTask.value` directly or
+        // inside a TaskGroup, because the setup task runs on this actor
+        // and may be blocked on a non-cancellable operation (e.g.
+        // URLSession sendPing). TaskGroup.cancelAll() doesn't unblock
+        // children that are stuck in non-cancellable awaits, and the
+        // group won't return until all children exit. Instead we use a
+        // detached polling loop that checks whether the task has set
+        // `isStreamingSession` or completed, with a hard 6s deadline.
+        if let setupTask = audioSetupTask {
+            let setupDone: Bool = await withCheckedContinuation { continuation in
+                let lock = NSLock()
+                var resumed = false
+
+                // Monitor task: polls for completion by trying to get
+                // the value from a detached context (no actor dependency).
+                Task.detached { [weak self] in
+                    await setupTask.value
+                    let alreadyResumed = lock.withLock {
+                        let was = resumed
+                        resumed = true
+                        return was
+                    }
+                    if !alreadyResumed {
+                        continuation.resume(returning: true)
+                    }
+                }
+
+                // Timeout task: hard 6s ceiling.
+                Task.detached {
+                    try? await Task.sleep(nanoseconds: 6_000_000_000)
+                    let alreadyResumed = lock.withLock {
+                        let was = resumed
+                        resumed = true
+                        return was
+                    }
+                    if !alreadyResumed {
+                        setupTask.cancel()
+                        continuation.resume(returning: false)
+                    }
+                }
+            }
+
+            if setupDone {
+                Log.debug("[Pipeline] complete() audio setup finished normally")
+            } else {
+                Log.debug("[Pipeline] complete() audio setup timed out, cancelling")
+                // Give the streaming provider a clean teardown so it
+                // doesn't leave broken connection state.
+                if let streaming = streamingProvider {
+                    await streaming.cancelStreaming()
+                }
+                isStreamingSession = false
+            }
+            audioSetupTask = nil
+        }
 
         let useStreaming = isStreamingSession
         let forwardingTask = audioForwardingTask
@@ -181,12 +320,12 @@ public actor DictationPipeline: PipelineProviding {
             let t0 = CFAbsoluteTimeGetCurrent()
 
             // Stop audio capture and retrieve the buffer.
-            debugPrint("[Pipeline] stopping audio capture")
+            Log.debug("[Pipeline] stopping audio capture")
             let audioBuffer: AudioBuffer
             do {
                 audioBuffer = try await audioProvider.stopRecording()
             } catch {
-                debugPrint("[Pipeline] Failed to stop recording: \(error)")
+                Log.debug("[Pipeline] Failed to stop recording: \(error)")
                 if useStreaming, let streaming = streamingProvider {
                     forwardingTask?.cancel()
                     await streaming.cancelStreaming()
@@ -196,14 +335,54 @@ public actor DictationPipeline: PipelineProviding {
             }
 
             let t1 = CFAbsoluteTimeGetCurrent()
-            debugPrint(
+            Log.debug(
                 "[Pipeline] audio stopped (\(String(format: "%.2f", audioBuffer.duration))s, \(audioBuffer.data.count)B)"
             )
 
-            // Wait for the audio forwarding task to finish (the stream
-            // ends when stopRecording() is called, so this should be fast).
-            forwardingTask?.cancel()
-            await forwardingTask?.value
+            // Wait for the audio forwarding task to finish. The PCM stream
+            // ends when stopRecording() calls pcmContinuation.finish(), so
+            // normally this returns immediately. However, if the forwarding
+            // task is stuck in sendAudio() on a broken WebSocket,
+            // URLSessionWebSocketTask.send() ignores cancellation. Use a
+            // detached-task timeout to bound the wait. If it hangs, cancel
+            // the streaming session (which cancels the WebSocket task and
+            // forces send() to throw) and proceed with batch mode.
+            if let ft = forwardingTask {
+                ft.cancel()
+                let forwardingDone: Bool = await withCheckedContinuation { continuation in
+                    let lock = NSLock()
+                    var resumed = false
+                    Task.detached {
+                        await ft.value
+                        let alreadyResumed = lock.withLock {
+                            let was = resumed
+                            resumed = true
+                            return was
+                        }
+                        if !alreadyResumed {
+                            continuation.resume(returning: true)
+                        }
+                    }
+                    Task.detached {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        let alreadyResumed = lock.withLock {
+                            let was = resumed
+                            resumed = true
+                            return was
+                        }
+                        if !alreadyResumed {
+                            continuation.resume(returning: false)
+                        }
+                    }
+                }
+                if !forwardingDone {
+                    Log.debug(
+                        "[Pipeline] audio forwarding task timed out (2s), cancelling streaming")
+                    if useStreaming, let streaming = streamingProvider {
+                        await streaming.cancelStreaming()
+                    }
+                }
+            }
 
             // Resolve context once. The pendingContext task caches its
             // result, so awaiting it again (streaming already awaited it
@@ -221,33 +400,29 @@ public actor DictationPipeline: PipelineProviding {
             let dictatedText: String
 
             if useStreaming, let streaming = streamingProvider {
-                // Streaming mode: the server already has all the audio.
-                // Skip the silence gate — the Realtime API handles silence
-                // detection. Just call finishStreaming() to get the
-                // cleaned-up text.
-                debugPrint("[Pipeline] finishing streaming session")
-                do {
-                    dictatedText = try await streaming.finishStreaming()
-                } catch {
-                    debugPrint(
-                        "[Pipeline] Streaming dictation failed: \(error), falling back to batch")
+                // Streaming mode: run streaming and batch in parallel.
+                // Use whichever returns successfully first. This avoids
+                // the 10s delay when streaming fails and we fall back to batch.
+                Log.debug("[Pipeline] finishing streaming session (with parallel batch)")
 
-                    // Fall back to batch mode using the captured audio buffer.
-                    let batchResult = await batchDictate(
-                        audioBuffer: audioBuffer,
-                        context: context,
-                        dictationProvider: dictationProvider,
-                        minimumAudioDuration: minimumAudioDuration,
-                        silenceThreshold: silenceThreshold,
-                        coordinator: coordinator
-                    )
-                    guard let text = batchResult else { return }
-                    dictatedText = text
+                let streamingResult = await raceStreamingAndBatch(
+                    streaming: streaming,
+                    audioBuffer: audioBuffer,
+                    context: context,
+                    dictationProvider: dictationProvider,
+                    minimumAudioDuration: minimumAudioDuration,
+                    silenceThreshold: silenceThreshold
+                )
+
+                guard let text = streamingResult else {
+                    Log.debug("[Pipeline] Both streaming and batch failed")
+                    await coordinator.reset()
+                    return
                 }
+                dictatedText = text
             } else {
                 // Batch mode: send the complete audio buffer to /dictate.
-                debugPrint("[Pipeline] silence gate passed, awaiting context")
-                debugPrint("[Pipeline] context resolved, sending to dictation service")
+                Log.debug("[Pipeline] batch mode, sending to dictation service")
 
                 let batchResult = await batchDictate(
                     audioBuffer: audioBuffer,
@@ -262,12 +437,12 @@ public actor DictationPipeline: PipelineProviding {
             }
 
             let t4 = CFAbsoluteTimeGetCurrent()
-            debugPrint("[Pipeline] dictation returned, injecting text")
+            Log.debug("[Pipeline] dictation returned, injecting text")
 
             // Skip injection for empty or whitespace-only text.
             let finalText = dictatedText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !finalText.isEmpty else {
-                debugPrint("[Pipeline] Empty dictation result, skipping injection")
+                Log.debug("[Pipeline] Empty dictation result, skipping injection")
                 await coordinator.reset()
                 return
             }
@@ -292,7 +467,7 @@ public actor DictationPipeline: PipelineProviding {
             do {
                 try await textInjector.inject(text: finalText, into: context)
             } catch {
-                debugPrint("[Pipeline] Text injection failed: \(error)")
+                Log.debug("[Pipeline] Text injection failed: \(error)")
                 // Signal injection failure so the HUD shows no-target recovery.
                 // The transcript stays in the buffer for re-paste.
                 await coordinator.failInjection()
@@ -305,7 +480,7 @@ public actor DictationPipeline: PipelineProviding {
             let fmt = { (dt: Double) -> String in String(format: "%.2fs", dt) }
             let audioKB = String(format: "%.0f", Double(audioBuffer.data.count) / 1024.0)
             let mode = useStreaming ? "streaming" : "batch"
-            debugPrint(
+            Log.debug(
                 "[Pipeline] Timing:"
                     + " stop=\(fmt(t1 - t0))"
                     + " dictate=\(fmt(t4 - t1))"
@@ -322,7 +497,47 @@ public actor DictationPipeline: PipelineProviding {
         self.pipelineTask = task
         self.pendingContext = nil
 
-        await task.value
+        // Bound the entire pipeline task to 15s. If it hangs (stuck
+        // WebSocket send, server not responding, etc.), cancel it and
+        // force-reset to idle so the user can try again. Without this,
+        // a hang inside the task permanently leaves the pipeline in
+        // .processing and all subsequent activate()/complete() calls
+        // are ignored.
+        let pipelineDone: Bool = await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
+            Task.detached {
+                await task.value
+                let alreadyResumed = lock.withLock {
+                    let was = resumed
+                    resumed = true
+                    return was
+                }
+                if !alreadyResumed {
+                    continuation.resume(returning: true)
+                }
+            }
+            Task.detached {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                let alreadyResumed = lock.withLock {
+                    let was = resumed
+                    resumed = true
+                    return was
+                }
+                if !alreadyResumed {
+                    task.cancel()
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+        if !pipelineDone {
+            Log.debug(
+                "[Pipeline] complete() pipeline task timed out (15s), force-resetting to idle")
+            if let streaming = streamingProvider {
+                await streaming.cancelStreaming()
+            }
+            await coordinator.reset()
+        }
         self.pipelineTask = nil
     }
 
@@ -331,6 +546,8 @@ public actor DictationPipeline: PipelineProviding {
         pipelineTask = nil
         pendingContext?.cancel()
         pendingContext = nil
+        audioSetupTask?.cancel()
+        audioSetupTask = nil
 
         // Cancel audio forwarding if streaming.
         audioForwardingTask?.cancel()
@@ -350,6 +567,163 @@ public actor DictationPipeline: PipelineProviding {
         await coordinator.reset()
     }
 
+    // MARK: - Parallel Streaming + Batch
+
+    /// Race streaming and batch dictation in parallel.
+    ///
+    /// Start both paths concurrently and return the result from whichever
+    /// succeeds first. If streaming wins, cancel the batch task. If batch
+    /// wins (streaming timed out or failed), use the batch result.
+    ///
+    /// Returns nil only if both paths fail.
+    private func raceStreamingAndBatch(
+        streaming: StreamingDictationProviding,
+        audioBuffer: AudioBuffer,
+        context: AppContext,
+        dictationProvider: DictationProviding,
+        minimumAudioDuration: TimeInterval,
+        silenceThreshold: Float
+    ) async -> String? {
+        // Check audio validity before starting either path.
+        guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
+            Log.debug(
+                "[Pipeline] Audio too short (\(audioBuffer.duration)s), skipping dictation")
+            return nil
+        }
+
+        // Reject silent or noise-only audio before sending to either path.
+        // AirPods noise cancellation can produce a subtle floor of sound
+        // that the Realtime API misinterprets as speech (e.g. "You.",
+        // "Thanks for watching!"). The client-side silence gate catches this.
+        let rms = AudioLevelAnalyzer.rmsLevel(of: audioBuffer)
+        Log.debug(
+            "[Pipeline] Audio RMS: \(rms), threshold: \(silenceThreshold), "
+                + "duration: \(String(format: "%.2f", audioBuffer.duration))s")
+        if rms <= silenceThreshold {
+            Log.debug(
+                "[Pipeline] Audio below silence threshold, skipping dictation")
+            return nil
+        }
+
+        let t0 = CFAbsoluteTimeGetCurrent()
+
+        // Race streaming and batch with true first-to-finish semantics.
+        //
+        // As soon as one path produces a non-empty result, we return it
+        // immediately — without waiting for the other path. This is
+        // critical when finishStreaming() hangs (server never sends
+        // transcript_done): batch wins instantly instead of blocking
+        // until the 10s streaming timeout fires.
+        //
+        // We use detached tasks + a checked continuation because
+        // structured concurrency (TaskGroup, async let) waits for ALL
+        // children before the scope exits, even after cancelAll(). If
+        // one child is stuck in a non-cancellable await (e.g.
+        // URLSessionWebSocketTask.receive()), the group blocks forever.
+        // Detached tasks have no such constraint — the continuation
+        // resumes as soon as either task delivers a result.
+        let winner: String? = await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
+            var streamingResult: String?
+            var batchResult: String?
+            var gotStreaming = false
+            var gotBatch = false
+
+            func tryResume(preferredText: String?, source: String) {
+                let alreadyResumed = lock.withLock {
+                    let was = resumed
+                    if !was { resumed = true }
+                    return was
+                }
+                if !alreadyResumed {
+                    let t1 = CFAbsoluteTimeGetCurrent()
+                    Log.debug(
+                        "[Pipeline] Using \(source) result (\(String(format: "%.2f", t1 - t0))s)")
+                    continuation.resume(returning: preferredText)
+                }
+            }
+
+            func checkBothDone() {
+                // Called under lock. If both paths finished but neither
+                // had usable text, resume with whatever we have.
+                let (done, sr, br): (Bool, String?, String?) = lock.withLock {
+                    (gotStreaming && gotBatch, streamingResult, batchResult)
+                }
+                guard done else { return }
+                let fallback = sr ?? br
+                let alreadyResumed = lock.withLock {
+                    let was = resumed
+                    if !was { resumed = true }
+                    return was
+                }
+                if !alreadyResumed {
+                    let t1 = CFAbsoluteTimeGetCurrent()
+                    Log.debug(
+                        "[Pipeline] Both paths done, no winner (\(String(format: "%.2f", t1 - t0))s)"
+                    )
+                    continuation.resume(returning: fallback)
+                }
+            }
+
+            let streamingTask = Task.detached {
+                do {
+                    let result = try await streaming.finishStreaming()
+                    Log.debug("[Pipeline] Streaming completed")
+                    lock.withLock {
+                        streamingResult = result
+                        gotStreaming = true
+                    }
+                    if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        tryResume(preferredText: result, source: "streaming")
+                    } else {
+                        checkBothDone()
+                    }
+                } catch {
+                    Log.debug("[Pipeline] Streaming failed: \(error)")
+                    lock.withLock {
+                        streamingResult = nil
+                        gotStreaming = true
+                    }
+                    checkBothDone()
+                }
+            }
+
+            let batchTask = Task.detached {
+                do {
+                    let result = try await dictationProvider.dictate(
+                        audio: audioBuffer.data, context: context)
+                    Log.debug("[Pipeline] Batch completed")
+                    lock.withLock {
+                        batchResult = result
+                        gotBatch = true
+                    }
+                    if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        tryResume(preferredText: result, source: "batch")
+                    } else {
+                        checkBothDone()
+                    }
+                } catch {
+                    Log.debug("[Pipeline] Batch failed: \(error)")
+                    lock.withLock {
+                        batchResult = nil
+                        gotBatch = true
+                    }
+                    checkBothDone()
+                }
+            }
+
+            // Suppress unused variable warnings. The tasks are kept
+            // alive by the closures capturing the continuation; we
+            // don't need to explicitly cancel the loser because the
+            // extra network call is acceptable for reliability.
+            _ = streamingTask
+            _ = batchTask
+        }
+
+        return winner
+    }
+
     // MARK: - Batch Dictation Helper
 
     /// Run the batch dictation path: silence gate, then POST to /dictate.
@@ -367,7 +741,7 @@ public actor DictationPipeline: PipelineProviding {
     ) async -> String? {
         // Skip empty or very short audio.
         guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
-            debugPrint(
+            Log.debug(
                 "[Pipeline] Audio too short (\(audioBuffer.duration)s), skipping dictation")
             await coordinator.reset()
             return nil
@@ -376,7 +750,7 @@ public actor DictationPipeline: PipelineProviding {
         // Reject silent or noise-only audio before sending to the server.
         if AudioLevelAnalyzer.isSilent(audioBuffer, threshold: silenceThreshold) {
             let rms = AudioLevelAnalyzer.rmsLevel(of: audioBuffer)
-            debugPrint(
+            Log.debug(
                 "[Pipeline] Audio below silence threshold "
                     + "(rms: \(rms), threshold: \(silenceThreshold)), skipping dictation")
             await coordinator.reset()
@@ -394,7 +768,7 @@ public actor DictationPipeline: PipelineProviding {
                 audio: audioBuffer.data, context: context)
             return text
         } catch {
-            debugPrint("[Pipeline] Dictation failed: \(error)")
+            Log.debug("[Pipeline] Dictation failed: \(error)")
             await coordinator.reset()
             return nil
         }

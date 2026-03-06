@@ -131,6 +131,38 @@ Nominalized forms are acceptable for:
 If you can ask "Who does what?" and rewrite to answer that question with a subject + verb,
 use the active form.
 
+## Running and Debugging the App
+
+### Building
+
+```bash
+make generate   # Regenerate Xcode project (needed after adding/removing files)
+make build      # Build via xcodebuild
+make test       # Run all tests (see Testing section)
+make clean      # Clean build artifacts + DerivedData
+```
+
+### Launching the app
+
+The app requires `VOICE_SERVICE_URL` and `VOICE_API_KEY` environment variables. Redirect
+stderr to a log file because `Log.debug()` writes to stderr:
+
+```bash
+pkill -9 -f "Voice.app/Contents/MacOS/Voice" 2>/dev/null
+sleep 1
+rm -f /tmp/voice.log
+APP=$(find ~/Library/Developer/Xcode/DerivedData/Voice-*/Build/Products/Debug -name Voice.app -maxdepth 1)
+VOICE_SERVICE_URL="..." \
+VOICE_API_KEY="$(grep API_KEY VoiceService/secrets.yaml | cut -d' ' -f2)" \
+"$APP/Contents/MacOS/Voice" 2>/tmp/voice.log &
+```
+
+### Logging
+
+Use `Log.debug()` for all pipeline and streaming provider logging. It writes to
+`FileHandle.standardError` which is line-buffered. **Do not use `debugPrint`** in these
+paths — stdout is block-buffered when redirected to a file, hiding output during hangs.
+
 ## Documentation
 
 Don't create too many summary documents and markdown files.

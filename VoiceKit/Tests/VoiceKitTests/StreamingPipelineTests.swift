@@ -104,6 +104,9 @@ final class StreamingPipelineTests: XCTestCase {
         let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline()
 
         await pipeline.activate()
+        // Audio setup now runs in a background task after activate() returns.
+        // Wait briefly for the setup task to complete.
+        try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
         XCTAssertEqual(audio.startCallCount, 1)
         XCTAssertTrue(audio.isRecording)
 
@@ -157,7 +160,9 @@ final class StreamingPipelineTests: XCTestCase {
             "Streaming provider should receive audio data")
     }
 
-    func testStreamingDoesNotCallBatchDictation() async {
+    func testStreamingRunsBatchInParallel() async {
+        // With parallel batch, both streaming and batch are called.
+        // This test verifies that batch is called alongside streaming.
         let (pipeline, audio, _, dictation, _, _, _) = makeStreamingPipeline()
 
         await pipeline.activate()
@@ -166,8 +171,8 @@ final class StreamingPipelineTests: XCTestCase {
         emitTask.cancel()
 
         XCTAssertEqual(
-            dictation.dictateCallCount, 0,
-            "Batch dictation should not be called when streaming is active")
+            dictation.dictateCallCount, 1,
+            "Batch dictation should be called in parallel with streaming")
     }
 
     func testStreamingReadsContext() async {
@@ -261,6 +266,9 @@ final class StreamingPipelineTests: XCTestCase {
         let (pipeline, _, _, _, streaming, _, coordinator) = makeStreamingPipeline()
 
         await pipeline.activate()
+        // Audio setup now runs in a background task after activate() returns.
+        // Wait briefly for the streaming session to start before cancelling.
+        try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
         let state = await coordinator.state
         XCTAssertEqual(state, .recording)
 
@@ -353,10 +361,12 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertEqual(injector.lastInjectedText, "Batch recovery")
     }
 
-    func testStreamingEmptyResultSkipsInjection() async {
+    func testStreamingEmptyResultUsesBatchFallback() async {
+        // When streaming returns empty, batch result is used (parallel mode).
         let streaming = MockStreamingDictationProvider(stubbedText: "")
+        let dictation = MockDictationProvider(stubbedText: "Batch result")
         let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
-            streamingProvider: streaming)
+            dictationProvider: dictation, streamingProvider: streaming)
 
         await pipeline.activate()
         let emitTask = emitChunksInBackground(audio)
@@ -366,14 +376,17 @@ final class StreamingPipelineTests: XCTestCase {
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
         XCTAssertEqual(
-            injector.injectionCount, 0,
-            "Empty streaming result should skip injection")
+            injector.injectionCount, 1,
+            "Batch result should be injected when streaming returns empty")
+        XCTAssertEqual(injector.lastInjectedText, "Batch result")
     }
 
-    func testStreamingWhitespaceOnlyResultSkipsInjection() async {
-        let streaming = MockStreamingDictationProvider(stubbedText: "   \n  ")
+    func testBothEmptyResultsSkipInjection() async {
+        // When both streaming and batch return empty, skip injection.
+        let streaming = MockStreamingDictationProvider(stubbedText: "")
+        let dictation = MockDictationProvider(stubbedText: "")
         let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
-            streamingProvider: streaming)
+            dictationProvider: dictation, streamingProvider: streaming)
 
         await pipeline.activate()
         let emitTask = emitChunksInBackground(audio)
@@ -384,7 +397,26 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertEqual(state, .idle)
         XCTAssertEqual(
             injector.injectionCount, 0,
-            "Whitespace-only streaming result should skip injection")
+            "Empty results from both paths should skip injection")
+    }
+
+    func testBothWhitespaceOnlyResultsSkipInjection() async {
+        // When both streaming and batch return whitespace-only, skip injection.
+        let streaming = MockStreamingDictationProvider(stubbedText: "   \n  ")
+        let dictation = MockDictationProvider(stubbedText: "  \t  ")
+        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
+            dictationProvider: dictation, streamingProvider: streaming)
+
+        await pipeline.activate()
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(
+            injector.injectionCount, 0,
+            "Whitespace-only results from both paths should skip injection")
     }
 
     // MARK: - Transcript buffer
@@ -404,11 +436,14 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertEqual(stored, "Streamed text")
     }
 
-    func testStreamingEmptyResultDoesNotStoreInBuffer() async {
+    func testBothEmptyResultsDoNotStoreInBuffer() async {
+        // When both streaming and batch return empty, nothing stored.
         let buffer = TranscriptBuffer()
         let streaming = MockStreamingDictationProvider(stubbedText: "")
+        let dictation = MockDictationProvider(stubbedText: "")
         let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline(
-            streamingProvider: streaming, transcriptBuffer: buffer)
+            dictationProvider: dictation, streamingProvider: streaming,
+            transcriptBuffer: buffer)
 
         await pipeline.activate()
         let emitTask = emitChunksInBackground(audio)
@@ -416,7 +451,26 @@ final class StreamingPipelineTests: XCTestCase {
         emitTask.cancel()
 
         let stored = await buffer.lastTranscript
-        XCTAssertNil(stored, "Empty streaming result should not be stored in buffer")
+        XCTAssertNil(stored, "Empty results from both paths should not be stored in buffer")
+    }
+
+    func testStreamingEmptyButBatchSuccessStoresInBuffer() async {
+        // When streaming returns empty but batch returns text, store batch result.
+        let buffer = TranscriptBuffer()
+        let streaming = MockStreamingDictationProvider(stubbedText: "")
+        let dictation = MockDictationProvider(stubbedText: "Batch text")
+        let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline(
+            dictationProvider: dictation, streamingProvider: streaming,
+            transcriptBuffer: buffer)
+
+        await pipeline.activate()
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        let stored = await buffer.lastTranscript
+        XCTAssertEqual(
+            stored, "Batch text", "Batch result should be stored when streaming is empty")
     }
 
     func testStreamingFailureWithBatchFallbackStoresInBuffer() async {

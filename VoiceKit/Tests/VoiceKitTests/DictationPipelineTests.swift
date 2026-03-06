@@ -56,6 +56,9 @@ final class DictationPipelineTests: XCTestCase {
         let (pipeline, audio, _, _, _, _) = makePipeline()
 
         await pipeline.activate()
+        // Audio setup now runs in a background task after activate() returns.
+        // Wait briefly for the setup task to complete.
+        try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
         XCTAssertEqual(audio.startCallCount, 1)
         var recording = audio.isRecording
         XCTAssertTrue(recording)

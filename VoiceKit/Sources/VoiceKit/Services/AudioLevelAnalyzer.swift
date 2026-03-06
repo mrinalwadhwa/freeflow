@@ -51,11 +51,13 @@ public enum AudioLevelAnalyzer {
     ///   - buffer: A WAV-encoded `AudioBuffer`.
     ///   - threshold: RMS level below which audio is considered silent.
     ///     On 16-bit PCM normalized to 0–1, ambient silence produces
-    ///     RMS around 0.0005–0.001 and quiet speech around 0.002–0.01.
-    ///     A threshold of 0.001 rejects near-silence while allowing
+    ///     RMS around 0.0005–0.001 with a built-in mic. AirPods with
+    ///     noise cancellation or nearby fans raise the floor to ~0.002.
+    ///     Quiet speech starts around 0.01 and normal speech is 0.03+.
+    ///     A threshold of 0.005 rejects ambient noise while allowing
     ///     even quiet speech through.
     /// - Returns: `true` if the audio is at or below the threshold.
-    public static func isSilent(_ buffer: AudioBuffer, threshold: Float = 0.001) -> Bool {
+    public static func isSilent(_ buffer: AudioBuffer, threshold: Float = 0.005) -> Bool {
         rmsLevel(of: buffer) <= threshold
     }
 }

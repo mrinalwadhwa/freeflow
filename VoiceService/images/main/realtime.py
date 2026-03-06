@@ -37,8 +37,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 try:
     import websockets
+    WEBSOCKETS_VERSION = getattr(websockets, "__version__", "unknown")
 except ImportError:
     websockets = None
+    WEBSOCKETS_VERSION = None
 
 from context import AppContext, parse_dict
 from polish import polish_text
@@ -142,6 +144,12 @@ async def connect(model: str, retry_on_auth_error: bool = True):
     url = _get_ws_url(model)
     headers = _get_headers()
 
+    print(
+        f"[stream] Connecting to Realtime API "
+        f"(websockets={WEBSOCKETS_VERSION}, "
+        f"ping_interval=None, ping_timeout=None, close_timeout=0)"
+    )
+
     try:
         ws = await websockets.connect(
             url,
@@ -150,6 +158,7 @@ async def connect(model: str, retry_on_auth_error: bool = True):
             ping_timeout=None,
             close_timeout=0,
         )
+        print(f"[stream] Connected to Realtime API (ws.ping_interval={getattr(ws, 'ping_interval', 'N/A')})")
         return ws
     except Exception as e:
         error_str = str(e)
@@ -363,11 +372,15 @@ async def _run_dictation_session(
             await configure_session(realtime_ws, STT_MODEL, language)
             t_connected = time.monotonic()
             buffered = len(audio_buffer)
+            # Log connection details for debugging keepalive issues
+            ws_state = getattr(realtime_ws, 'state', 'unknown')
+            ws_ping_interval = getattr(realtime_ws, 'ping_interval', 'N/A')
             print(
                 f"[stream] Session {session_id}: Realtime API opened "
                 f"in {t_connected - t_start:.2f}s "
                 f"(model={REALTIME_MODEL}, stt={STT_MODEL}, "
-                f"buffered={buffered} chunks)"
+                f"buffered={buffered} chunks, "
+                f"ws_state={ws_state}, ping_interval={ws_ping_interval})"
             )
         except Exception as e:
             print(
@@ -549,10 +562,17 @@ async def _run_dictation_session(
         # Wait for the connection to be established.
         await realtime_ready.wait()
         if realtime_failed or realtime_ws is None:
+            print(
+                f"[stream] Session {session_id}: "
+                f"handle_realtime_events exiting early "
+                f"(failed={realtime_failed}, ws={realtime_ws is not None})"
+            )
             return
 
+        event_count = 0
         try:
             async for message in realtime_ws:
+                event_count += 1
                 event = json.loads(message)
                 event_type = event.get("type", "")
 
@@ -616,15 +636,36 @@ async def _run_dictation_session(
 
                 # If stop received AND transcription done, stop listening.
                 if stopped.is_set() and transcription_done.is_set():
+                    print(
+                        f"[stream] Session {session_id}: "
+                        f"Realtime events loop complete "
+                        f"(events={event_count}, stopped=True, done=True)"
+                    )
                     break
 
-        except Exception as e:
-            if not stopped.is_set():
+        except websockets.exceptions.ConnectionClosedError as e:
+            # Log connection closure with full details.
+            print(
+                f"[stream] Session {session_id}: "
+                f"Realtime API connection closed: code={e.code}, "
+                f"reason={e.reason}, stopped={stopped.is_set()}, "
+                f"transcription_done={transcription_done.is_set()}, "
+                f"events_received={event_count}"
+            )
+            # If we already got the transcript, this is fine.
+            if not transcription_done.is_set():
                 print(
                     f"[stream] Session {session_id}: "
-                    f"Error receiving from Realtime API: {e}"
+                    f"WARNING: Connection closed before transcript completed"
                 )
-                traceback.print_exc()
+        except Exception as e:
+            print(
+                f"[stream] Session {session_id}: "
+                f"Error receiving from Realtime API: {type(e).__name__}: {e}, "
+                f"stopped={stopped.is_set()}, "
+                f"transcription_done={transcription_done.is_set()}"
+            )
+            traceback.print_exc()
 
     # --- Run the session ---
 

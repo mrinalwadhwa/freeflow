@@ -10,12 +10,6 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     /// Display name of the hold-to-record key (e.g. "⌥ Right Option").
     public let holdToRecordKeyName: String
 
-    /// Display name of the hands-free toggle gesture (e.g. "Double-tap ⌥ Right Option").
-    public let handsFreeToggleName: String
-
-    /// Timing window in seconds to distinguish a double-tap from two separate presses.
-    public let doubleTapInterval: TimeInterval
-
     /// Display name of the paste-last-transcript shortcut (e.g. "⌃⌥V").
     public let pasteShortcutName: String
 
@@ -24,14 +18,10 @@ public struct ShortcutConfiguration: Sendable, Equatable {
 
     public init(
         holdToRecordKeyName: String = "⌥ Right Option",
-        handsFreeToggleName: String = "Double-tap ⌥ Right Option",
-        doubleTapInterval: TimeInterval = 0.35,
         pasteShortcutName: String = "⌃⌥V",
         dismissKeyName: String = "Escape"
     ) {
         self.holdToRecordKeyName = holdToRecordKeyName
-        self.handsFreeToggleName = handsFreeToggleName
-        self.doubleTapInterval = doubleTapInterval
         self.pasteShortcutName = pasteShortcutName
         self.dismissKeyName = dismissKeyName
     }

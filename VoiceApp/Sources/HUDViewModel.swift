@@ -99,7 +99,7 @@ final class HUDViewModel: ObservableObject {
 
     init(
         shortcuts: ShortcutConfiguration = .default,
-        slowProcessingThreshold: TimeInterval = 5.0,
+        slowProcessingThreshold: TimeInterval = 7.0,
         micCalloutDuration: TimeInterval = 3.0
     ) {
         self.shortcuts = shortcuts
@@ -173,11 +173,6 @@ final class HUDViewModel: ObservableObject {
         isHandsFree = false
     }
 
-    /// Called when hands-free recording begins via the toggle shortcut.
-    func toggledHandsFree() {
-        isHandsFree = true
-    }
-
     /// Called when the user dismisses the no-target state (✕ or Escape).
     func dismissNoTarget() {
         // The coordinator should transition to idle; this handles the UI side
@@ -194,6 +189,8 @@ final class HUDViewModel: ObservableObject {
     private func handlePipelineState(_ state: RecordingState) {
         let previous = pipelineState
         pipelineState = state
+        let t = CFAbsoluteTimeGetCurrent()
+        Log.debug("[HUD] State changed: \(previous) → \(state) at \(t)")
 
         // Cancel slow-processing timer when leaving processing.
         if state != .processing {
@@ -217,6 +214,7 @@ final class HUDViewModel: ObservableObject {
                 startAudioLevelObservation()
             }
             recalculate()
+            Log.debug("[HUD] Visual state now: \(visualState)")
 
         case .processing:
             stopAudioLevelObservation()

@@ -60,6 +60,9 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     // MARK: - StreamingDictationProviding
 
     public func startStreaming(context: AppContext, language: String?) async throws {
+        // Bail out if the calling task was cancelled (e.g. timeout).
+        try Task.checkCancellation()
+
         // Ensure we have a live connection, reconnecting if needed.
         try await ensureConnected()
 
@@ -75,7 +78,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         let startMessage = buildStartMessage(context: context, language: language)
         try await send(json: startMessage)
 
-        debugPrint("[StreamingProvider] Session started (persistent)")
+        Log.debug("[StreamingProvider] Session started (persistent)")
     }
 
     public func sendAudio(_ pcmData: Data) async throws {
@@ -94,7 +97,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         // Send the stop signal.
         try await send(json: ["type": "stop"])
 
-        debugPrint("[StreamingProvider] Stop sent, waiting for transcript")
+        Log.debug("[StreamingProvider] Stop sent, waiting for transcript")
 
         // Read messages until we receive transcript_done or error.
         // Timeout after 10 seconds to avoid hanging forever if the
@@ -113,7 +116,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                 try await self.waitForResult()
             }
         } catch {
-            debugPrint("[StreamingProvider] waitForResult failed: \(error)")
+            Log.debug("[StreamingProvider] waitForResult failed: \(error)")
             // The connection may have broken during this session.
             // Mark it dead so the next session reconnects.
             lock.withLock {
@@ -141,7 +144,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         }
 
         if wasActive {
-            debugPrint("[StreamingProvider] Session cancelled")
+            Log.debug("[StreamingProvider] Session cancelled")
         }
 
         // On cancel, tear down the connection entirely. The server
@@ -157,13 +160,17 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     public func disconnect() async {
         stopKeepalive()
         await tearDownConnection()
-        debugPrint("[StreamingProvider] Disconnected")
+        Log.debug("[StreamingProvider] Disconnected")
     }
 
     // MARK: - Connection Management
 
     /// Ensure there is a live WebSocket connection, creating one if needed.
     private func ensureConnected() async throws {
+        // Bail out early if the calling task has been cancelled (e.g. the
+        // streaming-setup timeout fired and cancelled the detached task).
+        try Task.checkCancellation()
+
         let existing: URLSessionWebSocketTask? = lock.withLock { self.webSocketTask }
 
         if let task = existing {
@@ -171,38 +178,57 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             switch task.state {
             case .running:
                 // Verify liveness with a protocol-level ping.
+                // Timeout after 3s — sendPing can hang indefinitely when
+                // the WebSocket is in a broken state (e.g. half-closed TCP).
                 do {
-                    try await withCheckedThrowingContinuation {
-                        (cont: CheckedContinuation<Void, Error>) in
-                        // Guard against double-resume: URLSessionWebSocketTask
-                        // can invoke the sendPing completion more than once when
-                        // the connection is aborting while a ping is in flight.
-                        let pingLock = NSLock()
-                        var resumed = false
-                        task.sendPing { error in
-                            let alreadyResumed = pingLock.withLock {
-                                let was = resumed
-                                resumed = true
-                                return was
-                            }
-                            guard !alreadyResumed else { return }
-                            if let error {
-                                cont.resume(throwing: error)
-                            } else {
-                                cont.resume()
+                    try await withThrowingTaskGroup(of: Void.self) { group in
+                        group.addTask {
+                            try await withCheckedThrowingContinuation {
+                                (cont: CheckedContinuation<Void, Error>) in
+                                // Guard against double-resume: URLSessionWebSocketTask
+                                // can invoke the sendPing completion more than once when
+                                // the connection is aborting while a ping is in flight.
+                                let pingLock = NSLock()
+                                var resumed = false
+                                task.sendPing { error in
+                                    let alreadyResumed = pingLock.withLock {
+                                        let was = resumed
+                                        resumed = true
+                                        return was
+                                    }
+                                    guard !alreadyResumed else { return }
+                                    if let error {
+                                        cont.resume(throwing: error)
+                                    } else {
+                                        cont.resume()
+                                    }
+                                }
                             }
                         }
+                        group.addTask {
+                            try await Task.sleep(nanoseconds: 3_000_000_000)
+                            throw CancellationError()
+                        }
+                        // Wait for whichever finishes first.
+                        try await group.next()
+                        group.cancelAll()
                     }
                     return  // Connection is alive.
                 } catch {
-                    debugPrint("[StreamingProvider] Existing connection failed ping, reconnecting")
+                    Log.debug(
+                        "[StreamingProvider] Existing connection failed ping (or timed out), reconnecting"
+                    )
                     await tearDownConnection()
                 }
             default:
-                debugPrint("[StreamingProvider] Existing connection not running, reconnecting")
+                Log.debug("[StreamingProvider] Existing connection not running, reconnecting")
                 await tearDownConnection()
             }
         }
+
+        // Check cancellation again after teardown — the timeout may have
+        // fired while we were tearing down the old connection.
+        try Task.checkCancellation()
 
         // Build and start a new connection.
         let task = try buildWebSocketTask()
@@ -217,11 +243,23 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         // a dictation session starts).
         startKeepalive()
 
-        debugPrint("[StreamingProvider] Connected")
+        Log.debug("[StreamingProvider] Connected")
     }
 
     /// Build a URLSessionWebSocketTask for the /stream endpoint.
+    ///
+    /// Always creates a fresh URLSession so that a prior `tearDownConnection()`
+    /// (which calls `invalidateAndCancel()`) cannot affect the new task.
     private func buildWebSocketTask() throws -> URLSessionWebSocketTask {
+        // Invalidate any leftover session first to avoid leaking sessions
+        // if buildWebSocketTask is called without a prior teardown.
+        let oldSession: URLSession? = lock.withLock {
+            let s = self.urlSession
+            self.urlSession = nil
+            return s
+        }
+        oldSession?.invalidateAndCancel()
+
         let trimmed = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
         // Convert HTTP(S) URL to WS(S).
@@ -283,7 +321,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                 do {
                     try await self.send(json: ["type": "ping"])
                 } catch {
-                    debugPrint("[StreamingProvider] Keepalive ping failed: \(error)")
+                    Log.debug("[StreamingProvider] Keepalive ping failed: \(error)")
                     // Connection is dead; tear it down so the next
                     // session reconnects.
                     await self.tearDownConnection()
@@ -378,7 +416,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                         self.webSocketTask
                     }
                     ws?.cancel(with: .abnormalClosure, reason: nil)
-                    debugPrint(
+                    Log.debug(
                         "[StreamingProvider] Timeout after \(Int(seconds))s, "
                             + "cancelled WebSocket to unblock receive()")
                 }

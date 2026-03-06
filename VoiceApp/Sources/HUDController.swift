@@ -134,11 +134,6 @@ final class HUDController {
         viewModel.hotkeyHeld()
     }
 
-    /// Call when hands-free recording begins via toggle shortcut.
-    func toggledHandsFree() {
-        viewModel.toggledHandsFree()
-    }
-
     // MARK: - Pipeline actions
 
     /// Notify the view model that the user switched microphones and refresh

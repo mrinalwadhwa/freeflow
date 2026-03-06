@@ -21,7 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hudController: HUDController?
     private var menuBarController: MenuBarController?
     private var permissionController: PermissionController?
-    private var doubleTapDetector: DoubleTapDetector?
 
     // MARK: - Lifecycle
 
@@ -109,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotkey() {
         guard let pipeline else {
-            debugPrint("[AppDelegate] Pipeline not initialized, cannot register hotkey")
+            Log.debug("[AppDelegate] Pipeline not initialized, cannot register hotkey")
             return
         }
 
@@ -117,39 +116,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hudRef = hudController
         let menuRef = menuBarController
 
-        let detector = DoubleTapDetector(
-            doubleTapInterval: ShortcutConfiguration.default.doubleTapInterval)
-
-        detector.onGesture = { gesture in
-            switch gesture {
-            case .hold:
-                debugPrint("[Hotkey] Hold detected — push-to-talk")
-                hudRef?.hotkeyHeld()
-                Task { await pipelineRef.activate() }
-            case .doubleTap:
-                debugPrint("[Hotkey] Double-tap detected — hands-free toggle")
-                hudRef?.toggledHandsFree()
-                Task { await pipelineRef.activate() }
-            }
-        }
-
-        detector.onHoldRelease = {
-            debugPrint("[Hotkey] Hold released — completing pipeline")
-            Task { await pipelineRef.complete() }
-        }
-
-        self.doubleTapDetector = detector
-
         do {
-            try hotkeyProvider.register { [weak detector] event in
+            try hotkeyProvider.register { event in
+                let t0 = CFAbsoluteTimeGetCurrent()
+                Log.debug("[Hotkey] Event received: \(event) at \(t0)")
                 Task { @MainActor in
-                    detector?.handleEvent(event)
+                    let t1 = CFAbsoluteTimeGetCurrent()
+                    Log.debug(
+                        "[Hotkey] MainActor dispatch took \(String(format: "%.3f", t1 - t0))s")
+                    switch event {
+                    case .pressed:
+                        Log.debug("[Hotkey] Pressed — calling hotkeyHeld()")
+                        hudRef?.hotkeyHeld()
+                        let t2 = CFAbsoluteTimeGetCurrent()
+                        Log.debug(
+                            "[Hotkey] hotkeyHeld() took \(String(format: "%.3f", t2 - t1))s, starting activate()"
+                        )
+                        Task {
+                            let t3 = CFAbsoluteTimeGetCurrent()
+                            await pipelineRef.activate()
+                            let t4 = CFAbsoluteTimeGetCurrent()
+                            Log.debug(
+                                "[Hotkey] activate() took \(String(format: "%.3f", t4 - t3))s")
+                        }
+                    case .released:
+                        Log.debug("[Hotkey] Released — completing pipeline")
+                        Task { await pipelineRef.complete() }
+                    }
                 }
             }
             menuRef?.setHotkeyRegistered(true)
-            debugPrint("[AppDelegate] Global hotkey registered (Right Option)")
+            Log.debug("[AppDelegate] Global hotkey registered (Right Option)")
         } catch {
-            debugPrint("[AppDelegate] Failed to register hotkey: \(error)")
+            Log.debug("[AppDelegate] Failed to register hotkey: \(error)")
             menuRef?.setHotkeyRegistered(false)
             Task { @MainActor in
                 self.showHotkeyRegistrationFailedAlert(error: error)

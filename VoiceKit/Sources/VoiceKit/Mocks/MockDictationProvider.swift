@@ -18,6 +18,11 @@ public final class MockDictationProvider: DictationProviding, @unchecked Sendabl
     /// When non-nil, `dictate(audio:context:)` throws this error.
     public var stubbedError: (any Error)?
 
+    /// Optional delay (in seconds) before returning from `dictate()`.
+    /// Simulates slow network or a hanging batch request. Respects
+    /// task cancellation during the sleep.
+    public var stubbedDelay: TimeInterval = 0
+
     /// Number of times `dictate(audio:context:)` has been called.
     public var dictateCallCount: Int {
         lock.withLock { _dictateCallCount }
@@ -52,6 +57,11 @@ public final class MockDictationProvider: DictationProviding, @unchecked Sendabl
             _dictateCallCount += 1
             _receivedAudioData.append(audio)
             _receivedContexts.append(context)
+        }
+
+        if stubbedDelay > 0 {
+            try await Task.sleep(nanoseconds: UInt64(stubbedDelay * 1_000_000_000))
+            try Task.checkCancellation()
         }
 
         if let error = stubbedError {
