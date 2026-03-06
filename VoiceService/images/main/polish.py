@@ -69,9 +69,14 @@ SYSTEM_PROMPT = _load_prompt()
 _DICTATED_PUNCT_SUBS: list[tuple[re.Pattern, str, bool]] = [
     # Paragraph and line breaks (must come before "period" to avoid
     # partial matches on "new paragraph period").
-    (re.compile(r'\bnew paragraph\b', re.IGNORECASE), '\n\n', False),
-    (re.compile(r'\bnew line\b', re.IGNORECASE), '\n', False),
-    (re.compile(r'\bnewline\b', re.IGNORECASE), '\n', False),
+    # Protected so the LLM cannot collapse them back to commas.
+    # Uses ¶ (pilcrow) and ↵ (return) as placeholders inside <keep>
+    # tags — real typographic symbols for paragraph/line break that
+    # the LLM understands and that never appear in speech transcription.
+    # strip_keep_tags() expands them to actual newlines.
+    (re.compile(r'\bnew paragraph\b', re.IGNORECASE), '\u00b6', True),
+    (re.compile(r'\bnew line\b', re.IGNORECASE), '\u21b5', True),
+    (re.compile(r'\bnewline\b', re.IGNORECASE), '\u21b5', True),
     # Sentence-ending punctuation.
     (re.compile(r'\bperiod\b', re.IGNORECASE), '.', False),
     (re.compile(r'\bfull stop\b', re.IGNORECASE), '.', False),
@@ -160,8 +165,14 @@ def strip_keep_tags(text: str) -> str:
     - Hyphens, @, /, \\ attach on both sides (no spaces).
     - # and $ attach to the following word (no space after).
     - % and ellipsis attach to the preceding word (no space before).
+    - ¶ and ↵ placeholders are expanded to real line breaks.
     """
     text = _KEEP_TAG_PATTERN.sub(r'\1', text)
+
+    # Expand break placeholders to real newlines. Consume surrounding
+    # whitespace so the break starts cleanly.
+    text = re.sub(r' *\u00b6 *', '\n\n', text)
+    text = re.sub(r' *\u21b5 *', '\n', text)
 
     # Clean up whitespace around symbols that were inside tags.
     text = re.sub(r' +([.,;:?!\)\]\u201d\u2026%])', r'\1', text)
@@ -169,7 +180,47 @@ def strip_keep_tags(text: str) -> str:
     text = re.sub(r' *([\-@/\\]) +', r'\1', text)
     text = re.sub(r' {2,}', ' ', text)
 
+    # Capitalize first letter after paragraph/line breaks.
+    def _cap_after_break(m: re.Match) -> str:
+        return m.group(1) + m.group(2).upper()
+    text = re.sub(r'(\n)(\w)', _cap_after_break, text)
+
     return text
+
+
+def normalize_formatting(text: str) -> str:
+    """Fix common LLM formatting inconsistencies.
+
+    - Bullet lists: ensure "- " (dash + space) at the start of each
+      bullet item. gpt-4.1-nano often produces "-Item" without the
+      space after the dash.
+    - Trailing whitespace: strip trailing spaces from each line.
+      The LLM sometimes produces "1. Item \\n2. Item" with trailing
+      spaces before line breaks.
+    - Leaked placeholders: if ¶ or ↵ survived past strip_keep_tags
+      (e.g. the LLM stripped the <keep> tags but kept the symbol),
+      expand them to real line breaks instead of showing the symbol.
+    """
+    # Safety net for leaked placeholders.
+    text = re.sub(r' *\u00b6 *', '\n\n', text)
+    text = re.sub(r' *\u21b5 *', '\n', text)
+    # Collapse doubled / and \ that result from the LLM duplicating a
+    # symbol already present in a <keep> tag.  Guard legitimate cases:
+    # - :// in URLs (http://, ftp://) — require no colon before //
+    # - \\ between word chars is always a dupe in dictation (C\\users);
+    #   leading \\ for UNC paths has no word char before the backslashes.
+    text = re.sub(r'(?<!:)//', '/', text)
+    text = re.sub(r'(?<=\w)\\\\(?=\w)', r'\\', text)
+    lines = text.split('\n')
+    result = []
+    for line in lines:
+        # Strip trailing whitespace from every line.
+        line = line.rstrip()
+        # Normalize bullet items: "-X" -> "- X" (but not "- X" which
+        # is already correct, and not bare "-" on its own).
+        line = re.sub(r'^(\s*)-(\S)', r'\1- \2', line)
+        result.append(line)
+    return '\n'.join(result)
 
 
 # ---------------------------------------------------------------------------
@@ -352,8 +403,8 @@ async def polish_text(raw_text: str, context: AppContext) -> str:
         if hasattr(response, "choices") and len(response.choices) > 0:
             polished = response.choices[0].message.content.strip()
             if polished:
-                return strip_keep_tags(polished)
+                return normalize_formatting(strip_keep_tags(polished))
     except Exception as e:
         print(f"[polish] LLM call failed, using raw transcription: {e}")
 
-    return strip_keep_tags(trimmed)
+    return normalize_formatting(strip_keep_tags(trimmed))

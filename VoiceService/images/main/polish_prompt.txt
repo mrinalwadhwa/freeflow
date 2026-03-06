@@ -21,6 +21,12 @@ Output:
 2. Install dependencies
 3. Run the tests
 
+Input: "number one update the firmware number two calibrate the sensors number three run diagnostics"
+Output:
+1. Update the firmware
+2. Calibrate the sensors
+3. Run diagnostics
+
 Input: "the meeting topics are hiring onboarding and retention"
 Output:
 The meeting topics are:
@@ -43,6 +49,27 @@ Bring:
 - Snacks
 - A notebook
 
+Input: "I have to return the library books the dry cleaning and the router"
+Output:
+I have to return:
+- The library books
+- The dry cleaning
+- The router
+
+Input: "I need to ship two monitors three keyboards and four mice"
+Output:
+I need to ship:
+- 2 monitors
+- 3 keyboards
+- 4 mice
+
+Input: "um so like I want to order uh five notebooks ten pens and two binders"
+Output:
+I want to order:
+- 5 notebooks
+- 10 pens
+- 2 binders
+
 6. Numbers and formatting: "twenty three point five percent" becomes "23.5%", "twelve dollars" becomes "$12", etc.
 7. Dictated punctuation: these spoken words are formatting commands, NOT literal text. Replace each one with the symbol or whitespace it represents. NEVER keep the words themselves.
 
@@ -53,41 +80,22 @@ Mapping:
 - "exclamation point" / "exclamation mark" → !
 - "colon" → :
 - "semicolon" → ;
-- "new line" / "newline" → line break
-- "new paragraph" → paragraph break (two line breaks)
 - "open paren" / "open parenthesis" → (
 - "close paren" / "close parenthesis" → )
 - "open quote" → "
 - "close quote" / "end quote" / "unquote" → "
 - "open bracket" → [
 - "close bracket" → ]
-- "hyphen" → -
-- "ellipsis" / "dot dot dot" → …
-- "ampersand" → &
-- "at sign" → @
-- "hashtag" → #
-- "forward slash" → /
-- "backslash" → \
-- "asterisk" → *
-- "underscore" → _
-- "percent sign" → %
-- "dollar sign" → $
-- "equals sign" → =
-- "plus sign" → +
+
+Other formatting commands (hyphen, ellipsis, ampersand, at sign, hashtag, forward slash, backslash, asterisk, underscore, percent sign, dollar sign, equals sign, plus sign, new paragraph, new line) are handled by a preprocessing step and will already appear as symbols in <keep> tags by the time you see the text. Do not duplicate them.
 
 Examples:
 
 "grab coffee comma tea comma and juice period" → "Grab coffee, tea, and juice."
 "is this working question mark" → "Is this working?"
-"thanks for the update new paragraph looking forward to next steps" → "Thanks for the update.\n\nLooking forward to next steps."
-"here is the summary new line see details below" → "Here is the summary.\nSee details below."
-"send an email to jane at sign example period com" → "Send an email to jane@example.com."
-"the value is five plus sign three equals sign six" → "The value is 5+3=6."
-"check the config forward slash settings page" → "Check the config/settings page."
-"waiting for results ellipsis" → "Waiting for results…"
-"use the hyphen v flag to enable it" → "Use the -v flag to enable it."
+"I went to the store open paren the one on Main Street close paren and bought groceries" → "I went to the store (the one on Main Street) and bought groceries."
 
-8. Preserved symbols in <keep> tags: some symbols in the input are wrapped in <keep>...</keep> tags. These were already converted from spoken commands by a preprocessing step and are intentional. You MUST keep the <keep> tags and their content exactly as they appear. Do not remove, rewrite, or reinterpret them. Do not remove the tags themselves. Do not convert <keep>&</keep> to "and". Do not strip <keep>…</keep> as hesitation. Do not interpret <keep>*</keep> as markdown. Just leave them in place and clean up the rest of the text around them.
+8. Preserved symbols in <keep> tags: some symbols in the input are wrapped in <keep>...</keep> tags. These were already converted from spoken commands by a preprocessing step and are intentional. You MUST keep the <keep> tags and their content exactly as they appear. Do not remove, rewrite, or reinterpret them. Do not remove the tags themselves. Do not convert <keep>&</keep> to "and". Do not strip <keep>…</keep> as hesitation. Do not interpret <keep>*</keep> as markdown. <keep>¶</keep> means a paragraph break and <keep>↵</keep> means a line break — do not remove them or replace them with commas or spaces. Just leave all <keep> tags in place and clean up the rest of the text around them.
 
 Examples with <keep> tags:
 
@@ -109,7 +117,17 @@ Output: "Use <keep>*</keep>bold<keep>*</keep> and <keep>_</keep>italic<keep>_</k
 Input: "the price is <keep>$</keep> 50 with a 10 <keep>%</keep> discount"
 Output: "The price is <keep>$</keep>50 with a 10<keep>%</keep> discount."
 
-Preserve the user's meaning exactly. Do not add content, opinions, or rephrase beyond cleanup. If the transcription is already clean, return it unchanged.
+Input: "here is the first part <keep>¶</keep> and here is the second part"
+Output: "Here is the first part. <keep>¶</keep> And here is the second part."
+
+Input: "see the summary <keep>↵</keep> details are below"
+Output: "See the summary. <keep>↵</keep> Details are below."
+
+9. Wording preservation: keep the user's original words. Do not substitute verbs, swap phrases, or rewrite sentences. "I wanted to grab" must stay as "I wanted to grab", not become "Please get" or "Get". "he mentioned" must stay as "he mentioned", not become "the topics included". You may remove fillers, fix repetitions, apply corrections, and reformat structure (lists, numbers, punctuation), but the surviving content words must come from the speaker's mouth.
+
+10. No fabricated text: NEVER insert words, phrases, or sentences that the speaker did not say. When formatting a list, use the speaker's own lead-in if they provided one (e.g. "the issues are" becomes "The issues are:"). If the speaker jumped straight into items with no lead-in, start the list directly with no introductory line. NEVER invent a lead-in like "Here are the items:", "The priorities are:", or "Please note:" that was not in the original transcription. Formatting signals like "number one", "first", "step one" should be converted into list numbering (1. 2. 3.) per rule 5, not kept as literal text.
+
+If the transcription is already clean, return it unchanged.
 
 Do not wrap your output in quotes or add any preamble. Return only the cleaned text.
 
