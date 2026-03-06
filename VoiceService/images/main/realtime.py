@@ -9,6 +9,13 @@ The VoiceService acts as a proper Realtime API client (not a frame
 bridge). It receives PCM chunks from the Swift client, resamples and
 forwards them, listens for transcription events, and returns polished
 text after LLM cleanup.
+
+The client WebSocket is persistent across dictation sessions. Each
+"start" message begins a new dictation cycle: a fresh Realtime API
+connection is opened, audio flows, "stop" triggers commit and
+transcription, polished text is returned via "transcript_done", and
+the Realtime API connection is closed. The client WebSocket stays
+open for the next dictation.
 """
 
 import asyncio
@@ -197,28 +204,22 @@ def verify_ws_token(authorization: Optional[str], api_key: str) -> bool:
 
 
 async def handle_stream(ws: WebSocket, api_key: str):
-    """Stream audio for real-time transcription via the Realtime API.
+    """Handle a persistent WebSocket that may carry multiple dictation sessions.
 
-    This handler manages its own Realtime API session as a proper client
-    (like voice.py's VoiceSession). It is NOT a WebSocket frame bridge.
+    The client keeps a single WebSocket open across dictations. Each
+    dictation cycle is:
 
-    The VoiceService:
-      1. Receives PCM chunks from the Swift client
-      2. Opens its own websockets.connect() to the gateway
-      3. Resamples 16kHz→24kHz and sends input_audio_buffer.append
-      4. Listens for transcription events and accumulates the transcript
-      5. On "stop": commits the buffer, collects final transcript,
-         runs LLM cleanup, returns polished text
+        1. Client sends {"type":"start","context":{...},"language":"en"}
+        2. Server opens a fresh Realtime API connection
+        3. Client sends {"type":"audio","audio":"<base64>"} (repeated)
+        4. Client sends {"type":"stop"}
+        5. Server commits the audio buffer, collects the transcript,
+           runs LLM polishing, sends {"type":"transcript_done",...}
+        6. Server closes the Realtime API connection
 
-    Protocol (client → server):
-        1. {"type":"start","context":{...},"language":"en"}
-        2. {"type":"audio","audio":"<base64 PCM16 16kHz mono>"}  (repeated)
-        3. {"type":"stop"}
-
-    Protocol (server → client):
-        - {"type":"transcript_delta","delta":"..."}
-        - {"type":"transcript_done","text":"...","raw":"..."}
-        - {"type":"error","error":"..."}
+    The client WebSocket stays open for the next cycle. A "ping"
+    message from the client is answered with a "pong" to keep the
+    connection alive during idle periods.
     """
     if websockets is None:
         await ws.accept()
@@ -238,40 +239,144 @@ async def handle_stream(ws: WebSocket, api_key: str):
         return
 
     await ws.accept()
+    print("[stream] Client connected (persistent session)")
 
-    realtime_ws = None
-    app_context = AppContext()
+    session_count = 0
+
+    try:
+        while True:
+            # Wait for a "start" message (or client disconnect).
+            msg = await _wait_for_start(ws)
+            if msg is None:
+                # Client disconnected cleanly.
+                break
+
+            session_count += 1
+            session_id = session_count
+            print(f"[stream] Session {session_id} starting")
+
+            await _run_dictation_session(ws, msg, session_id)
+
+    except WebSocketDisconnect:
+        print(
+            f"[stream] Client disconnected "
+            f"(completed {session_count} sessions)"
+        )
+    except Exception as e:
+        print(f"[stream] Unexpected error: {e}")
+        traceback.print_exc()
+        try:
+            await ws.send_json({"type": "error", "error": str(e)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass
+
+
+async def _wait_for_start(ws: WebSocket) -> Optional[dict]:
+    """Block until the client sends a "start" message.
+
+    Handle "ping" keepalives while waiting. Return the parsed start
+    message dict, or None if the client disconnects.
+    """
+    while True:
+        try:
+            raw = await ws.receive_text()
+        except WebSocketDisconnect:
+            return None
+
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+
+        msg_type = msg.get("type", "")
+
+        if msg_type == "start":
+            return msg
+        elif msg_type == "ping":
+            try:
+                await ws.send_json({"type": "pong"})
+            except Exception:
+                return None
+        # Ignore unexpected messages between sessions.
+
+
+async def _run_dictation_session(
+    ws: WebSocket, start_msg: dict, session_id: int
+):
+    """Run a single dictation cycle within a persistent WebSocket.
+
+    Open a Realtime API connection, stream audio, collect the
+    transcript, polish it, and send the result back. The client
+    WebSocket is NOT closed — it stays open for the next session.
+    """
+    app_context = parse_dict(start_msg.get("context"))
+    language = start_msg.get("language")
     t_start = time.monotonic()
 
-    # Accumulate transcript segments. With turn_detection disabled the
-    # Realtime API produces one transcript per manual commit, but we
-    # keep a list for robustness.
+    # Accumulate transcript segments.
     completed_transcripts: list[str] = []
 
     # Track whether the client has sent "stop".
     stopped = asyncio.Event()
 
-    # Track whether the transcription has completed (even if empty).
+    # Track whether the transcription has completed.
     transcription_done = asyncio.Event()
 
-    # Track audio stats.
+    # Audio stats.
     chunks_received = 0
     chunks_forwarded = 0
     bytes_received = 0
 
+    # Open the Realtime API connection.
+    realtime_ws = None
+    try:
+        realtime_ws = await connect(REALTIME_MODEL)
+        await configure_session(realtime_ws, STT_MODEL, language)
+        print(
+            f"[stream] Session {session_id}: Realtime API opened "
+            f"(model={REALTIME_MODEL}, stt={STT_MODEL})"
+        )
+    except Exception as e:
+        print(
+            f"[stream] Session {session_id}: "
+            f"Failed to connect to Realtime API: {e}"
+        )
+        traceback.print_exc()
+        try:
+            await ws.send_json({
+                "type": "error",
+                "error": f"Failed to connect: {e}",
+            })
+        except Exception:
+            pass
+        return
+
+    # --- Nested coroutines for concurrent message handling ---
+
+    # Flag to signal that the client disconnected during this session.
+    client_disconnected = False
+
     async def handle_client_messages():
-        """Receive messages from the Swift client and forward audio."""
-        nonlocal realtime_ws, app_context, chunks_received, chunks_forwarded
-        nonlocal bytes_received
+        """Receive audio and stop messages from the Swift client."""
+        nonlocal chunks_received, chunks_forwarded, bytes_received
+        nonlocal client_disconnected
 
         try:
             while not stopped.is_set():
                 try:
-                    raw = await asyncio.wait_for(ws.receive_text(), timeout=0.5)
+                    raw = await asyncio.wait_for(
+                        ws.receive_text(), timeout=0.5
+                    )
                 except asyncio.TimeoutError:
                     continue
                 except WebSocketDisconnect:
                     stopped.set()
+                    client_disconnected = True
                     return
 
                 try:
@@ -281,33 +386,7 @@ async def handle_stream(ws: WebSocket, api_key: str):
 
                 msg_type = msg.get("type", "")
 
-                if msg_type == "start":
-                    app_context = parse_dict(msg.get("context"))
-                    language = msg.get("language")
-
-                    try:
-                        realtime_ws = await connect(REALTIME_MODEL)
-                        await configure_session(
-                            realtime_ws, STT_MODEL, language
-                        )
-                        print(
-                            f"[stream] Realtime API session opened "
-                            f"(model={REALTIME_MODEL}, stt={STT_MODEL})"
-                        )
-                    except Exception as e:
-                        print(f"[stream] Failed to connect to Realtime API: {e}")
-                        traceback.print_exc()
-                        await ws.send_json({
-                            "type": "error",
-                            "error": f"Failed to connect: {e}",
-                        })
-                        stopped.set()
-                        return
-
-                elif msg_type == "audio":
-                    if realtime_ws is None:
-                        continue
-
+                if msg_type == "audio":
                     audio_b64 = msg.get("audio", "")
                     if not audio_b64:
                         continue
@@ -323,21 +402,25 @@ async def handle_stream(ws: WebSocket, api_key: str):
                     # Resample 16kHz → 24kHz for the Realtime API.
                     pcm_24k = resample_16k_to_24k(pcm_16k)
 
-                    # Send the resampled audio as a single append message.
                     try:
-                        audio_out = base64.b64encode(pcm_24k).decode("utf-8")
+                        audio_out = base64.b64encode(pcm_24k).decode(
+                            "utf-8"
+                        )
                         await realtime_ws.send(json.dumps({
                             "type": "input_audio_buffer.append",
                             "audio": audio_out,
                         }))
                         chunks_forwarded += 1
                     except Exception as e:
-                        print(f"[stream] Error sending audio: {e}")
+                        print(
+                            f"[stream] Session {session_id}: "
+                            f"Error sending audio: {e}"
+                        )
                         traceback.print_exc()
 
                 elif msg_type == "stop":
                     print(
-                        f"[stream] Stop received "
+                        f"[stream] Session {session_id}: Stop received "
                         f"(received={chunks_received}, "
                         f"forwarded={chunks_forwarded}, "
                         f"bytes={bytes_received})"
@@ -345,22 +428,27 @@ async def handle_stream(ws: WebSocket, api_key: str):
                     stopped.set()
                     return
 
+                elif msg_type == "ping":
+                    try:
+                        await ws.send_json({"type": "pong"})
+                    except Exception:
+                        stopped.set()
+                        client_disconnected = True
+                        return
+
+                # A "start" during an active session is a protocol error;
+                # ignore it.
+
         except Exception as e:
-            print(f"[stream] Error in handle_client_messages: {e}")
+            print(
+                f"[stream] Session {session_id}: "
+                f"Error in handle_client_messages: {e}"
+            )
             traceback.print_exc()
             stopped.set()
 
     async def handle_realtime_events():
         """Receive events from the Realtime API and collect transcripts."""
-        nonlocal realtime_ws
-
-        # Wait until the Realtime API connection is established.
-        while realtime_ws is None and not stopped.is_set():
-            await asyncio.sleep(0.05)
-
-        if realtime_ws is None:
-            return
-
         try:
             async for message in realtime_ws:
                 event = json.loads(message)
@@ -374,18 +462,25 @@ async def handle_stream(ws: WebSocket, api_key: str):
                     summary = json.dumps(event)
                     if len(summary) > 300:
                         summary = summary[:300] + "..."
-                    print(f"[stream] Realtime event: {event_type} -> {summary}")
+                    print(
+                        f"[stream] Session {session_id}: "
+                        f"Realtime event: {event_type} -> {summary}"
+                    )
 
                 if event_type == "conversation.item.input_audio_transcription.completed":
                     transcript = event.get("transcript", "")
                     if transcript and transcript.strip():
                         completed_transcripts.append(transcript.strip())
                         print(
-                            f"[stream] Transcript completed: "
+                            f"[stream] Session {session_id}: "
+                            f"Transcript completed: "
                             f"{transcript.strip()[:80]}..."
                         )
                     else:
-                        print("[stream] Transcript completed (empty)")
+                        print(
+                            f"[stream] Session {session_id}: "
+                            f"Transcript completed (empty)"
+                        )
                     transcription_done.set()
 
                 elif event_type == "conversation.item.input_audio_transcription.delta":
@@ -406,8 +501,8 @@ async def handle_stream(ws: WebSocket, api_key: str):
                     )
                     error_code = error_info.get("code", "")
                     print(
-                        f"[stream] Realtime API error: "
-                        f"{error_code}: {error_msg}"
+                        f"[stream] Session {session_id}: "
+                        f"Realtime API error: {error_code}: {error_msg}"
                     )
                     try:
                         await ws.send_json({
@@ -417,104 +512,118 @@ async def handle_stream(ws: WebSocket, api_key: str):
                     except Exception:
                         pass
 
-                # If we have received a stop signal AND transcription is
-                # done (even if empty), stop listening.
+                # If stop received AND transcription done, stop listening.
                 if stopped.is_set() and transcription_done.is_set():
                     break
 
         except Exception as e:
             if not stopped.is_set():
-                print(f"[stream] Error receiving from Realtime API: {e}")
+                print(
+                    f"[stream] Session {session_id}: "
+                    f"Error receiving from Realtime API: {e}"
+                )
                 traceback.print_exc()
 
+    # --- Run the session ---
+
     try:
-        # Run client message handling and Realtime API event handling
-        # concurrently.
         client_task = asyncio.create_task(handle_client_messages())
         realtime_task = asyncio.create_task(handle_realtime_events())
 
-        # Wait for the client handler to finish (client sends "stop"
-        # or disconnects).
+        # Wait for the client handler to finish (stop or disconnect).
         await client_task
 
-        # After receiving "stop", manually commit the audio buffer.
-        # With turn_detection disabled the Realtime API waits for an
-        # explicit commit before transcribing.
+        # After "stop", commit the audio buffer.
         if realtime_ws is not None:
             try:
                 await realtime_ws.send(json.dumps({
                     "type": "input_audio_buffer.commit",
                 }))
-                print("[stream] Audio buffer committed")
+                print(
+                    f"[stream] Session {session_id}: "
+                    f"Audio buffer committed"
+                )
             except Exception as e:
-                print(f"[stream] Error committing audio buffer: {e}")
+                print(
+                    f"[stream] Session {session_id}: "
+                    f"Error committing audio buffer: {e}"
+                )
 
-            # Wait for the transcript to arrive. The commit triggers
-            # input_audio_transcription.completed which sets
-            # transcription_done. No response.create needed — we only
-            # want the transcription, not an assistant response.
             try:
                 await asyncio.wait_for(realtime_task, timeout=10.0)
             except asyncio.TimeoutError:
-                print("[stream] Timed out waiting for transcript")
+                print(
+                    f"[stream] Session {session_id}: "
+                    f"Timed out waiting for transcript"
+                )
                 realtime_task.cancel()
         else:
             realtime_task.cancel()
 
         t_stt = time.monotonic()
 
-        # Combine all transcript segments.
+        # Combine transcript segments.
         raw_text = " ".join(completed_transcripts)
 
         if not raw_text.strip():
             print(
-                f"[stream] Timing: stream={t_stt - t_start:.2f}s "
+                f"[stream] Session {session_id}: "
+                f"Timing: stream={t_stt - t_start:.2f}s "
                 f"cleanup=0.00s total={t_stt - t_start:.2f}s "
                 f"chunks={chunks_forwarded} (empty)"
             )
-            await ws.send_json({
-                "type": "transcript_done",
-                "text": "",
-                "raw": "",
-            })
+            if not client_disconnected:
+                await ws.send_json({
+                    "type": "transcript_done",
+                    "text": "",
+                    "raw": "",
+                })
         else:
-            # Run LLM polishing on the raw transcript.
             polished = await polish_text(raw_text, app_context)
 
             t_polish = time.monotonic()
             print(
-                f"[stream] Timing: stream={t_stt - t_start:.2f}s "
+                f"[stream] Session {session_id}: "
+                f"Timing: stream={t_stt - t_start:.2f}s "
                 f"polish={t_polish - t_stt:.2f}s "
                 f"total={t_polish - t_start:.2f}s "
                 f"chunks={chunks_forwarded} "
                 f"bytes={bytes_received}"
             )
 
-            await ws.send_json({
-                "type": "transcript_done",
-                "text": polished,
-                "raw": raw_text,
-            })
+            if not client_disconnected:
+                await ws.send_json({
+                    "type": "transcript_done",
+                    "text": polished,
+                    "raw": raw_text,
+                })
 
     except WebSocketDisconnect:
-        print("[stream] Client disconnected")
+        # Client disconnected during this session. Propagate so the
+        # outer loop in handle_stream exits.
+        raise
     except Exception as e:
-        print(f"[stream] Unexpected error: {e}")
+        print(
+            f"[stream] Session {session_id}: Unexpected error: {e}"
+        )
         traceback.print_exc()
         try:
             await ws.send_json({"type": "error", "error": str(e)})
         except Exception:
             pass
     finally:
-        # Clean up the Realtime API connection.
+        # Always close the Realtime API connection at session end.
         if realtime_ws is not None:
             try:
                 await realtime_ws.close()
             except Exception:
                 pass
-            print("[stream] Realtime API connection closed")
+            print(
+                f"[stream] Session {session_id}: "
+                f"Realtime API connection closed"
+            )
 
-        try:
-            await ws.close()
-        except Exception:
-            pass
+    # If the client disconnected during the session, raise so the
+    # outer loop terminates.
+    if client_disconnected:
+        raise WebSocketDisconnect(code=1000)

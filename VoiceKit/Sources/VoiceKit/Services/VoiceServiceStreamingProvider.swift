@@ -3,13 +3,14 @@ import Foundation
 /// Stream audio to the VoiceService `/stream` WebSocket endpoint for
 /// real-time transcription via the OpenAI Realtime API.
 ///
-/// The provider manages a single WebSocket session at a time. Audio
-/// chunks are sent as base64-encoded PCM16 16kHz mono data. The server
-/// resamples to 24kHz, forwards to the Realtime API transcription
-/// session, collects the transcript, runs LLM cleanup, and returns
-/// the polished text.
+/// The provider maintains a persistent WebSocket connection across
+/// dictation sessions. Each `startStreaming` / `sendAudio` /
+/// `finishStreaming` cycle runs as one dictation session over the
+/// same connection. A background keepalive sends "ping" messages
+/// during idle periods, and the connection is automatically
+/// re-established if it drops between sessions.
 ///
-/// Protocol (client -> server):
+/// Protocol (client -> server), per session:
 ///   1. `{"type":"start","context":{...},"language":"en"}`
 ///   2. `{"type":"audio","audio":"<base64 PCM16 16kHz>"}`  (repeated)
 ///   3. `{"type":"stop"}`
@@ -18,6 +19,10 @@ import Foundation
 ///   - `{"type":"transcript_delta","delta":"..."}`
 ///   - `{"type":"transcript_done","text":"...","raw":"..."}`
 ///   - `{"type":"error","error":"..."}`
+///   - `{"type":"pong"}`
+///
+/// Between sessions the client sends `{"type":"ping"}` every 15 s
+/// and expects `{"type":"pong"}` back from the server.
 public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @unchecked Sendable {
 
     private let baseURL: String
@@ -25,8 +30,22 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
     /// Protects mutable session state across concurrent callers.
     private let lock = NSLock()
+
+    /// The persistent WebSocket task, reused across dictation sessions.
     private var webSocketTask: URLSessionWebSocketTask?
+
+    /// The URLSession backing the WebSocket. Kept alive with the task.
     private var urlSession: URLSession?
+
+    /// Background keepalive task that sends pings during idle periods.
+    private var keepaliveTask: Task<Void, Never>?
+
+    /// Whether a dictation session is currently active (between
+    /// `startStreaming` and `finishStreaming`/`cancelStreaming`).
+    private var sessionActive: Bool = false
+
+    /// How often to send a keepalive ping when idle (in seconds).
+    private let keepaliveInterval: TimeInterval = 15.0
 
     /// Create a provider with explicit configuration.
     ///
@@ -41,19 +60,22 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     // MARK: - StreamingDictationProviding
 
     public func startStreaming(context: AppContext, language: String?) async throws {
-        let task = try buildWebSocketTask()
+        // Ensure we have a live connection, reconnecting if needed.
+        try await ensureConnected()
 
         lock.withLock {
-            self.webSocketTask = task
+            sessionActive = true
         }
 
-        task.resume()
+        // Pause keepalive pings during the active session — the audio
+        // traffic keeps the connection alive.
+        stopKeepalive()
 
         // Send the start message with context and language.
         let startMessage = buildStartMessage(context: context, language: language)
         try await send(json: startMessage)
 
-        debugPrint("[StreamingProvider] Session started")
+        debugPrint("[StreamingProvider] Session started (persistent)")
     }
 
     public func sendAudio(_ pcmData: Data) async throws {
@@ -75,20 +97,104 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         debugPrint("[StreamingProvider] Stop sent, waiting for transcript")
 
         // Read messages until we receive transcript_done or error.
-        let result = try await waitForResult()
+        let result: String
+        do {
+            result = try await waitForResult()
+        } catch {
+            // The connection may have broken during this session.
+            // Mark it dead so the next session reconnects.
+            lock.withLock {
+                sessionActive = false
+            }
+            await tearDownConnection()
+            throw error
+        }
 
-        // Clean up the connection.
-        await closeConnection()
+        lock.withLock {
+            sessionActive = false
+        }
+
+        // Resume keepalive pings now that the session is done.
+        startKeepalive()
 
         return result
     }
 
     public func cancelStreaming() async {
-        await closeConnection()
-        debugPrint("[StreamingProvider] Session cancelled")
+        let wasActive: Bool = lock.withLock {
+            let active = sessionActive
+            sessionActive = false
+            return active
+        }
+
+        if wasActive {
+            debugPrint("[StreamingProvider] Session cancelled")
+        }
+
+        // On cancel, tear down the connection entirely. The server
+        // expects stop→transcript_done flow; a mid-session cancel
+        // leaves the server-side session in an undefined state, so
+        // a fresh connection is needed next time.
+        stopKeepalive()
+        await tearDownConnection()
     }
 
-    // MARK: - WebSocket Construction
+    /// Disconnect the persistent WebSocket. Call when the provider
+    /// is no longer needed (e.g. app shutdown).
+    public func disconnect() async {
+        stopKeepalive()
+        await tearDownConnection()
+        debugPrint("[StreamingProvider] Disconnected")
+    }
+
+    // MARK: - Connection Management
+
+    /// Ensure there is a live WebSocket connection, creating one if needed.
+    private func ensureConnected() async throws {
+        let existing: URLSessionWebSocketTask? = lock.withLock { self.webSocketTask }
+
+        if let task = existing {
+            // Check if the task is still in a usable state.
+            switch task.state {
+            case .running:
+                // Verify liveness with a protocol-level ping.
+                do {
+                    try await withCheckedThrowingContinuation {
+                        (cont: CheckedContinuation<Void, Error>) in
+                        task.sendPing { error in
+                            if let error {
+                                cont.resume(throwing: error)
+                            } else {
+                                cont.resume()
+                            }
+                        }
+                    }
+                    return  // Connection is alive.
+                } catch {
+                    debugPrint("[StreamingProvider] Existing connection failed ping, reconnecting")
+                    await tearDownConnection()
+                }
+            default:
+                debugPrint("[StreamingProvider] Existing connection not running, reconnecting")
+                await tearDownConnection()
+            }
+        }
+
+        // Build and start a new connection.
+        let task = try buildWebSocketTask()
+
+        lock.withLock {
+            self.webSocketTask = task
+        }
+
+        task.resume()
+
+        // Start keepalive for the new connection (will be paused once
+        // a dictation session starts).
+        startKeepalive()
+
+        debugPrint("[StreamingProvider] Connected")
+    }
 
     /// Build a URLSessionWebSocketTask for the /stream endpoint.
     private func buildWebSocketTask() throws -> URLSessionWebSocketTask {
@@ -109,7 +215,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         }
 
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForRequest = 300  // Long timeout for persistent connection.
         let session = URLSession(configuration: config)
 
         lock.withLock {
@@ -117,6 +223,56 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         }
 
         return session.webSocketTask(with: url)
+    }
+
+    /// Tear down the WebSocket and URLSession, clearing all references.
+    private func tearDownConnection() async {
+        let (task, session): (URLSessionWebSocketTask?, URLSession?) = lock.withLock {
+            let t = self.webSocketTask
+            let s = self.urlSession
+            self.webSocketTask = nil
+            self.urlSession = nil
+            return (t, s)
+        }
+
+        task?.cancel(with: .normalClosure, reason: nil)
+        session?.invalidateAndCancel()
+    }
+
+    // MARK: - Keepalive
+
+    /// Start sending periodic pings to keep the connection alive.
+    private func startKeepalive() {
+        stopKeepalive()
+
+        let interval = keepaliveInterval
+        keepaliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled else { break }
+                guard let self else { break }
+
+                // Only send keepalive when not in an active session.
+                let active: Bool = self.lock.withLock { self.sessionActive }
+                if active { continue }
+
+                do {
+                    try await self.send(json: ["type": "ping"])
+                } catch {
+                    debugPrint("[StreamingProvider] Keepalive ping failed: \(error)")
+                    // Connection is dead; tear it down so the next
+                    // session reconnects.
+                    await self.tearDownConnection()
+                    break
+                }
+            }
+        }
+    }
+
+    /// Stop the keepalive task.
+    private func stopKeepalive() {
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
     }
 
     // MARK: - Message Helpers
@@ -210,6 +366,10 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                     // in the future. For now, ignore.
                     continue
 
+                case "pong":
+                    // Keepalive response; ignore during active session.
+                    continue
+
                 default:
                     continue
                 }
@@ -222,20 +382,5 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                 continue
             }
         }
-    }
-
-    // MARK: - Cleanup
-
-    private func closeConnection() async {
-        let (task, session): (URLSessionWebSocketTask?, URLSession?) = lock.withLock {
-            let t = self.webSocketTask
-            let s = self.urlSession
-            self.webSocketTask = nil
-            self.urlSession = nil
-            return (t, s)
-        }
-
-        task?.cancel(with: .normalClosure, reason: nil)
-        session?.invalidateAndCancel()
     }
 }
