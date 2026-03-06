@@ -12,10 +12,11 @@ text after LLM cleanup.
 
 The client WebSocket is persistent across dictation sessions. Each
 "start" message begins a new dictation cycle: a fresh Realtime API
-connection is opened, audio flows, "stop" triggers commit and
-transcription, polished text is returned via "transcript_done", and
-the Realtime API connection is closed. The client WebSocket stays
-open for the next dictation.
+connection is opened concurrently with receiving audio (early chunks
+are buffered until the connection is ready), "stop" triggers commit
+and transcription, polished text is returned via "transcript_done",
+and the Realtime API connection is closed. The client WebSocket
+stays open for the next dictation.
 """
 
 import asyncio
@@ -310,9 +311,11 @@ async def _run_dictation_session(
 ):
     """Run a single dictation cycle within a persistent WebSocket.
 
-    Open a Realtime API connection, stream audio, collect the
-    transcript, polish it, and send the result back. The client
-    WebSocket is NOT closed — it stays open for the next session.
+    Open a Realtime API connection concurrently with receiving audio
+    from the client. Early audio chunks that arrive before the
+    Realtime API connection is ready are buffered and flushed once
+    connected. This overlaps the 0.5-1s connection cost with the
+    start of the user's speech.
     """
     app_context = parse_dict(start_msg.get("context"))
     language = start_msg.get("language")
@@ -332,29 +335,47 @@ async def _run_dictation_session(
     chunks_forwarded = 0
     bytes_received = 0
 
-    # Open the Realtime API connection.
+    # The Realtime API connection is opened concurrently. Audio chunks
+    # that arrive before it is ready are buffered here. Once connected,
+    # the buffer is flushed and subsequent chunks are forwarded directly.
     realtime_ws = None
-    try:
-        realtime_ws = await connect(REALTIME_MODEL)
-        await configure_session(realtime_ws, STT_MODEL, language)
-        print(
-            f"[stream] Session {session_id}: Realtime API opened "
-            f"(model={REALTIME_MODEL}, stt={STT_MODEL})"
-        )
-    except Exception as e:
-        print(
-            f"[stream] Session {session_id}: "
-            f"Failed to connect to Realtime API: {e}"
-        )
-        traceback.print_exc()
+    realtime_ready = asyncio.Event()
+    realtime_failed = False
+    audio_buffer: list[bytes] = []  # resampled 24kHz PCM chunks
+
+    async def open_realtime_connection():
+        """Open and configure the Realtime API connection."""
+        nonlocal realtime_ws, realtime_failed
+
         try:
-            await ws.send_json({
-                "type": "error",
-                "error": f"Failed to connect: {e}",
-            })
-        except Exception:
-            pass
-        return
+            realtime_ws = await connect(REALTIME_MODEL)
+            await configure_session(realtime_ws, STT_MODEL, language)
+            t_connected = time.monotonic()
+            buffered = len(audio_buffer)
+            print(
+                f"[stream] Session {session_id}: Realtime API opened "
+                f"in {t_connected - t_start:.2f}s "
+                f"(model={REALTIME_MODEL}, stt={STT_MODEL}, "
+                f"buffered={buffered} chunks)"
+            )
+        except Exception as e:
+            print(
+                f"[stream] Session {session_id}: "
+                f"Failed to connect to Realtime API: {e}"
+            )
+            traceback.print_exc()
+            realtime_failed = True
+            try:
+                await ws.send_json({
+                    "type": "error",
+                    "error": f"Failed to connect: {e}",
+                })
+            except Exception:
+                pass
+        finally:
+            # Always signal ready so the client handler unblocks,
+            # even on failure.
+            realtime_ready.set()
 
     # --- Nested coroutines for concurrent message handling ---
 
@@ -362,9 +383,32 @@ async def _run_dictation_session(
     client_disconnected = False
 
     async def handle_client_messages():
-        """Receive audio and stop messages from the Swift client."""
+        """Receive audio and stop messages from the Swift client.
+
+        Audio chunks that arrive before the Realtime API connection is
+        ready are resampled and buffered. Once the connection is live,
+        buffered chunks are flushed and subsequent chunks are forwarded
+        directly.
+        """
         nonlocal chunks_received, chunks_forwarded, bytes_received
         nonlocal client_disconnected
+
+        async def _forward_chunk(pcm_24k: bytes):
+            """Send a resampled chunk to the Realtime API."""
+            nonlocal chunks_forwarded
+            audio_out = base64.b64encode(pcm_24k).decode("utf-8")
+            await realtime_ws.send(json.dumps({
+                "type": "input_audio_buffer.append",
+                "audio": audio_out,
+            }))
+            chunks_forwarded += 1
+
+        async def _flush_buffer():
+            """Send all buffered chunks to the Realtime API."""
+            nonlocal chunks_forwarded
+            for pcm_24k in audio_buffer:
+                await _forward_chunk(pcm_24k)
+            audio_buffer.clear()
 
         try:
             while not stopped.is_set():
@@ -402,23 +446,50 @@ async def _run_dictation_session(
                     # Resample 16kHz → 24kHz for the Realtime API.
                     pcm_24k = resample_16k_to_24k(pcm_16k)
 
-                    try:
-                        audio_out = base64.b64encode(pcm_24k).decode(
-                            "utf-8"
-                        )
-                        await realtime_ws.send(json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": audio_out,
-                        }))
-                        chunks_forwarded += 1
-                    except Exception as e:
-                        print(
-                            f"[stream] Session {session_id}: "
-                            f"Error sending audio: {e}"
-                        )
-                        traceback.print_exc()
+                    if realtime_ready.is_set():
+                        if realtime_failed:
+                            # Connection failed; drop audio silently.
+                            # The error was already sent to the client.
+                            continue
+                        try:
+                            # Flush any chunks buffered while the
+                            # connection was being established.
+                            if audio_buffer:
+                                await _flush_buffer()
+                            await _forward_chunk(pcm_24k)
+                        except Exception as e:
+                            print(
+                                f"[stream] Session {session_id}: "
+                                f"Error sending audio: {e}"
+                            )
+                            traceback.print_exc()
+                    else:
+                        # Buffer until the Realtime API is ready.
+                        audio_buffer.append(pcm_24k)
 
                 elif msg_type == "stop":
+                    # If the Realtime API is not ready yet, wait for it
+                    # before processing stop so buffered audio can be
+                    # flushed.
+                    if not realtime_ready.is_set():
+                        print(
+                            f"[stream] Session {session_id}: "
+                            f"Stop received, waiting for Realtime API "
+                            f"({len(audio_buffer)} chunks buffered)"
+                        )
+                        await realtime_ready.wait()
+
+                    # Flush any remaining buffered audio.
+                    if audio_buffer and not realtime_failed:
+                        try:
+                            await _flush_buffer()
+                        except Exception as e:
+                            print(
+                                f"[stream] Session {session_id}: "
+                                f"Error flushing buffer: {e}"
+                            )
+                            traceback.print_exc()
+
                     print(
                         f"[stream] Session {session_id}: Stop received "
                         f"(received={chunks_received}, "
@@ -449,6 +520,11 @@ async def _run_dictation_session(
 
     async def handle_realtime_events():
         """Receive events from the Realtime API and collect transcripts."""
+        # Wait for the connection to be established.
+        await realtime_ready.wait()
+        if realtime_failed or realtime_ws is None:
+            return
+
         try:
             async for message in realtime_ws:
                 event = json.loads(message)
@@ -527,11 +603,25 @@ async def _run_dictation_session(
     # --- Run the session ---
 
     try:
+        # Open the Realtime API connection concurrently with receiving
+        # audio from the client. Early audio chunks are buffered until
+        # the connection is ready.
+        connect_task = asyncio.create_task(open_realtime_connection())
         client_task = asyncio.create_task(handle_client_messages())
         realtime_task = asyncio.create_task(handle_realtime_events())
 
         # Wait for the client handler to finish (stop or disconnect).
         await client_task
+
+        # Ensure the connection task has completed (it should have by
+        # now since handle_client_messages waits for realtime_ready
+        # before processing stop).
+        await connect_task
+
+        if realtime_failed:
+            # Connection never succeeded. Cannot commit or transcribe.
+            realtime_task.cancel()
+            return
 
         # After "stop", commit the audio buffer.
         if realtime_ws is not None:
