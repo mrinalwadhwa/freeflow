@@ -20,6 +20,15 @@ public protocol AudioProviding: Sendable {
     /// Whether audio is currently being captured.
     var isRecording: Bool { get }
 
+    /// A stream of raw PCM data chunks emitted during recording.
+    ///
+    /// Each chunk is 16-bit signed little-endian PCM at 16kHz mono,
+    /// with no WAV header. Used by streaming dictation to forward audio
+    /// to the server in real time during recording.
+    ///
+    /// Returns nil if the implementation does not support streaming.
+    var pcmAudioStream: AsyncStream<Data>? { get }
+
     /// A stream of RMS audio levels (0.0 to 1.0) emitted while recording.
     ///
     /// Implementations that support live level metering return a non-nil
@@ -29,6 +38,9 @@ public protocol AudioProviding: Sendable {
 }
 
 extension AudioProviding {
+    /// Default implementation returns nil (no PCM streaming).
+    public var pcmAudioStream: AsyncStream<Data>? { nil }
+
     /// Default implementation returns nil (no live level metering).
     public var audioLevelStream: AsyncStream<Float>? { nil }
 }

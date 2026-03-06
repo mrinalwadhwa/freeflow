@@ -15,6 +15,14 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     /// non-silent buffer so the silence gate does not reject it.
     public var stubbedBuffer: AudioBuffer
 
+    /// When true, `startRecording()` creates a `pcmAudioStream` that
+    /// emits each chunk passed to `emitPCMChunk(_:)`. Defaults to false
+    /// so existing tests are unaffected.
+    public var enablePCMStream: Bool = false
+
+    private var _pcmAudioStream: AsyncStream<Data>?
+    private var pcmContinuation: AsyncStream<Data>.Continuation?
+
     /// Number of times `startRecording()` has been called.
     public var startCallCount: Int {
         lock.withLock { _startCallCount }
@@ -75,10 +83,28 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
         lock.withLock { _isRecording }
     }
 
+    public var pcmAudioStream: AsyncStream<Data>? {
+        lock.withLock { _pcmAudioStream }
+    }
+
     public func startRecording() async throws {
         lock.withLock {
             _isRecording = true
             _startCallCount += 1
+
+            if enablePCMStream {
+                let (stream, continuation) = AsyncStream<Data>.makeStream()
+                _pcmAudioStream = stream
+                pcmContinuation = continuation
+            }
+        }
+    }
+
+    /// Emit a PCM chunk to the `pcmAudioStream`. Only works when
+    /// `enablePCMStream` is true and recording is active.
+    public func emitPCMChunk(_ data: Data) {
+        lock.withLock {
+            pcmContinuation?.yield(data)
         }
     }
 
@@ -88,6 +114,9 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
         let buffer = lock.withLock { () -> AudioBuffer in
             _isRecording = false
             _stopCallCount += 1
+            pcmContinuation?.finish()
+            pcmContinuation = nil
+            _pcmAudioStream = nil
             return stubbedBuffer
         }
         return buffer

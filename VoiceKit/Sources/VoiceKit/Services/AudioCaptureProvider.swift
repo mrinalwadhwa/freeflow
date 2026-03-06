@@ -26,6 +26,15 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         private var converter: AVAudioConverter?
     #endif
 
+    // MARK: - PCM audio stream
+
+    private var _pcmAudioStream: AsyncStream<Data>?
+    private var pcmContinuation: AsyncStream<Data>.Continuation?
+
+    public var pcmAudioStream: AsyncStream<Data>? {
+        lock.withLock { _pcmAudioStream }
+    }
+
     // MARK: - Audio level stream
 
     private var _audioLevelStream: AsyncStream<Float>?
@@ -51,6 +60,11 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 }
 
                 pcmChunks = []
+
+                // Set up the PCM audio stream before starting capture.
+                let (pcmStream, pcmCont) = AsyncStream<Data>.makeStream()
+                self._pcmAudioStream = pcmStream
+                self.pcmContinuation = pcmCont
 
                 // Set up the audio level stream before starting capture.
                 let (stream, continuation) = AsyncStream<Float>.makeStream()
@@ -120,6 +134,9 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 engine?.stop()
                 engine = nil
                 converter = nil
+                pcmContinuation?.finish()
+                pcmContinuation = nil
+                _pcmAudioStream = nil
                 levelContinuation?.finish()
                 levelContinuation = nil
                 _audioLevelStream = nil
@@ -249,6 +266,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
             lock.withLock {
                 pcmChunks.append(data)
+                pcmContinuation?.yield(data)
             }
         }
     #endif

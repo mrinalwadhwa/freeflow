@@ -66,7 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dictationProvider: VoiceServiceDictationProvider(),
             textInjector: textInjector,
             coordinator: coordinator,
-            transcriptBuffer: transcriptBuffer
+            transcriptBuffer: transcriptBuffer,
+            streamingProvider: VoiceServiceStreamingProvider()
         )
     }
 
