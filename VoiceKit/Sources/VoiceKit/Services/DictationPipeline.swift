@@ -263,6 +263,33 @@ public actor DictationPipeline: PipelineProviding {
         // group won't return until all children exit. Instead we use a
         // detached polling loop that checks whether the task has set
         // `isStreamingSession` or completed, with a hard 6s deadline.
+        // If the audio is clearly silent, skip the streaming setup wait
+        // entirely. peakRMS is updated by the tap callback during
+        // recording, so it reflects the loudest moment. When it is below
+        // the silence threshold, there is nothing to transcribe and
+        // waiting 5-6s for a stale WebSocket ping to time out is waste.
+        if audioProvider.peakRMS <= silenceThreshold {
+            if let setupTask = audioSetupTask {
+                setupTask.cancel()
+                if let streaming = streamingProvider {
+                    await streaming.cancelStreaming()
+                }
+                audioSetupTask = nil
+            }
+            isStreamingSession = false
+            audioForwardingTask?.cancel()
+            audioForwardingTask = nil
+
+            Log.debug(
+                "[Pipeline] Early silence short-circuit: peak RMS \(audioProvider.peakRMS) <= \(silenceThreshold), skipping setup wait"
+            )
+
+            // Stop audio and reset immediately.
+            _ = try? await audioProvider.stopRecording()
+            await coordinator.reset()
+            return
+        }
+
         if let setupTask = audioSetupTask {
             let setupDone: Bool = await withCheckedContinuation { continuation in
                 let lock = NSLock()
@@ -282,9 +309,34 @@ public actor DictationPipeline: PipelineProviding {
                     }
                 }
 
-                // Timeout task: hard 6s ceiling.
-                Task.detached {
-                    try? await Task.sleep(nanoseconds: 6_000_000_000)
+                // Timeout task: poll for silence or hard 6s ceiling.
+                // When the audio is clearly silent, bail after a short
+                // window (200ms) instead of waiting the full 6s for a
+                // stale WebSocket ping to time out. peakRMS is updated
+                // by the tap callback on the audio render thread so it
+                // is safe to read from a detached task via the lock in
+                // AudioCaptureProvider.
+                Task.detached { [audioProvider, silenceThreshold] in
+                    let deadline = Date().addingTimeInterval(6.0)
+                    var silentTicks = 0
+                    while Date() < deadline {
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        let alreadyDone = lock.withLock { resumed }
+                        if alreadyDone { return }
+
+                        if audioProvider.peakRMS <= silenceThreshold {
+                            silentTicks += 1
+                            // 4 ticks × 50ms = 200ms of confirmed silence
+                            if silentTicks >= 4 {
+                                Log.debug(
+                                    "[Pipeline] Setup wait bailing early: silent audio (peak RMS \(audioProvider.peakRMS))"
+                                )
+                                break
+                            }
+                        } else {
+                            silentTicks = 0
+                        }
+                    }
                     let alreadyResumed = lock.withLock {
                         let was = resumed
                         resumed = true
