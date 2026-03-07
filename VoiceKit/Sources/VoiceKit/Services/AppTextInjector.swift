@@ -24,6 +24,26 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
         case noFocusedElement
         case allStrategiesFailed(bundleID: String)
         case accessibilityNotGranted
+        case pasteNotConsumed
+
+        /// Whether this error should stop the strategy loop immediately
+        /// instead of falling through to the next strategy.
+        ///
+        /// `pasteNotConsumed` is terminal because the paste was already
+        /// executed (Cmd+V fired, clipboard restored). Trying another
+        /// strategy would double-inject or inject stale content.
+        ///
+        /// `noFocusedElement` is NOT terminal because apps like Zed report
+        /// AXWindow as the focused element (fails AX text input check) but
+        /// handle Cmd+V internally. The pasteboard strategy must still run.
+        public var isTerminal: Bool {
+            switch self {
+            case .pasteNotConsumed:
+                return true
+            case .noFocusedElement, .allStrategiesFailed, .accessibilityNotGranted:
+                return false
+            }
+        }
 
         public var description: String {
             switch self {
@@ -33,6 +53,8 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                 return "All injection strategies failed for app: \(bundleID)"
             case .accessibilityNotGranted:
                 return "Accessibility permission is not granted"
+            case .pasteNotConsumed:
+                return "Paste was not consumed by the target application"
             }
         }
     }
@@ -96,6 +118,8 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                     try injectViaKeystrokes(text: text)
                     return
                 }
+            } catch let error as InjectionError where error.isTerminal {
+                throw error
             } catch {
                 lastError = error
                 continue
@@ -181,37 +205,123 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
 
     // MARK: - Strategy 2: Pasteboard + Cmd+V
 
+    /// Detect whether a receiving app consumed the paste by using a lazy
+    /// `NSPasteboardItemDataProvider`. When the app reads the pasteboard
+    /// to handle Cmd+V, the `provideDataForType:` callback fires and we
+    /// deliver the text there. If no callback fires within the timeout,
+    /// no app consumed the paste (no text target).
+    ///
+    /// Three outcomes:
+    /// - `callbackFired` — text consumed and delivered via the callback.
+    /// - `providerInvalidated` (finished called, callback not) — an external
+    ///   process wrote to the general pasteboard between setup and read,
+    ///   invalidating the provider. Falls back to eager `setString` retry.
+    /// - Neither within timeout — no target. Throw `pasteNotConsumed`.
+    private final class PasteConsumptionProbe: NSObject, NSPasteboardItemDataProvider {
+        let text: String
+        private(set) var callbackFired = false
+        private(set) var providerInvalidated = false
+
+        init(text: String) {
+            self.text = text
+            super.init()
+        }
+
+        func pasteboard(
+            _ pasteboard: NSPasteboard?,
+            item: NSPasteboardItem,
+            provideDataForType type: NSPasteboard.PasteboardType
+        ) {
+            callbackFired = true
+            item.setString(text, forType: type)
+        }
+
+        func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+            if !callbackFired {
+                providerInvalidated = true
+            }
+        }
+    }
+
+    /// Maximum time to wait for the receiving app to read the pasteboard
+    /// after Cmd+V. Empirically measured: 7-12ms for native apps, up to
+    /// ~50ms for Electron apps. 250ms provides generous headroom.
+    private static let pasteConsumptionTimeout: TimeInterval = 0.25
+
     /// Inject text by copying it to the pasteboard and simulating Cmd+V.
     ///
-    /// The previous clipboard content is saved and restored after pasting.
-    /// A short delay is introduced between clipboard write and paste to give
-    /// the system time to process.
+    /// Uses a lazy `NSPasteboardItemDataProvider` to both deliver text and
+    /// detect whether the receiving app consumed the paste. If the provider
+    /// callback fires, the app read the pasteboard and received the text.
+    /// If the provider is invalidated by an external clipboard write before
+    /// the app reads it, falls back to eager `setString` + re-paste. If
+    /// neither occurs within the timeout, no text target exists and
+    /// `pasteNotConsumed` is thrown.
     private func injectViaPasteboard(text: String) throws {
         #if canImport(AppKit)
             let pasteboard = NSPasteboard.general
+            let textToInject = addLeadingSpaceIfNeededFromFocused(text: text)
 
-            // Save current clipboard content
+            // Save current clipboard content.
             let savedItems = savePasteboardContents(pasteboard)
 
-            // Write the text to inject
+            // Set up lazy provider: text is delivered in the callback when
+            // the receiving app reads the pasteboard after Cmd+V.
             pasteboard.clearContents()
+            let probe = PasteConsumptionProbe(text: textToInject)
+            let item = NSPasteboardItem()
+            item.setDataProvider(probe, forTypes: [.string])
+            pasteboard.writeObjects([item])
 
-            let textToInject = addLeadingSpaceIfNeededFromFocused(text: text)
-            pasteboard.setString(textToInject, forType: .string)
-
-            // Small delay for pasteboard to settle
-            Thread.sleep(forTimeInterval: 0.01)
-
-            // Simulate Cmd+V
+            // Simulate Cmd+V. Keep the window between provider setup and
+            // paste as tight as possible to minimize the chance of an
+            // external clipboard write invalidating the provider.
             simulatePaste()
 
-            // Wait for the paste to complete before restoring.
-            // Electron apps (Slack, Discord, VS Code) need extra time to
-            // read the pasteboard after Cmd+V is posted.
-            Thread.sleep(forTimeInterval: 0.2)
+            // Pump the run loop to receive the provider callback. The
+            // callback fires on the main thread when the app reads the
+            // pasteboard. Most apps read within 7-12ms; Electron apps
+            // may take up to ~50ms. We allow 250ms of headroom.
+            let deadline = Date().addingTimeInterval(Self.pasteConsumptionTimeout)
+            while Date() < deadline {
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
+                if probe.callbackFired || probe.providerInvalidated {
+                    break
+                }
+            }
 
-            // Restore previous clipboard content
+            if probe.callbackFired {
+                // The app read the pasteboard and received the text via
+                // the callback. Restore the original clipboard.
+                Log.debug("[Injection] Paste consumed (lazy provider callback fired)")
+                restorePasteboardContents(pasteboard, items: savedItems)
+                return
+            }
+
+            if probe.providerInvalidated {
+                // An external process (clipboard manager, password manager,
+                // etc.) wrote to the general pasteboard, invalidating the
+                // lazy provider before the receiving app could read it.
+                // Fall back to eager write + re-paste for reliable delivery.
+                // No consumption detection is possible in this path.
+                Log.debug(
+                    "[Injection] Lazy provider invalidated by external write, retrying eagerly"
+                )
+                pasteboard.clearContents()
+                pasteboard.setString(textToInject, forType: .string)
+                simulatePaste()
+                // Electron apps need extra time to read the pasteboard.
+                Thread.sleep(forTimeInterval: 0.2)
+                restorePasteboardContents(pasteboard, items: savedItems)
+                return
+            }
+
+            // No callback and no invalidation within the timeout window.
+            // No app read the pasteboard, meaning no text field handled
+            // the paste. Restore the clipboard and signal no-target.
+            Log.debug("[Injection] Paste not consumed (no callback within timeout)")
             restorePasteboardContents(pasteboard, items: savedItems)
+            throw InjectionError.pasteNotConsumed
         #else
             throw InjectionError.allStrategiesFailed(bundleID: "pasteboard-unavailable")
         #endif

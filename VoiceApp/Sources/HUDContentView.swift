@@ -34,7 +34,7 @@ struct HUDContentView: View {
         case .processingSlow:
             return 180
         case .noTarget:
-            return 220
+            return 260
         }
     }
 
@@ -276,10 +276,10 @@ struct HUDContentView: View {
     private var noTargetContent: some View {
         HStack(spacing: 8) {
             Text(viewModel.shortcuts.noTargetHint)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.85))
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.85)
 
             Button(action: { viewModel.onDismiss?() }) {
                 Image(systemName: "xmark")

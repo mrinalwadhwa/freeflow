@@ -18,11 +18,15 @@ final class HUDController {
     private weak var coordinator: RecordingCoordinator?
     private weak var pipeline: DictationPipeline?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
+    private var transcriptBuffer: TranscriptBuffer?
+    private var textInjector: (any TextInjecting)?
 
     private var visualStateObservation: Task<Void, Never>?
     private var localEscapeMonitor: Any?
     private var globalEscapeMonitor: Any?
     private var globalClickMonitor: Any?
+    private var localPasteMonitor: Any?
+    private var globalPasteMonitor: Any?
 
     // MARK: - Init
 
@@ -44,11 +48,15 @@ final class HUDController {
         coordinator: RecordingCoordinator,
         pipeline: DictationPipeline? = nil,
         audioDeviceProvider: (any AudioDeviceProviding)? = nil,
-        audioProvider: (any AudioProviding)? = nil
+        audioProvider: (any AudioProviding)? = nil,
+        transcriptBuffer: TranscriptBuffer? = nil,
+        textInjector: (any TextInjecting)? = nil
     ) {
         self.coordinator = coordinator
         self.pipeline = pipeline
         self.audioDeviceProvider = audioDeviceProvider
+        self.transcriptBuffer = transcriptBuffer
+        self.textInjector = textInjector
 
         // Wire audio provider for live level metering.
         viewModel.setAudioProvider(audioProvider)
@@ -66,6 +74,7 @@ final class HUDController {
 
         installEscapeMonitors()
         installClickMonitor()
+        installPasteShortcutMonitors()
 
         // Watch visual state changes, mouse screen, and hover to animate
         // the window. Hover detection is done here via global mouse
@@ -122,6 +131,7 @@ final class HUDController {
         visualStateObservation = nil
         removeEscapeMonitors()
         removeClickMonitor()
+        removePasteShortcutMonitors()
         viewModel.stop()
         hudWindow?.orderOut(nil)
         hudWindow = nil
@@ -231,6 +241,86 @@ final class HUDController {
         }
     }
 
+    // MARK: - Paste shortcut (⌃⌥V) handling
+
+    /// Virtual key code for 'V'.
+    private static let vKeyCode: UInt16 = 9
+
+    /// Install local and global key event monitors to handle ⌃⌥V.
+    ///
+    /// When the HUD is in the no-target state, ⌃⌥V lets the user select a
+    /// text field and paste the buffered transcript without re-dictating.
+    /// The shortcut also works when no-target is not showing, as a general
+    /// "paste last transcript" action.
+    private func installPasteShortcutMonitors() {
+        localPasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if self?.isPasteShortcut(event) == true {
+                self?.handlePasteShortcut()
+                return nil  // Consume the event.
+            }
+            return event
+        }
+
+        globalPasteMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if self?.isPasteShortcut(event) == true {
+                self?.handlePasteShortcut()
+            }
+        }
+    }
+
+    private func removePasteShortcutMonitors() {
+        if let monitor = localPasteMonitor {
+            NSEvent.removeMonitor(monitor)
+            localPasteMonitor = nil
+        }
+        if let monitor = globalPasteMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalPasteMonitor = nil
+        }
+    }
+
+    /// Check whether a key event is the ⌃⌥V paste shortcut.
+    private func isPasteShortcut(_ event: NSEvent) -> Bool {
+        guard event.keyCode == Self.vKeyCode else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return flags == [.control, .option]
+    }
+
+    /// Paste the buffered transcript into the currently focused text field.
+    private func handlePasteShortcut() {
+        guard let transcriptBuffer, let textInjector else { return }
+
+        // Dismiss the no-target hint if it is showing.
+        if viewModel.visualState == .noTarget {
+            viewModel.dismissNoTarget()
+            guard let coordinator else { return }
+            Task {
+                await coordinator.reset()
+            }
+        }
+
+        Task {
+            guard let transcript = await transcriptBuffer.consume() else {
+                Log.debug("[HUD] ⌃⌥V pressed but no transcript in buffer")
+                return
+            }
+
+            // Read fresh context at the moment of paste.
+            let context = await AXAppContextProvider().readContext()
+
+            do {
+                try await textInjector.inject(text: transcript, into: context)
+                Log.debug("[HUD] ⌃⌥V pasted transcript (\(transcript.count) chars)")
+            } catch {
+                Log.debug("[HUD] ⌃⌥V paste failed: \(error)")
+                // Re-store so the user can try again.
+                await transcriptBuffer.store(transcript)
+            }
+        }
+    }
+
     // MARK: - Escape key handling
 
     /// Install local and global key event monitors to handle Escape.
@@ -298,6 +388,12 @@ final class HUDController {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = localPasteMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = globalPasteMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }

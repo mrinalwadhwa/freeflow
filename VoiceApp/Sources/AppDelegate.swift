@@ -75,7 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupHUD() {
         let controller = HUDController()
-        controller.start(coordinator: coordinator, pipeline: pipeline, audioProvider: audioProvider)
+        controller.start(
+            coordinator: coordinator,
+            pipeline: pipeline,
+            audioProvider: audioProvider,
+            transcriptBuffer: transcriptBuffer,
+            textInjector: textInjector
+        )
         hudController = controller
     }
 
