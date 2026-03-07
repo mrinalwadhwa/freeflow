@@ -94,11 +94,13 @@ final class HUDOverlayWindow: NSPanel {
     func animateToCurrentState() {
         let state = viewModel.visualState
 
-        // When minimized or ready, the window ignores mouse events so
-        // clicks pass through to apps behind. Hover and click-to-record
-        // are handled by the controller's polling loop. In active expanded
-        // states with buttons, the window accepts mouse events.
-        if state == .minimized || state == .ready {
+        // When minimized, ready, or noTarget, the window ignores mouse
+        // events so clicks pass through to apps behind. Hover and
+        // click interactions are handled by the controller's polling
+        // loop and global click monitor. In active expanded states
+        // with buttons (listening, processing), the window accepts
+        // mouse events directly.
+        if state == .minimized || state == .ready || state == .noTarget {
             ignoresMouseEvents = true
         } else {
             ignoresMouseEvents = !state.acceptsMouseEvents

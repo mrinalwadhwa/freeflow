@@ -219,17 +219,24 @@ final class HUDController {
     // MARK: - Click-to-record monitor
 
     /// Install a global mouse click monitor that detects clicks on the
-    /// minimized/ready capsule. Needed because the window has
-    /// `ignoresMouseEvents = true` in these states so clicks pass through.
+    /// HUD pill. Needed because the window has `ignoresMouseEvents = true`
+    /// in minimized, ready, and noTarget states so clicks pass through
+    /// to apps behind.
     private func installClickMonitor() {
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) {
             [weak self] event in
             guard let self else { return }
             let state = self.viewModel.visualState
-            guard state == .minimized || state == .ready else { return }
             let mouseLocation = NSEvent.mouseLocation
-            if self.hudWindow?.isMouseOverVisibleContent(mouseLocation) == true {
+            guard self.hudWindow?.isMouseOverVisibleContent(mouseLocation) == true else { return }
+
+            switch state {
+            case .minimized, .ready:
                 self.startHandsFreeFromClick()
+            case .noTarget:
+                self.dismissNoTarget()
+            default:
+                break
             }
         }
     }
