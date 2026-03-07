@@ -1,0 +1,322 @@
+import Foundation
+
+#if canImport(CoreAudio)
+    import CoreAudio
+#endif
+
+/// Enumerate and select audio input devices using Core Audio.
+///
+/// Uses `AudioObjectGetPropertyData` to list physical and virtual input
+/// devices, read their names, and detect the system default. Device
+/// selection stores the chosen device ID; `AudioCaptureProvider` reads
+/// it before creating or reconfiguring its `AVAudioEngine`.
+///
+/// Listens for hardware device list changes (connect/disconnect) and
+/// default device changes so `availableDevices()` always reflects the
+/// current state.
+public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sendable {
+
+    private let lock = NSLock()
+
+    /// Explicitly selected device ID, or nil to use the system default.
+    private var _selectedDeviceID: UInt32?
+
+    /// Listeners registered with Core Audio for device changes.
+    private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
+    private var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
+
+    public init() {
+        #if canImport(CoreAudio)
+            registerListeners()
+        #endif
+    }
+
+    deinit {
+        #if canImport(CoreAudio)
+            unregisterListeners()
+        #endif
+    }
+
+    // MARK: - AudioDeviceProviding
+
+    public func availableDevices() async -> [AudioDevice] {
+        #if canImport(CoreAudio)
+            return listInputDevices()
+        #else
+            return []
+        #endif
+    }
+
+    public func currentDevice() async -> AudioDevice? {
+        #if canImport(CoreAudio)
+            let devices = listInputDevices()
+            let selectedID: UInt32? = lock.withLock { _selectedDeviceID }
+
+            if let selectedID {
+                // Return the selected device if it still exists.
+                if let device = devices.first(where: { $0.id == selectedID }) {
+                    return device
+                }
+                // Selected device was disconnected — fall through to default.
+            }
+
+            // Return the system default input device.
+            return devices.first(where: { $0.isDefault }) ?? devices.first
+        #else
+            return nil
+        #endif
+    }
+
+    public func selectDevice(id: UInt32) async throws {
+        #if canImport(CoreAudio)
+            let devices = listInputDevices()
+            guard devices.contains(where: { $0.id == id }) else {
+                throw CoreAudioDeviceError.deviceNotFound(id)
+            }
+            lock.withLock { _selectedDeviceID = id }
+            Log.debug("[CoreAudioDeviceProvider] Selected device id=\(id)")
+        #else
+            throw CoreAudioDeviceError.coreAudioUnavailable
+        #endif
+    }
+
+    /// The device ID that should be used for the next recording session.
+    ///
+    /// Returns the explicitly selected device, or nil to use the system
+    /// default. `AudioCaptureProvider` reads this before creating its
+    /// engine to configure the correct input device.
+    public var selectedDeviceID: UInt32? {
+        lock.withLock { _selectedDeviceID }
+    }
+
+    /// Clear the explicit device selection, reverting to the system default.
+    public func clearSelection() {
+        lock.withLock { _selectedDeviceID = nil }
+        Log.debug("[CoreAudioDeviceProvider] Cleared selection, using system default")
+    }
+
+    // MARK: - Core Audio Enumeration
+
+    #if canImport(CoreAudio)
+
+        /// List all audio input devices currently connected to the system.
+        private func listInputDevices() -> [AudioDevice] {
+            let allDeviceIDs = getAllAudioDeviceIDs()
+            let defaultInputID = getDefaultInputDeviceID()
+
+            var inputDevices: [AudioDevice] = []
+
+            for deviceID in allDeviceIDs {
+                guard hasInputStreams(deviceID: deviceID) else { continue }
+                guard let name = getDeviceName(deviceID: deviceID) else { continue }
+
+                let device = AudioDevice(
+                    id: deviceID,
+                    name: name,
+                    isDefault: deviceID == defaultInputID
+                )
+                inputDevices.append(device)
+            }
+
+            return inputDevices
+        }
+
+        /// Get all audio device IDs on the system.
+        private func getAllAudioDeviceIDs() -> [AudioObjectID] {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyDevices,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var dataSize: UInt32 = 0
+            let sizeStatus = AudioObjectGetPropertyDataSize(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                0,
+                nil,
+                &dataSize
+            )
+            guard sizeStatus == noErr, dataSize > 0 else { return [] }
+
+            let deviceCount = Int(dataSize) / MemoryLayout<AudioObjectID>.size
+            var deviceIDs = [AudioObjectID](repeating: 0, count: deviceCount)
+
+            let status = AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                0,
+                nil,
+                &dataSize,
+                &deviceIDs
+            )
+            guard status == noErr else { return [] }
+
+            return deviceIDs
+        }
+
+        /// Get the system default input device ID.
+        private func getDefaultInputDeviceID() -> AudioObjectID? {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var deviceID: AudioObjectID = kAudioObjectUnknown
+            var dataSize = UInt32(MemoryLayout<AudioObjectID>.size)
+
+            let status = AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                0,
+                nil,
+                &dataSize,
+                &deviceID
+            )
+
+            guard status == noErr, deviceID != kAudioObjectUnknown else {
+                return nil
+            }
+            return deviceID
+        }
+
+        /// Check whether a device has input streams (i.e. is a microphone).
+        private func hasInputStreams(deviceID: AudioObjectID) -> Bool {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var dataSize: UInt32 = 0
+            let status = AudioObjectGetPropertyDataSize(
+                deviceID,
+                &address,
+                0,
+                nil,
+                &dataSize
+            )
+
+            // A device with input streams has dataSize > 0.
+            return status == noErr && dataSize > 0
+        }
+
+        /// Get the human-readable name of a device.
+        private func getDeviceName(deviceID: AudioObjectID) -> String? {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyName,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var name: CFString = "" as CFString
+            var dataSize = UInt32(MemoryLayout<CFString>.size)
+
+            let status = AudioObjectGetPropertyData(
+                deviceID,
+                &address,
+                0,
+                nil,
+                &dataSize,
+                &name
+            )
+
+            guard status == noErr else { return nil }
+            return name as String
+        }
+
+        // MARK: - Device Change Listeners
+
+        /// Register listeners for device list changes and default device changes.
+        private func registerListeners() {
+            var devicesAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyDevices,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            let devicesBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+                guard let self else { return }
+                Log.debug("[CoreAudioDeviceProvider] Device list changed")
+                // If the selected device was disconnected, clear the selection.
+                let selectedID: UInt32? = self.lock.withLock { self._selectedDeviceID }
+                if let selectedID {
+                    let devices = self.listInputDevices()
+                    if !devices.contains(where: { $0.id == selectedID }) {
+                        self.lock.withLock { self._selectedDeviceID = nil }
+                        Log.debug(
+                            "[CoreAudioDeviceProvider] Selected device \(selectedID) disconnected, reverting to default"
+                        )
+                    }
+                }
+            }
+
+            AudioObjectAddPropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &devicesAddress,
+                nil,
+                devicesBlock
+            )
+            deviceListListenerBlock = devicesBlock
+
+            var defaultAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            let defaultBlock: AudioObjectPropertyListenerBlock = { _, _ in
+                Log.debug("[CoreAudioDeviceProvider] Default input device changed")
+            }
+
+            AudioObjectAddPropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &defaultAddress,
+                nil,
+                defaultBlock
+            )
+            defaultDeviceListenerBlock = defaultBlock
+        }
+
+        /// Remove all registered Core Audio listeners.
+        private func unregisterListeners() {
+            if let block = deviceListListenerBlock {
+                var address = AudioObjectPropertyAddress(
+                    mSelector: kAudioHardwarePropertyDevices,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+                AudioObjectRemovePropertyListenerBlock(
+                    AudioObjectID(kAudioObjectSystemObject),
+                    &address,
+                    nil,
+                    block
+                )
+                deviceListListenerBlock = nil
+            }
+
+            if let block = defaultDeviceListenerBlock {
+                var address = AudioObjectPropertyAddress(
+                    mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+                AudioObjectRemovePropertyListenerBlock(
+                    AudioObjectID(kAudioObjectSystemObject),
+                    &address,
+                    nil,
+                    block
+                )
+                defaultDeviceListenerBlock = nil
+            }
+        }
+
+    #endif
+}
+
+/// Errors thrown by `CoreAudioDeviceProvider`.
+public enum CoreAudioDeviceError: Error, Sendable {
+    case deviceNotFound(UInt32)
+    case coreAudioUnavailable
+}

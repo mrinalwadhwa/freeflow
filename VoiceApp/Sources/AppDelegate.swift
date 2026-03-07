@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkeyProvider = CGEventTapHotkeyProvider()
     private let transcriptBuffer = TranscriptBuffer()
     private let textInjector = AppTextInjector()
+    private let audioDeviceProvider = CoreAudioDeviceProvider()
     private var pipeline: DictationPipeline?
 
     // MARK: - Controllers
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let audioProvider = AudioCaptureProvider()
 
     private func setupPipeline() {
+        audioProvider.setAudioDeviceProvider(audioDeviceProvider)
         pipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
@@ -95,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer,
             textInjector: textInjector,
+            audioDeviceProvider: audioDeviceProvider,
             shortcuts: .default
         )
         menuBarController = controller

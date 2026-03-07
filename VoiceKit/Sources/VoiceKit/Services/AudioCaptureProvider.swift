@@ -4,6 +4,10 @@ import Foundation
     import AVFoundation
 #endif
 
+#if canImport(CoreAudio)
+    import CoreAudio
+#endif
+
 /// Capture audio from the default input device via AVAudioEngine.
 ///
 /// Records audio and converts it to 16kHz, mono, 16-bit PCM. On stop,
@@ -29,6 +33,16 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
     private var _peakRMS: Float = 0
     private var pcmChunks: [Data] = []
+
+    /// Optional device provider for mic selection. When set, the engine
+    /// is configured to capture from the selected device instead of the
+    /// system default.
+    private weak var _audioDeviceProvider: CoreAudioDeviceProvider?
+
+    /// The device ID the engine was last configured with, or nil for
+    /// system default. Used to detect when the device changed and the
+    /// engine needs rebuilding.
+    private var _configuredDeviceID: UInt32?
 
     #if canImport(AVFoundation)
         /// Persistent engine, created on first recording and reused.
@@ -67,6 +81,14 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     }
 
     public init() {}
+
+    /// Set the device provider used for mic selection.
+    ///
+    /// Call once during setup, before the first recording session. The
+    /// provider is held weakly to avoid retain cycles with `AppDelegate`.
+    public func setAudioDeviceProvider(_ provider: CoreAudioDeviceProvider) {
+        lock.withLock { _audioDeviceProvider = provider }
+    }
 
     deinit {
         #if canImport(AVFoundation)
@@ -215,19 +237,47 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         /// Return the existing engine or create a new one. Must be called
         /// while `lock` is held. Starts the engine and registers for
         /// configuration change notifications on first creation.
+        ///
+        /// If a `CoreAudioDeviceProvider` is set and has a selected device,
+        /// the engine's input node is configured to capture from that device.
+        /// When the selected device changes between sessions, the existing
+        /// engine is torn down and rebuilt for the new device.
         private func ensureEngine() throws -> AVAudioEngine {
+            let desiredDeviceID = _audioDeviceProvider?.selectedDeviceID
+
             if let engine {
-                // Engine exists but may have been stopped by a config change
-                // notification that only invalidated the converter. Make sure
-                // it is running.
-                if !engine.isRunning {
-                    engine.prepare()
-                    try engine.start()
+                // If the selected device changed, tear down and rebuild.
+                if desiredDeviceID != _configuredDeviceID {
+                    Log.debug(
+                        "[AudioCapture] Device changed from \(_configuredDeviceID?.description ?? "default") "
+                            + "to \(desiredDeviceID?.description ?? "default"), rebuilding engine"
+                    )
+                    tearDownEngineLocked()
+                    // Fall through to create a new engine.
+                } else {
+                    // Engine exists for the correct device. Make sure it
+                    // is running (may have been stopped by a config change
+                    // notification that only invalidated the converter).
+                    if !engine.isRunning {
+                        engine.prepare()
+                        try engine.start()
+                    }
+                    return engine
                 }
-                return engine
             }
 
             let engine = AVAudioEngine()
+
+            // Configure the input device before accessing inputNode's
+            // format. Setting the device after reading the format would
+            // use the wrong sample rate and channel count.
+            #if canImport(CoreAudio)
+                if let deviceID = desiredDeviceID {
+                    try setInputDevice(deviceID, on: engine)
+                }
+            #endif
+            _configuredDeviceID = desiredDeviceID
+
             let inputNode = engine.inputNode
 
             let hardwareFormat = inputNode.outputFormat(forBus: 0)
@@ -257,8 +307,46 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
             registerConfigChangeObserver()
 
+            Log.debug(
+                "[AudioCapture] Engine created (device=\(desiredDeviceID?.description ?? "default"), "
+                    + "sampleRate=\(hardwareFormat.sampleRate), channels=\(hardwareFormat.channelCount))"
+            )
+
             return engine
         }
+
+        #if canImport(CoreAudio)
+            /// Set the input device on an AVAudioEngine's input node.
+            ///
+            /// Uses `AudioUnitSetProperty` with `kAudioOutputUnitProperty_CurrentDevice`
+            /// to route the engine's input to the specified Core Audio device.
+            private func setInputDevice(
+                _ deviceID: AudioObjectID, on engine: AVAudioEngine
+            ) throws {
+                guard let audioUnit = engine.inputNode.audioUnit else {
+                    throw AudioCaptureError.deviceSelectionFailed(deviceID)
+                }
+
+                var mutableDeviceID = deviceID
+                let status = AudioUnitSetProperty(
+                    audioUnit,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global,
+                    0,
+                    &mutableDeviceID,
+                    UInt32(MemoryLayout<AudioObjectID>.size)
+                )
+
+                guard status == noErr else {
+                    Log.debug(
+                        "[AudioCapture] Failed to set input device \(deviceID): OSStatus \(status)"
+                    )
+                    throw AudioCaptureError.deviceSelectionFailed(deviceID)
+                }
+
+                Log.debug("[AudioCapture] Input device set to \(deviceID)")
+            }
+        #endif
 
         /// Return the existing converter or create one matching `tapFormat`.
         /// Must be called while `lock` is held and after `ensureEngine()`.
@@ -342,6 +430,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             engine = nil
             converter = nil
             tapFormat = nil
+            _configuredDeviceID = nil
         }
     #endif
 
@@ -450,6 +539,8 @@ public enum AudioCaptureError: Error, Sendable, CustomStringConvertible {
     case noInputDevice
     /// Failed to create the required audio format or converter.
     case formatError
+    /// Failed to set the requested input device on the audio engine.
+    case deviceSelectionFailed(UInt32)
 
     public var description: String {
         switch self {
@@ -459,6 +550,8 @@ public enum AudioCaptureError: Error, Sendable, CustomStringConvertible {
             return "No audio input device available"
         case .formatError:
             return "Failed to configure audio format"
+        case .deviceSelectionFailed(let id):
+            return "Failed to select audio input device \(id)"
         }
     }
 }
