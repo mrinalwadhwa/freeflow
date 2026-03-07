@@ -47,6 +47,23 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     /// How often to send a keepalive ping when idle (in seconds).
     private let keepaliveInterval: TimeInterval = 15.0
 
+    /// Number of completed sessions on the current connection.
+    private var sessionCount: Int = 0
+
+    /// Force a fresh connection after this many sessions to avoid
+    /// accumulated state degradation (stale buffers, server-side GC
+    /// pressure, etc.). Observed in testing: streaming setup starts
+    /// timing out after ~8-12 sessions on the same connection.
+    private let maxSessionsPerConnection: Int = 8
+
+    /// When the current WebSocket connection was established.
+    private var connectionEstablishedAt: Date?
+
+    /// Force a fresh connection after this duration even if sessions
+    /// are under the limit. Long-lived idle connections can go stale
+    /// despite keepalive pings (load balancer timeouts, TCP RSTs).
+    private let maxConnectionAge: TimeInterval = 300  // 5 minutes
+
     /// Create a provider with explicit configuration.
     ///
     /// - Parameters:
@@ -126,12 +143,28 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             throw error
         }
 
-        lock.withLock {
+        let count: Int = lock.withLock {
             sessionActive = false
+            sessionCount += 1
+            return sessionCount
         }
 
-        // Resume keepalive pings now that the session is done.
-        startKeepalive()
+        Log.debug("[StreamingProvider] Session \(count) finished on this connection")
+
+        // If we have hit the session limit, proactively tear down so
+        // the next dictation starts with a fresh connection. This
+        // avoids the gradual degradation observed in long-running use.
+        if count >= maxSessionsPerConnection {
+            Log.debug(
+                "[StreamingProvider] Reached \(maxSessionsPerConnection) sessions, "
+                    + "proactively reconnecting"
+            )
+            stopKeepalive()
+            await tearDownConnection()
+        } else {
+            // Resume keepalive pings now that the session is done.
+            startKeepalive()
+        }
 
         return result
     }
@@ -166,10 +199,35 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     // MARK: - Connection Management
 
     /// Ensure there is a live WebSocket connection, creating one if needed.
+    ///
+    /// Proactively tears down connections that have exceeded the session
+    /// limit or age limit before checking liveness, so the next session
+    /// always starts on a healthy connection.
     private func ensureConnected() async throws {
         // Bail out early if the calling task has been cancelled (e.g. the
         // streaming-setup timeout fired and cancelled the detached task).
         try Task.checkCancellation()
+
+        // Check whether the existing connection should be recycled due
+        // to age, even if it appears healthy. Long-lived connections can
+        // degrade silently (load balancer idle timeouts, TCP RSTs that
+        // URLSession absorbs internally).
+        let shouldRecycle: Bool = lock.withLock {
+            if let established = connectionEstablishedAt,
+                Date().timeIntervalSince(established) > maxConnectionAge
+            {
+                return true
+            }
+            return false
+        }
+
+        if shouldRecycle {
+            Log.debug(
+                "[StreamingProvider] Connection exceeded max age (\(Int(maxConnectionAge))s), recycling"
+            )
+            stopKeepalive()
+            await tearDownConnection()
+        }
 
         let existing: URLSessionWebSocketTask? = lock.withLock { self.webSocketTask }
 
@@ -235,6 +293,8 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
         lock.withLock {
             self.webSocketTask = task
+            self.sessionCount = 0
+            self.connectionEstablishedAt = Date()
         }
 
         task.resume()
@@ -243,7 +303,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         // a dictation session starts).
         startKeepalive()
 
-        Log.debug("[StreamingProvider] Connected")
+        Log.debug("[StreamingProvider] Connected (new connection)")
     }
 
     /// Build a URLSessionWebSocketTask for the /stream endpoint.
@@ -294,6 +354,8 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             let s = self.urlSession
             self.webSocketTask = nil
             self.urlSession = nil
+            self.connectionEstablishedAt = nil
+            self.sessionCount = 0
             return (t, s)
         }
 
@@ -308,24 +370,55 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         stopKeepalive()
 
         let interval = keepaliveInterval
+        let maxAge = maxConnectionAge
         keepaliveTask = Task { [weak self] in
+            var consecutiveFailures = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 guard !Task.isCancelled else { break }
                 guard let self else { break }
 
                 // Only send keepalive when not in an active session.
-                let active: Bool = self.lock.withLock { self.sessionActive }
+                let (active, age): (Bool, TimeInterval?) = self.lock.withLock {
+                    let a = self.sessionActive
+                    let t = self.connectionEstablishedAt.map {
+                        Date().timeIntervalSince($0)
+                    }
+                    return (a, t)
+                }
                 if active { continue }
+
+                // Proactively recycle if the connection has aged out
+                // during an idle period. The next startStreaming() call
+                // will create a fresh connection via ensureConnected().
+                if let age, age > maxAge {
+                    Log.debug(
+                        "[StreamingProvider] Keepalive: connection aged out "
+                            + "(\(Int(age))s > \(Int(maxAge))s), tearing down"
+                    )
+                    await self.tearDownConnection()
+                    break
+                }
 
                 do {
                     try await self.send(json: ["type": "ping"])
+                    consecutiveFailures = 0
                 } catch {
-                    Log.debug("[StreamingProvider] Keepalive ping failed: \(error)")
-                    // Connection is dead; tear it down so the next
-                    // session reconnects.
-                    await self.tearDownConnection()
-                    break
+                    consecutiveFailures += 1
+                    Log.debug(
+                        "[StreamingProvider] Keepalive ping failed "
+                            + "(attempt \(consecutiveFailures)): \(error)"
+                    )
+                    // Tear down after 2 consecutive failures rather than
+                    // 1, to tolerate transient hiccups.
+                    if consecutiveFailures >= 2 {
+                        Log.debug(
+                            "[StreamingProvider] Keepalive: \(consecutiveFailures) "
+                                + "consecutive failures, tearing down"
+                        )
+                        await self.tearDownConnection()
+                        break
+                    }
                 }
             }
         }
