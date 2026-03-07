@@ -122,6 +122,14 @@ public actor DictationPipeline: PipelineProviding {
     /// Perform audio capture setup and streaming initialization.
     /// This runs after `activate()` returns, so the HUD can animate immediately.
     private func performAudioSetup(activationTime t0: CFAbsoluteTime) async {
+        // Bail early if cancelled before we even begin (e.g. rapid cancel
+        // after activate). Without this check the detached task can start
+        // recording after cancel() has already finished its cleanup.
+        guard !Task.isCancelled else {
+            Log.debug("[Pipeline] performAudioSetup() cancelled before start")
+            return
+        }
+
         // Start reading context concurrently. The result is awaited in complete().
         let ctxProvider = contextProvider
         pendingContext = Task {
@@ -138,6 +146,18 @@ public actor DictationPipeline: PipelineProviding {
             pendingContext?.cancel()
             pendingContext = nil
             await coordinator.reset()
+            return
+        }
+
+        // Check cancellation after starting audio. cancel() may have fired
+        // while startRecording() was in progress. Without this, the audio
+        // provider stays in the recording state with no one to stop it,
+        // causing testCancelFromRecordingResetsToIdle to flake.
+        if Task.isCancelled {
+            Log.debug("[Pipeline] performAudioSetup() cancelled after startRecording")
+            _ = try? await audioProvider.stopRecording()
+            pendingContext?.cancel()
+            pendingContext = nil
             return
         }
         let t4 = CFAbsoluteTimeGetCurrent()
@@ -621,6 +641,7 @@ public actor DictationPipeline: PipelineProviding {
         pipelineTask = nil
         pendingContext?.cancel()
         pendingContext = nil
+
         audioSetupTask?.cancel()
         audioSetupTask = nil
 
