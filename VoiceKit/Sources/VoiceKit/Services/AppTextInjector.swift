@@ -76,6 +76,7 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
         // Electron apps — pasteboard is most reliable
         "com.tinyspeck.slackmacgap": [.pasteboard, .accessibility],
         "com.microsoft.VSCode": [.pasteboard, .keystroke],
+        "com.todesktop.230313mzl4w4u92": [.pasteboard, .keystroke],  // Cursor
         "com.hnc.Discord": [.pasteboard, .keystroke],
         "notion.id": [.pasteboard, .accessibility],
         "md.obsidian": [.pasteboard, .accessibility],
