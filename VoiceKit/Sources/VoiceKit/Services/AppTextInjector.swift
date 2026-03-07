@@ -259,8 +259,48 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
     /// `pasteNotConsumed` is thrown.
     private func injectViaPasteboard(text: String) throws {
         #if canImport(AppKit)
-            let pasteboard = NSPasteboard.general
             let textToInject = addLeadingSpaceIfNeededFromFocused(text: text)
+
+            // The pasteboard provider callback fires on the main thread.
+            // The entire sequence (save, lazy provider setup, Cmd+V, run
+            // loop pump, restore) must run on the main thread so the
+            // callback fires in the run loop we are pumping.
+            let result: PasteResult =
+                if Thread.isMainThread {
+                    performPasteboardInjection(text: textToInject)
+                } else {
+                    DispatchQueue.main.sync {
+                        performPasteboardInjection(text: textToInject)
+                    }
+                }
+
+            switch result {
+            case .consumed:
+                return
+            case .invalidated:
+                return
+            case .notConsumed:
+                throw InjectionError.pasteNotConsumed
+            }
+        #else
+            throw InjectionError.allStrategiesFailed(bundleID: "pasteboard-unavailable")
+        #endif
+    }
+
+    /// Result of a pasteboard injection attempt.
+    private enum PasteResult {
+        case consumed
+        case invalidated
+        case notConsumed
+    }
+
+    /// Run the full pasteboard injection sequence on the current thread.
+    ///
+    /// Must be called on the main thread so the lazy provider callback
+    /// fires in the run loop we pump.
+    private func performPasteboardInjection(text: String) -> PasteResult {
+        #if canImport(AppKit)
+            let pasteboard = NSPasteboard.general
 
             // Save current clipboard content.
             let savedItems = savePasteboardContents(pasteboard)
@@ -268,20 +308,20 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
             // Set up lazy provider: text is delivered in the callback when
             // the receiving app reads the pasteboard after Cmd+V.
             pasteboard.clearContents()
-            let probe = PasteConsumptionProbe(text: textToInject)
+            let probe = PasteConsumptionProbe(text: text)
             let item = NSPasteboardItem()
             item.setDataProvider(probe, forTypes: [.string])
             pasteboard.writeObjects([item])
 
-            // Simulate Cmd+V. Keep the window between provider setup and
-            // paste as tight as possible to minimize the chance of an
-            // external clipboard write invalidating the provider.
+            // Simulate Cmd+V immediately. Keep the window between provider
+            // setup and paste as tight as possible to minimize the chance
+            // of an external clipboard write invalidating the provider.
             simulatePaste()
 
-            // Pump the run loop to receive the provider callback. The
-            // callback fires on the main thread when the app reads the
+            // Pump the main run loop to receive the provider callback.
+            // The callback fires when the receiving app reads the
             // pasteboard. Most apps read within 7-12ms; Electron apps
-            // may take up to ~50ms. We allow 250ms of headroom.
+            // may take up to ~50ms. 250ms provides generous headroom.
             let deadline = Date().addingTimeInterval(Self.pasteConsumptionTimeout)
             while Date() < deadline {
                 RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
@@ -292,10 +332,15 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
 
             if probe.callbackFired {
                 // The app read the pasteboard and received the text via
-                // the callback. Restore the original clipboard.
+                // the callback. Wait briefly for the app to finish
+                // processing the paste before restoring the clipboard.
+                // Without this delay, fast clipboard restore can race
+                // with apps that read the pasteboard data asynchronously
+                // after the initial provider callback.
+                Thread.sleep(forTimeInterval: 0.05)
                 Log.debug("[Injection] Paste consumed (lazy provider callback fired)")
                 restorePasteboardContents(pasteboard, items: savedItems)
-                return
+                return .consumed
             }
 
             if probe.providerInvalidated {
@@ -308,12 +353,12 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                     "[Injection] Lazy provider invalidated by external write, retrying eagerly"
                 )
                 pasteboard.clearContents()
-                pasteboard.setString(textToInject, forType: .string)
+                pasteboard.setString(text, forType: .string)
                 simulatePaste()
                 // Electron apps need extra time to read the pasteboard.
                 Thread.sleep(forTimeInterval: 0.2)
                 restorePasteboardContents(pasteboard, items: savedItems)
-                return
+                return .invalidated
             }
 
             // No callback and no invalidation within the timeout window.
@@ -321,9 +366,9 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
             // the paste. Restore the clipboard and signal no-target.
             Log.debug("[Injection] Paste not consumed (no callback within timeout)")
             restorePasteboardContents(pasteboard, items: savedItems)
-            throw InjectionError.pasteNotConsumed
+            return .notConsumed
         #else
-            throw InjectionError.allStrategiesFailed(bundleID: "pasteboard-unavailable")
+            return .notConsumed
         #endif
     }
 
