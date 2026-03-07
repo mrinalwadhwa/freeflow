@@ -127,19 +127,38 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
     public func stopRecording() async throws -> AudioBuffer {
         #if canImport(AVFoundation)
+            // Grab the engine reference and mark not-recording under the
+            // lock, but do NOT call removeTap inside the lock. removeTap
+            // synchronously waits for any in-flight tap callback to
+            // finish, and the tap callback acquires this same lock to
+            // append PCM chunks — calling removeTap while holding the
+            // lock deadlocks when a callback is in progress.
+            let engineToStop: AVAudioEngine? = lock.withLock {
+                guard _isRecording else { return nil }
+                _isRecording = false
+                return engine
+            }
+
+            guard let engineToStop else {
+                return .empty
+            }
+
+            // Remove the tap outside the lock. This blocks until any
+            // in-flight tap callback completes, which is safe because
+            // we are not holding the lock. After this returns, no more
+            // callbacks will fire.
+            engineToStop.inputNode.removeTap(onBus: 0)
+
+            // Collect accumulated data and tear down streams under the
+            // lock. No tap callbacks can race here because removeTap
+            // has already drained them.
             let pcmData: Data = lock.withLock {
-                guard _isRecording else { return Data() }
-
-                // Remove the tap but keep the engine running.
-                engine?.inputNode.removeTap(onBus: 0)
-
                 pcmContinuation?.finish()
                 pcmContinuation = nil
                 _pcmAudioStream = nil
                 levelContinuation?.finish()
                 levelContinuation = nil
                 _audioLevelStream = nil
-                _isRecording = false
 
                 // Concatenate all accumulated PCM chunks.
                 let totalSize = pcmChunks.reduce(0) { $0 + $1.count }
