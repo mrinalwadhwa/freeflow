@@ -107,10 +107,15 @@ public actor DictationPipeline: PipelineProviding {
         )
 
         // State is now .recording — return immediately so the HUD can animate.
-        // Audio setup runs in a background task to avoid blocking the main actor.
-        // We store the task so complete() can await it before stopping recording.
-        audioSetupTask = Task { [self] in
-            await self.performAudioSetup(activationTime: t0)
+        // Audio setup runs in a detached task so it does not execute on the
+        // pipeline actor's executor. A plain Task inherits the actor context
+        // and can block the actor until the first suspension point, which
+        // delays the return from activate() by the full AVAudioEngine start
+        // time (0.5-0.9s). Detached tasks run independently, letting
+        // activate() return instantly and the HUD expand without delay.
+        let pipeline = self
+        audioSetupTask = Task.detached {
+            await pipeline.performAudioSetup(activationTime: t0)
         }
     }
 
@@ -338,6 +343,24 @@ public actor DictationPipeline: PipelineProviding {
             Log.debug(
                 "[Pipeline] audio stopped (\(String(format: "%.2f", audioBuffer.duration))s, \(audioBuffer.data.count)B)"
             )
+
+            // Early silence check: use the peak RMS tracked during
+            // recording to reject silent presses immediately, before
+            // waiting on the streaming forwarding task or any network
+            // calls. This avoids the 5-7s delay users see when they
+            // tap the hotkey without speaking.
+            let peakLevel = audioProvider.peakRMS
+            if peakLevel <= silenceThreshold {
+                Log.debug(
+                    "[Pipeline] Early silence gate: peak RMS \(peakLevel) <= \(silenceThreshold), skipping"
+                )
+                forwardingTask?.cancel()
+                if useStreaming, let streaming = streamingProvider {
+                    await streaming.cancelStreaming()
+                }
+                await coordinator.reset()
+                return
+            }
 
             // Wait for the audio forwarding task to finish. The PCM stream
             // ends when stopRecording() calls pcmContinuation.finish(), so

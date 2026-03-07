@@ -39,6 +39,15 @@ make test
 # ── Combined: 219 tests (77 XCTest + 142 Swift Testing), 0 failures ──
 ```
 
+**The full test run takes ~1.5 minutes.** Always capture output with `tee` so you can inspect
+failures without re-running:
+
+```bash
+make test 2>&1 | tee /tmp/voice-test.log | tail -5
+# then inspect failures:
+grep -E '✘|FAIL|failures' /tmp/voice-test.log
+```
+
 ## Interactive Commands
 
 Some git commands open an interactive pager that blocks terminal execution. Always pipe output

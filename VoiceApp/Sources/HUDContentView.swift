@@ -31,8 +31,10 @@ struct HUDContentView: View {
             return 140
         case .processing:
             return 80
-        case .processingSlow, .noTarget:
+        case .processingSlow:
             return 180
+        case .noTarget:
+            return 220
         }
     }
 
@@ -109,7 +111,9 @@ struct HUDContentView: View {
                 .offset(y: -(pillHeight + 12))
             }
             .animation(
-                .spring(response: 0.3, dampingFraction: 0.82, blendDuration: 0),
+                viewModel.visualState == .minimized
+                    ? .easeOut(duration: 0.15)
+                    : .spring(response: 0.18, dampingFraction: 0.82, blendDuration: 0),
                 value: viewModel.visualState
             )
             .animation(.easeInOut(duration: 0.25), value: viewModel.micCalloutName)
@@ -255,8 +259,9 @@ struct HUDContentView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel processing")
 
-            BreathingBarView()
-                .frame(width: 32)
+            BreathingBarView(maxWidth: 28)
+                .frame(width: 28)
+                .clipped()
 
             Text("Still working\u{2026}")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -271,7 +276,7 @@ struct HUDContentView: View {
     private var noTargetContent: some View {
         HStack(spacing: 8) {
             Text(viewModel.shortcuts.noTargetHint)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.85))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -388,9 +393,12 @@ struct WaveformBarsView: View {
 /// When Reduce Motion is enabled, only opacity pulses.
 struct BreathingBarView: View {
 
+    /// Maximum width the bar animates to. Callers can pass a smaller value
+    /// so the bar stays within tight pill layouts (e.g. slow-processing).
+    var maxWidth: CGFloat = 40
+
     private let barHeight: CGFloat = 3
     private let minWidth: CGFloat = 16
-    private let maxWidth: CGFloat = 48
 
     @State private var isAnimating = false
 

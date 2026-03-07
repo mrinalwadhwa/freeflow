@@ -23,10 +23,18 @@ final class StreamingPipelineTests: XCTestCase {
         return data
     }
 
+    /// Build a slow batch mock so streaming wins the race by default.
+    /// Tests that need batch to win pass their own fast MockDictationProvider.
+    private func makeSlowBatchProvider() -> MockDictationProvider {
+        let batch = MockDictationProvider()
+        batch.stubbedDelay = 5.0
+        return batch
+    }
+
     private func makeStreamingPipeline(
         audioProvider: MockAudioProvider? = nil,
         contextProvider: MockAppContextProvider = MockAppContextProvider(),
-        dictationProvider: MockDictationProvider = MockDictationProvider(),
+        dictationProvider: MockDictationProvider? = nil,
         streamingProvider: MockStreamingDictationProvider = MockStreamingDictationProvider(),
         textInjector: MockTextInjector = MockTextInjector(),
         coordinator: RecordingCoordinator = RecordingCoordinator(),
@@ -37,17 +45,18 @@ final class StreamingPipelineTests: XCTestCase {
         MockTextInjector, RecordingCoordinator
     ) {
         let audio = audioProvider ?? makeStreamingAudioProvider()
+        let dictation = dictationProvider ?? makeSlowBatchProvider()
         let pipeline = DictationPipeline(
             audioProvider: audio,
             contextProvider: contextProvider,
-            dictationProvider: dictationProvider,
+            dictationProvider: dictation,
             textInjector: textInjector,
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer,
             streamingProvider: streamingProvider
         )
         return (
-            pipeline, audio, contextProvider, dictationProvider,
+            pipeline, audio, contextProvider, dictation,
             streamingProvider, textInjector, coordinator
         )
     }
@@ -636,10 +645,11 @@ final class StreamingPipelineTests: XCTestCase {
         let coordinator = RecordingCoordinator()
         let injector = MockTextInjector()
 
+        let batch = makeSlowBatchProvider()
         let pipeline = DictationPipeline(
             audioProvider: audio,
             contextProvider: MockAppContextProvider(),
-            dictationProvider: MockDictationProvider(),
+            dictationProvider: batch,
             textInjector: injector,
             coordinator: coordinator,
             streamingProvider: streaming

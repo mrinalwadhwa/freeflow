@@ -168,8 +168,12 @@ final class HUDOverlayWindow: NSPanel {
             pillWidth = 140
             pillHeight = 32
             padding = 4
-        case .processingSlow, .noTarget:
+        case .processingSlow:
             pillWidth = 180
+            pillHeight = 32
+            padding = 4
+        case .noTarget:
+            pillWidth = 220
             pillHeight = 32
             padding = 4
         }

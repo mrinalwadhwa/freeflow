@@ -35,6 +35,15 @@ public protocol AudioProviding: Sendable {
     /// stream. The stream yields values at roughly the audio tap rate
     /// (~10-15 per second). The stream finishes when recording stops.
     var audioLevelStream: AsyncStream<Float>? { get }
+
+    /// The highest raw RMS level observed during the current or most recent
+    /// recording session. Reset to 0 on each `startRecording()`.
+    ///
+    /// The pipeline reads this after `stopRecording()` to detect silent
+    /// presses early, before sending audio to the server. Values are raw
+    /// (unscaled) RMS on 16-bit PCM normalized to 0-1: ambient silence is
+    /// ~0.0007, quiet speech starts around 0.01.
+    var peakRMS: Float { get }
 }
 
 extension AudioProviding {
@@ -43,4 +52,7 @@ extension AudioProviding {
 
     /// Default implementation returns nil (no live level metering).
     public var audioLevelStream: AsyncStream<Float>? { nil }
+
+    /// Default implementation returns 0 (no level tracking).
+    public var peakRMS: Float { 0 }
 }

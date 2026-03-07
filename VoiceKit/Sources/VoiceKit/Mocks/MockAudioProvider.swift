@@ -15,6 +15,11 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     /// non-silent buffer so the silence gate does not reject it.
     public var stubbedBuffer: AudioBuffer
 
+    /// The peak RMS level reported by `peakRMS`. Defaults to 0.1 (well
+    /// above the 0.005 silence threshold) so the early silence gate in
+    /// the pipeline does not reject mock recordings.
+    public var stubbedPeakRMS: Float = 0.1
+
     /// When true, `startRecording()` creates a `pcmAudioStream` that
     /// emits each chunk passed to `emitPCMChunk(_:)`. Defaults to false
     /// so existing tests are unaffected.
@@ -109,6 +114,10 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     }
 
     public var audioLevelStream: AsyncStream<Float>? { nil }
+
+    public var peakRMS: Float {
+        lock.withLock { stubbedPeakRMS }
+    }
 
     public func stopRecording() async throws -> AudioBuffer {
         let buffer = lock.withLock { () -> AudioBuffer in

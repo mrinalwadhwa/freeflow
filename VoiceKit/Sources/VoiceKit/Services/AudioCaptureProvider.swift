@@ -19,6 +19,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
     private let lock = NSLock()
     private var _isRecording = false
+
+    private var _peakRMS: Float = 0
     private var pcmChunks: [Data] = []
 
     #if canImport(AVFoundation)
@@ -44,6 +46,14 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         lock.withLock { _audioLevelStream }
     }
 
+    /// The highest RMS level observed during the current (or most recent)
+    /// recording session. Reset to 0 on each `startRecording()`. The
+    /// pipeline reads this after `stopRecording()` to detect silent
+    /// presses before sending audio to the server.
+    public var peakRMS: Float {
+        lock.withLock { _peakRMS }
+    }
+
     public init() {}
 
     // MARK: - AudioProviding
@@ -60,6 +70,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 }
 
                 pcmChunks = []
+                _peakRMS = 0
 
                 // Set up the PCM audio stream before starting capture.
                 let (pcmStream, pcmCont) = AsyncStream<Data>.makeStream()
@@ -185,7 +196,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     // MARK: - Audio level metering
 
     #if canImport(AVFoundation)
-        /// Compute RMS level from a float32 PCM buffer and emit to the stream.
+        /// Compute RMS level from a float32 PCM buffer, update peak tracking,
+        /// and emit the scaled level to the stream.
         private func emitAudioLevel(_ buffer: AVAudioPCMBuffer) {
             guard let floatData = buffer.floatChannelData else { return }
             let frameLength = Int(buffer.frameLength)
@@ -205,6 +217,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             let scaled = min(sqrtf(rms * 25.0), 1.0)
 
             lock.withLock {
+                // Track the raw (unscaled) peak for silence detection.
+                if rms > _peakRMS {
+                    _peakRMS = rms
+                }
                 levelContinuation?.yield(scaled)
             }
         }
