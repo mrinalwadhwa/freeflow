@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hudController?.stop()
         menuBarController?.stop()
         permissionController?.stop()
+        audioProvider.shutdown()
     }
 
     // MARK: - Menu Bar

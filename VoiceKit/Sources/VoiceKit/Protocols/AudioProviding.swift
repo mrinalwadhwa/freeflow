@@ -44,6 +44,12 @@ public protocol AudioProviding: Sendable {
     /// (unscaled) RMS on 16-bit PCM normalized to 0-1: ambient silence is
     /// ~0.0007, quiet speech starts around 0.01.
     var peakRMS: Float { get }
+
+    /// Tear down any persistent resources (e.g. a long-lived audio engine).
+    ///
+    /// Call on app termination. Implementations that do not hold persistent
+    /// resources can use the default no-op implementation.
+    func shutdown()
 }
 
 extension AudioProviding {
@@ -55,4 +61,7 @@ extension AudioProviding {
 
     /// Default implementation returns 0 (no level tracking).
     public var peakRMS: Float { 0 }
+
+    /// Default implementation is a no-op.
+    public func shutdown() {}
 }

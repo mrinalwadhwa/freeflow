@@ -222,9 +222,13 @@ final class HUDViewModel: ObservableObject {
             recalculate()
 
         case .injecting:
-            // Injection in progress — still show processing indicator.
-            // On success the coordinator transitions to idle → minimized.
-            recalculate()
+            // Injection is committed — the text will appear momentarily.
+            // Collapse the pill now rather than waiting for the clipboard
+            // restore delay (~200ms) and the idle transition. This makes
+            // the pill disappear in sync with the text appearing instead
+            // of lingering in the processing state.
+            stopAudioLevelObservation()
+            visualState = .minimized
 
         case .injectionFailed:
             recalculate()
@@ -320,8 +324,21 @@ final class HUDViewModel: ObservableObject {
     private func startAudioLevelObservation() {
         audioLevelTask?.cancel()
         audioLevel = 0
-        guard let stream = audioProvider?.audioLevelStream else { return }
+        let provider = audioProvider
         audioLevelTask = Task { [weak self] in
+            // The audio level stream is created inside
+            // audioProvider.startRecording(), which runs in a detached
+            // task after the coordinator emits .recording. Poll briefly
+            // so we pick it up once it exists.
+            var stream: AsyncStream<Float>?
+            for _ in 0..<20 {  // up to ~200ms
+                stream = provider?.audioLevelStream
+                if stream != nil { break }
+                try? await Task.sleep(nanoseconds: 10_000_000)  // 10ms
+                guard !Task.isCancelled else { return }
+            }
+            guard let stream else { return }
+
             for await level in stream {
                 guard !Task.isCancelled else { break }
                 guard let self else { break }
