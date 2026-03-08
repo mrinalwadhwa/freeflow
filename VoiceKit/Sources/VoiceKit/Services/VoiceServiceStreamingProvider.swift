@@ -373,8 +373,14 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         let maxAge = maxConnectionAge
         keepaliveTask = Task { [weak self] in
             var consecutiveFailures = 0
+            var isFirstPing = true
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                // Send the first ping after 2s so the connection stays
+                // warm immediately after a session ends. Subsequent
+                // pings use the full interval.
+                let delay: TimeInterval = isFirstPing ? 2.0 : interval
+                isFirstPing = false
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 guard !Task.isCancelled else { break }
                 guard let self else { break }
 
@@ -403,6 +409,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                 do {
                     try await self.send(json: ["type": "ping"])
                     consecutiveFailures = 0
+                    Log.debug("[StreamingProvider] Keepalive ping OK")
                 } catch {
                     consecutiveFailures += 1
                     Log.debug(
