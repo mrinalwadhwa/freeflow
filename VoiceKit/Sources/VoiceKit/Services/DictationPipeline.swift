@@ -194,13 +194,16 @@ public actor DictationPipeline: PipelineProviding {
             // timeout. This avoids zombie detached tasks that pile up
             // when the timeout fires but startStreaming() keeps retrying
             // ensureConnected() in the background.
+            let micProximity = audioProvider.micProximity
             Log.debug("[Pipeline] Starting streaming setup with 5s timeout")
             let streamingStarted: Bool = await Task.detached {
                 await withTaskGroup(of: Bool.self) { group in
                     group.addTask {
                         do {
                             Log.debug("[Pipeline] streaming.startStreaming() entering")
-                            try await streaming.startStreaming(context: context, language: nil)
+                            try await streaming.startStreaming(
+                                context: context, language: nil,
+                                micProximity: micProximity)
                             Log.debug("[Pipeline] streaming.startStreaming() returned OK")
                             return true
                         } catch {

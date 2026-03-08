@@ -41,6 +41,65 @@ struct AudioDeviceTests {
         let device = AudioDevice(id: 7, name: "Test")
         #expect(device.id == 7)
     }
+
+    @Test("AudioDevice defaults transportType to other")
+    func transportTypeDefault() {
+        let device = AudioDevice(id: 1, name: "Mic")
+        #expect(device.transportType == .other)
+    }
+
+    @Test("AudioDevice stores explicit transportType")
+    func transportTypeExplicit() {
+        let builtIn = AudioDevice(id: 1, name: "MacBook Pro Microphone", transportType: .builtIn)
+        let bluetooth = AudioDevice(id: 2, name: "AirPods", transportType: .bluetooth)
+        let usb = AudioDevice(id: 3, name: "Yeti", transportType: .usb)
+        let other = AudioDevice(id: 4, name: "Virtual", transportType: .other)
+
+        #expect(builtIn.transportType == .builtIn)
+        #expect(bluetooth.transportType == .bluetooth)
+        #expect(usb.transportType == .usb)
+        #expect(other.transportType == .other)
+    }
+
+    @Test("AudioDevice Equatable includes transportType")
+    func equatableTransportType() {
+        let a = AudioDevice(id: 1, name: "Mic", transportType: .builtIn)
+        let b = AudioDevice(id: 1, name: "Mic", transportType: .builtIn)
+        let c = AudioDevice(id: 1, name: "Mic", transportType: .usb)
+
+        #expect(a == b)
+        #expect(a != c)
+    }
+
+    @Test("Built-in mic reports far-field proximity")
+    func micProximityBuiltIn() {
+        let device = AudioDevice(id: 1, name: "MacBook Pro Microphone", transportType: .builtIn)
+        #expect(device.micProximity == .farField)
+    }
+
+    @Test("Bluetooth mic reports near-field proximity")
+    func micProximityBluetooth() {
+        let device = AudioDevice(id: 2, name: "AirPods", transportType: .bluetooth)
+        #expect(device.micProximity == .nearField)
+    }
+
+    @Test("USB mic reports near-field proximity")
+    func micProximityUSB() {
+        let device = AudioDevice(id: 3, name: "Yeti", transportType: .usb)
+        #expect(device.micProximity == .nearField)
+    }
+
+    @Test("Other/unknown mic reports near-field proximity")
+    func micProximityOther() {
+        let device = AudioDevice(id: 4, name: "Virtual", transportType: .other)
+        #expect(device.micProximity == .nearField)
+    }
+
+    @Test("MicProximity rawValue matches API field names")
+    func micProximityRawValues() {
+        #expect(MicProximity.nearField.rawValue == "near_field")
+        #expect(MicProximity.farField.rawValue == "far_field")
+    }
 }
 
 @Suite("MockAudioDeviceProvider")

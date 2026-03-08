@@ -101,7 +101,9 @@ final class HangingStreamingDictationProvider: StreamingDictationProviding, @unc
 
     // --- StreamingDictationProviding ---
 
-    func startStreaming(context: AppContext, language: String?) async throws {
+    func startStreaming(context: AppContext, language: String?, micProximity: MicProximity)
+        async throws
+    {
         lock.withLock { _startCallCount += 1 }
 
         if hangOnStart {

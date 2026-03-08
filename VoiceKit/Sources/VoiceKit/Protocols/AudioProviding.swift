@@ -45,6 +45,12 @@ public protocol AudioProviding: Sendable {
     /// ~0.0007, quiet speech starts around 0.01.
     var peakRMS: Float { get }
 
+    /// Mic proximity of the device used for the current or most recent
+    /// recording session. The pipeline reads this after `startRecording()`
+    /// to tell the server whether to apply near-field or far-field noise
+    /// reduction.
+    var micProximity: MicProximity { get }
+
     /// Tear down any persistent resources (e.g. a long-lived audio engine).
     ///
     /// Call on app termination. Implementations that do not hold persistent
@@ -61,6 +67,9 @@ extension AudioProviding {
 
     /// Default implementation returns 0 (no level tracking).
     public var peakRMS: Float { 0 }
+
+    /// Default implementation assumes a close-talking microphone.
+    public var micProximity: MicProximity { .nearField }
 
     /// Default implementation is a no-op.
     public func shutdown() {}

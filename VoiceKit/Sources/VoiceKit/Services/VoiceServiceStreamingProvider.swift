@@ -106,7 +106,9 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
     // MARK: - StreamingDictationProviding
 
-    public func startStreaming(context: AppContext, language: String?) async throws {
+    public func startStreaming(context: AppContext, language: String?, micProximity: MicProximity)
+        async throws
+    {
         // Bail out if the calling task was cancelled (e.g. timeout).
         try Task.checkCancellation()
 
@@ -121,8 +123,9 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         // traffic keeps the connection alive.
         stopKeepalive()
 
-        // Send the start message with context and language.
-        let startMessage = buildStartMessage(context: context, language: language)
+        // Send the start message with context, language, and mic proximity.
+        let startMessage = buildStartMessage(
+            context: context, language: language, micProximity: micProximity)
         try await send(json: startMessage)
 
         Log.debug("[StreamingProvider] Session started (persistent)")
@@ -713,7 +716,9 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
     // MARK: - Message Helpers
 
-    private func buildStartMessage(context: AppContext, language: String?) -> [String: Any] {
+    private func buildStartMessage(
+        context: AppContext, language: String?, micProximity: MicProximity = .nearField
+    ) -> [String: Any] {
         var contextDict: [String: Any] = [
             "bundle_id": context.bundleID,
             "app_name": context.appName,
@@ -735,6 +740,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         var message: [String: Any] = [
             "type": "start",
             "context": contextDict,
+            "mic_type": micProximity.rawValue,
         ]
         if let language {
             message["language"] = language

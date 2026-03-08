@@ -254,7 +254,7 @@ final class BackupConnectionTests: XCTestCase {
 
     /// Run one full dictation session: start → sendAudio → finish.
     private func runSession(on provider: VoiceServiceStreamingProvider) async throws -> String {
-        try await provider.startStreaming(context: .empty, language: nil)
+        try await provider.startStreaming(context: .empty, language: nil, micProximity: .nearField)
         // Send a small chunk of fake PCM audio.
         try await provider.sendAudio(Data(repeating: 0, count: 3200))
         return try await provider.finishStreaming()
@@ -397,7 +397,7 @@ final class BackupConnectionTests: XCTestCase {
         XCTAssertEqual(server.connectionCount, 2)
 
         // Start a new session, then cancel mid-stream.
-        try await provider.startStreaming(context: .empty, language: nil)
+        try await provider.startStreaming(context: .empty, language: nil, micProximity: .nearField)
         try await provider.sendAudio(Data(repeating: 0, count: 3200))
         await provider.cancelStreaming()
 

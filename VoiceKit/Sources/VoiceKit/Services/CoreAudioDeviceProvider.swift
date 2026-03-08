@@ -109,6 +109,32 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         Log.debug("[CoreAudioDeviceProvider] Cleared selection, using system default")
     }
 
+    /// Return the mic proximity for a device ID.
+    ///
+    /// If `deviceID` is nil (system default), looks up the current
+    /// default input device. Returns `.nearField` if the device
+    /// cannot be found.
+    public func micProximityForDevice(_ deviceID: UInt32?) -> MicProximity {
+        #if canImport(CoreAudio)
+            let id: AudioObjectID
+            if let deviceID {
+                id = deviceID
+            } else if let defaultID = getDefaultInputDeviceID() {
+                id = defaultID
+            } else {
+                return .nearField
+            }
+            switch getTransportType(deviceID: id) {
+            case .builtIn:
+                return .farField
+            case .bluetooth, .usb, .other:
+                return .nearField
+            }
+        #else
+            return .nearField
+        #endif
+    }
+
     // MARK: - Core Audio Enumeration
 
     #if canImport(CoreAudio)
@@ -127,7 +153,8 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 let device = AudioDevice(
                     id: deviceID,
                     name: name,
-                    isDefault: deviceID == defaultInputID
+                    isDefault: deviceID == defaultInputID,
+                    transportType: getTransportType(deviceID: deviceID)
                 )
                 inputDevices.append(device)
             }
@@ -214,6 +241,41 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
 
             // A device with input streams has dataSize > 0.
             return status == noErr && dataSize > 0
+        }
+
+        /// Map the Core Audio transport type constant to our enum.
+        private func getTransportType(deviceID: AudioObjectID) -> AudioDevice.TransportType {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyTransportType,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var transportType: UInt32 = 0
+            var dataSize = UInt32(MemoryLayout<UInt32>.size)
+
+            let status = AudioObjectGetPropertyData(
+                deviceID,
+                &address,
+                0,
+                nil,
+                &dataSize,
+                &transportType
+            )
+
+            guard status == noErr else { return .other }
+
+            switch transportType {
+            case kAudioDeviceTransportTypeBuiltIn:
+                return .builtIn
+            case kAudioDeviceTransportTypeBluetooth,
+                kAudioDeviceTransportTypeBluetoothLE:
+                return .bluetooth
+            case kAudioDeviceTransportTypeUSB:
+                return .usb
+            default:
+                return .other
+            }
         }
 
         /// Get the human-readable name of a device.

@@ -33,6 +33,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     private var _isRecording = false
 
     private var _peakRMS: Float = 0
+    private var _micProximity: MicProximity = .nearField
     private var pcmChunks: [Data] = []
 
     /// Optional device provider for mic selection. When set, the engine
@@ -85,6 +86,13 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     /// presses before sending audio to the server.
     public var peakRMS: Float {
         lock.withLock { _peakRMS }
+    }
+
+    /// Mic proximity of the device used for the current or most recent
+    /// recording session. Set during engine creation based on the
+    /// configured device's transport type. Defaults to `.nearField`.
+    public var micProximity: MicProximity {
+        lock.withLock { _micProximity }
     }
 
     public init() {}
@@ -383,6 +391,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 }
             #endif
             _configuredDeviceID = _audioDeviceProvider?.selectedDeviceID
+            _micProximity =
+                _audioDeviceProvider?.micProximityForDevice(
+                    _configuredDeviceID
+                ) ?? .nearField
 
             let inputNode = engine.inputNode
 

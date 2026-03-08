@@ -172,7 +172,10 @@ async def connect(model: str, retry_on_auth_error: bool = True):
 
 
 async def configure_session(
-    ws, stt_model: str, language: Optional[str] = None
+    ws,
+    stt_model: str,
+    language: Optional[str] = None,
+    mic_type: Optional[str] = None,
 ):
     """Send session.update to configure a transcription-only session.
 
@@ -185,12 +188,21 @@ async def configure_session(
     "stop" message, at which point we manually commit the buffer. This
     avoids the race between server VAD and the client's stop signal that
     caused reliability issues in the shelved implementation.
+
+    mic_type controls input_audio_noise_reduction: "near_field" for
+    close-talking mics (headphones, USB desk mics), "far_field" for
+    built-in laptop or conference room mics. Defaults to "near_field"
+    if not provided.
     """
     transcription_config = {
         "model": stt_model,
     }
     if language:
         transcription_config["language"] = language
+
+    # Default to near_field (headphones / desk mic). The client sends
+    # "far_field" when using the built-in MacBook mic.
+    noise_reduction_type = mic_type if mic_type in ("near_field", "far_field") else "near_field"
 
     config = {
         "type": "session.update",
@@ -199,6 +211,9 @@ async def configure_session(
             "input_audio_format": "pcm16",
             "input_audio_transcription": transcription_config,
             "turn_detection": None,
+            "input_audio_noise_reduction": {
+                "type": noise_reduction_type,
+            },
         },
     }
 
@@ -339,6 +354,7 @@ async def _run_dictation_session(
     """
     app_context = parse_dict(start_msg.get("context"))
     language = start_msg.get("language")
+    mic_type = start_msg.get("mic_type")
     t_start = time.monotonic()
 
     # Accumulate transcript segments.
@@ -369,7 +385,7 @@ async def _run_dictation_session(
 
         try:
             realtime_ws = await connect(REALTIME_MODEL)
-            await configure_session(realtime_ws, STT_MODEL, language)
+            await configure_session(realtime_ws, STT_MODEL, language, mic_type)
             t_connected = time.monotonic()
             buffered = len(audio_buffer)
             # Log connection details for debugging keepalive issues

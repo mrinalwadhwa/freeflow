@@ -113,7 +113,9 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
 
     // MARK: - StreamingDictationProviding
 
-    public func startStreaming(context: AppContext, language: String?) async throws {
+    public func startStreaming(context: AppContext, language: String?, micProximity: MicProximity)
+        async throws
+    {
         lock.withLock {
             _startCallCount += 1
             _receivedContexts.append(context)

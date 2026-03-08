@@ -23,8 +23,12 @@ public protocol StreamingDictationProviding: Sendable {
     /// - Parameters:
     ///   - context: Application context at the time of dictation.
     ///   - language: Optional ISO-639-1 language hint (e.g. "en").
+    ///   - micProximity: Whether the mic is near-field (headset) or
+    ///     far-field (built-in laptop mic). The server uses this to
+    ///     configure noise reduction on the transcription backend.
     /// - Throws: If the connection cannot be established.
-    func startStreaming(context: AppContext, language: String?) async throws
+    func startStreaming(context: AppContext, language: String?, micProximity: MicProximity)
+        async throws
 
     /// Send a chunk of raw PCM audio to the server.
     ///
