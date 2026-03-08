@@ -435,4 +435,94 @@ final class BackupConnectionTests: XCTestCase {
         XCTAssertEqual(result, "Test transcript")
         XCTAssertGreaterThanOrEqual(server.connectionCount, 3)
     }
+
+    // MARK: - Backup Dictation
+
+    /// `dictateViaBackup` runs a full session on the backup WebSocket
+    /// and returns the transcript. Verify it works end-to-end against
+    /// the local server.
+    func testDictateViaBackupReturnsTranscript() async throws {
+        let provider = makeProvider()
+        defer { Task { await provider.disconnect() } }
+
+        // Run a normal session to establish the backup connection.
+        _ = try await runSession(on: provider)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(server.connectionCount, 2)
+
+        // Call dictateViaBackup with fake PCM audio.
+        let pcmAudio = Data(repeating: 0, count: 64_000)
+        let result = try await provider.dictateViaBackup(
+            audio: pcmAudio, context: .empty)
+
+        XCTAssertEqual(result, "Test transcript")
+    }
+
+    /// After `dictateViaBackup` consumes the backup, the backup slot
+    /// should be empty (connection torn down). A subsequent call should
+    /// throw because no backup is available.
+    func testDictateViaBackupConsumesBackupConnection() async throws {
+        let provider = makeProvider()
+        defer { Task { await provider.disconnect() } }
+
+        // Establish backup.
+        _ = try await runSession(on: provider)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(server.connectionCount, 2)
+
+        // First call succeeds and consumes the backup.
+        let pcmAudio = Data(repeating: 0, count: 3200)
+        _ = try await provider.dictateViaBackup(
+            audio: pcmAudio, context: .empty)
+
+        // Second call should throw — no backup available.
+        do {
+            _ = try await provider.dictateViaBackup(
+                audio: pcmAudio, context: .empty)
+            XCTFail("Expected error when no backup is available")
+        } catch {
+            // Expected: no backup connection available.
+        }
+    }
+
+    /// `dictateViaBackup` should work even when the primary is dead.
+    /// This is the key scenario: primary stale, backup takes over for
+    /// the parallel race in the pipeline.
+    func testDictateViaBackupWorksWhenPrimaryDead() async throws {
+        let provider = makeProvider()
+        defer { Task { await provider.disconnect() } }
+
+        // Run a session to establish backup.
+        _ = try await runSession(on: provider)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(server.connectionCount, 2)
+
+        // Kill the primary.
+        server.killOldestConnection()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // dictateViaBackup should still succeed — it uses the backup
+        // connection independently of the primary.
+        let pcmAudio = Data(repeating: 0, count: 32_000)
+        let result = try await provider.dictateViaBackup(
+            audio: pcmAudio, context: .empty)
+
+        XCTAssertEqual(result, "Test transcript")
+    }
+
+    /// When no backup exists (fresh provider, no prior session),
+    /// `dictateViaBackup` should throw immediately.
+    func testDictateViaBackupThrowsWhenNoBackup() async throws {
+        let provider = makeProvider()
+        defer { Task { await provider.disconnect() } }
+
+        let pcmAudio = Data(repeating: 0, count: 3200)
+        do {
+            _ = try await provider.dictateViaBackup(
+                audio: pcmAudio, context: .empty)
+            XCTFail("Expected error when no backup exists")
+        } catch {
+            // Expected.
+        }
+    }
 }

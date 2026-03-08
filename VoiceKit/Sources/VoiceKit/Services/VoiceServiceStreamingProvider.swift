@@ -279,31 +279,35 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             // Check if the task is still in a usable state.
             switch task.state {
             case .running:
-                // Verify liveness with a protocol-level ping.
-                // Timeout after 3s — sendPing can hang indefinitely when
-                // the WebSocket is in a broken state (e.g. half-closed TCP).
+                // Verify liveness with an application-level ping/pong.
+                // Protocol-level sendPing is invisible to L7 load
+                // balancers and K8s ingress, causing hangs or POSIX
+                // error 53 on connections that appear healthy. The
+                // application-level {"type":"ping"} travels as a normal
+                // WebSocket text frame that the server echoes as
+                // {"type":"pong"}, keeping L7 proxies happy.
+                //
+                // Timeout after 3s — generous enough for slow networks
+                // while still catching dead connections before the 5s
+                // streaming-setup deadline in performAudioSetup().
                 do {
                     try await withThrowingTaskGroup(of: Void.self) { group in
                         group.addTask {
-                            try await withCheckedThrowingContinuation {
-                                (cont: CheckedContinuation<Void, Error>) in
-                                // Guard against double-resume: URLSessionWebSocketTask
-                                // can invoke the sendPing completion more than once when
-                                // the connection is aborting while a ping is in flight.
-                                let pingLock = NSLock()
-                                var resumed = false
-                                task.sendPing { error in
-                                    let alreadyResumed = pingLock.withLock {
-                                        let was = resumed
-                                        resumed = true
-                                        return was
-                                    }
-                                    guard !alreadyResumed else { return }
-                                    if let error {
-                                        cont.resume(throwing: error)
-                                    } else {
-                                        cont.resume()
-                                    }
+                            // Send application-level ping and wait for pong.
+                            try await self.send(json: ["type": "ping"], on: task)
+                            // Read messages until we get a pong. Other
+                            // message types (transcript_delta, etc.) are
+                            // discarded — they should not appear outside
+                            // an active session but we handle them safely.
+                            while true {
+                                let msg = try await task.receive()
+                                if case .string(let text) = msg,
+                                    let data = text.data(using: .utf8),
+                                    let json = try? JSONSerialization.jsonObject(with: data)
+                                        as? [String: Any],
+                                    json["type"] as? String == "pong"
+                                {
+                                    return
                                 }
                             }
                         }
@@ -454,27 +458,23 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         let backup: URLSessionWebSocketTask? = lock.withLock { self.backupWebSocketTask }
         guard let backup else { return false }
 
-        // Verify the backup is alive with a quick ping (1s timeout).
+        // Verify the backup is alive with an application-level ping/pong
+        // (1s timeout). Protocol-level sendPing is invisible to L7 load
+        // balancers, so we use a normal WebSocket text frame instead.
         let isAlive: Bool
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    try await withCheckedThrowingContinuation {
-                        (cont: CheckedContinuation<Void, Error>) in
-                        let pingLock = NSLock()
-                        var resumed = false
-                        backup.sendPing { error in
-                            let alreadyResumed = pingLock.withLock {
-                                let was = resumed
-                                resumed = true
-                                return was
-                            }
-                            guard !alreadyResumed else { return }
-                            if let error {
-                                cont.resume(throwing: error)
-                            } else {
-                                cont.resume()
-                            }
+                    try await self.send(json: ["type": "ping"], on: backup)
+                    while true {
+                        let msg = try await backup.receive()
+                        if case .string(let text) = msg,
+                            let data = text.data(using: .utf8),
+                            let json = try? JSONSerialization.jsonObject(with: data)
+                                as? [String: Any],
+                            json["type"] as? String == "pong"
+                        {
+                            return
                         }
                     }
                 }
@@ -816,6 +816,11 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             throw DictationError.networkError("No active streaming session")
         }
 
+        return try await waitForResult(on: task)
+    }
+
+    /// Read WebSocket messages on a specific task until `transcript_done`.
+    private func waitForResult(on task: URLSessionWebSocketTask) async throws -> String {
         while true {
             let message: URLSessionWebSocketTask.Message
             do {
@@ -844,12 +849,9 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                     throw DictationError.requestFailed(statusCode: 0, message: errorMsg)
 
                 case "transcript_delta":
-                    // Incremental transcript; could be surfaced to UI
-                    // in the future. For now, ignore.
                     continue
 
                 case "pong":
-                    // Keepalive response; ignore during active session.
                     continue
 
                 default:
@@ -857,12 +859,103 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
                 }
 
             case .data:
-                // Binary messages are not expected.
                 continue
 
             @unknown default:
                 continue
             }
+        }
+    }
+
+    // MARK: - Backup Dictation
+
+    /// Run a full dictation session on the backup WebSocket.
+    ///
+    /// Opens a complete session (start → audio chunks → stop →
+    /// transcript_done) on the standby backup connection. This is used
+    /// as a parallel fallback in the pipeline race instead of the slower
+    /// HTTP batch POST (~0.3–0.9s vs 1–2.5s).
+    ///
+    /// The backup connection is consumed by this call: on success it is
+    /// torn down (its server-side session is complete), and on error it
+    /// is also torn down (server state is undefined). A fresh backup is
+    /// established by `finishStreaming()` after the race winner completes.
+    ///
+    /// Audio is sent as base64-encoded PCM chunks (~32 KB each) to match
+    /// the format the primary uses during recording.
+    public func dictateViaBackup(audio: Data, context: AppContext) async throws -> String {
+        // Grab the backup WebSocket task. Throw if no backup is available.
+        stopBackupKeepalive()
+        let (task, session): (URLSessionWebSocketTask?, URLSession?) = lock.withLock {
+            let t = self.backupWebSocketTask
+            let s = self.backupURLSession
+            // Detach from backup slots — this method owns the connection now.
+            self.backupWebSocketTask = nil
+            self.backupURLSession = nil
+            self.backupConnectionEstablishedAt = nil
+            return (t, s)
+        }
+
+        guard let task, let session else {
+            throw DictationError.networkError("No backup connection available")
+        }
+
+        // Wrap the entire session in a closure so we can guarantee
+        // teardown on all exit paths.
+        func tearDown() {
+            task.cancel(with: .normalClosure, reason: nil)
+            session.invalidateAndCancel()
+        }
+
+        do {
+            // 1. Send start message with context.
+            let startMessage = buildStartMessage(context: context, language: nil)
+            try await send(json: startMessage, on: task)
+
+            // 2. Send audio as base64 PCM chunks (~32 KB each).
+            let chunkSize = 32_000
+            var offset = 0
+            while offset < audio.count {
+                let end = min(offset + chunkSize, audio.count)
+                let chunk = audio[offset..<end]
+                let base64Audio = chunk.base64EncodedString()
+                let message: [String: Any] = [
+                    "type": "audio",
+                    "audio": base64Audio,
+                ]
+                try await send(json: message, on: task)
+                offset = end
+            }
+
+            // 3. Send stop signal.
+            try await send(json: ["type": "stop"], on: task)
+
+            Log.debug("[StreamingProvider] Backup dictation: stop sent, waiting for transcript")
+
+            // 4. Wait for transcript_done with a 10s timeout.
+            //    On timeout, cancel the WebSocket task to unblock receive().
+            let result: String = try await withThrowingTaskGroup(of: String.self) { group in
+                group.addTask {
+                    try await self.waitForResult(on: task)
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 10_000_000_000)
+                    task.cancel(with: .abnormalClosure, reason: nil)
+                    throw DictationError.networkError(
+                        "Backup dictation timed out waiting for transcript")
+                }
+                let first = try await group.next()!
+                group.cancelAll()
+                return first
+            }
+
+            Log.debug("[StreamingProvider] Backup dictation completed")
+            tearDown()
+            return result
+        } catch {
+            Log.debug("[StreamingProvider] Backup dictation failed: \(error)")
+            tearDown()
+            throw error
         }
     }
 }

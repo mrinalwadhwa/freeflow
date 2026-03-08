@@ -50,4 +50,31 @@ public protocol StreamingDictationProviding: Sendable {
     ///
     /// Safe to call if no session is open (no-op in that case).
     func cancelStreaming() async
+
+    /// Run a full dictation session on the backup WebSocket connection.
+    ///
+    /// Sends the complete audio buffer through a standby connection:
+    /// start → send audio chunks → stop → wait for transcript_done.
+    /// Used as a parallel fallback in `raceStreamingAndBatch()` instead
+    /// of the slower HTTP batch POST. The backup connection is consumed
+    /// by this call (torn down after use or on error); a fresh backup
+    /// is established after the winner completes.
+    ///
+    /// - Parameters:
+    ///   - audio: Raw PCM audio data (16-bit signed LE, 16 kHz, mono).
+    ///   - context: Application context at the time of dictation.
+    /// - Returns: The polished transcript, or an empty string if no
+    ///   speech was detected.
+    /// - Throws: If no backup is available or the session fails.
+    func dictateViaBackup(audio: Data, context: AppContext) async throws -> String
+}
+
+/// Default implementations so conforming types only need to implement
+/// the methods they support. The backup dictation method throws by
+/// default, signaling that the provider does not have a backup connection.
+extension StreamingDictationProviding {
+
+    public func dictateViaBackup(audio: Data, context: AppContext) async throws -> String {
+        throw DictationError.networkError("Backup dictation not supported")
+    }
 }

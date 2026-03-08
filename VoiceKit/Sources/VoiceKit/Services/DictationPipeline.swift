@@ -701,15 +701,29 @@ public actor DictationPipeline: PipelineProviding {
             return nil
         }
 
+        // Extract raw PCM data from the WAV buffer for the backup path.
+        // The AudioBuffer contains a WAV file (44-byte RIFF header + PCM).
+        // The backup WebSocket expects raw PCM chunks, not WAV.
+        let pcmData: Data
+        if audioBuffer.data.count > 44 {
+            pcmData = audioBuffer.data.subdata(in: 44..<audioBuffer.data.count)
+        } else {
+            pcmData = audioBuffer.data
+        }
+
         let t0 = CFAbsoluteTimeGetCurrent()
 
-        // Race streaming and batch with true first-to-finish semantics.
+        // Race streaming (primary) and backup WebSocket with true
+        // first-to-finish semantics.
         //
-        // As soon as one path produces a non-empty result, we return it
-        // immediately — without waiting for the other path. This is
-        // critical when finishStreaming() hangs (server never sends
-        // transcript_done): batch wins instantly instead of blocking
-        // until the 10s streaming timeout fires.
+        // The backup path runs a full session on the standby WebSocket
+        // (start → audio → stop → transcript_done) instead of the
+        // slower HTTP batch POST. Expected latency: 0.3–0.9s (backup)
+        // vs 1–2.5s (batch HTTP).
+        //
+        // If the backup is not available (nil, no connection), fall back
+        // to batch HTTP. This should be rare since both independent
+        // WebSocket connections dying simultaneously is unlikely.
         //
         // We use detached tasks + a checked continuation because
         // structured concurrency (TaskGroup, async let) waits for ALL
@@ -722,9 +736,9 @@ public actor DictationPipeline: PipelineProviding {
             let lock = NSLock()
             var resumed = false
             var streamingResult: String?
-            var batchResult: String?
+            var fallbackResult: String?
             var gotStreaming = false
-            var gotBatch = false
+            var gotFallback = false
 
             func tryResume(preferredText: String?, source: String) {
                 let alreadyResumed = lock.withLock {
@@ -741,13 +755,13 @@ public actor DictationPipeline: PipelineProviding {
             }
 
             func checkBothDone() {
-                // Called under lock. If both paths finished but neither
-                // had usable text, resume with whatever we have.
-                let (done, sr, br): (Bool, String?, String?) = lock.withLock {
-                    (gotStreaming && gotBatch, streamingResult, batchResult)
+                // Called after one path finishes. If both paths finished
+                // but neither had usable text, resume with whatever we have.
+                let (done, sr, fr): (Bool, String?, String?) = lock.withLock {
+                    (gotStreaming && gotFallback, streamingResult, fallbackResult)
                 }
                 guard done else { return }
-                let fallback = sr ?? br
+                let fallback = sr ?? fr
                 let alreadyResumed = lock.withLock {
                     let was = resumed
                     if !was { resumed = true }
@@ -785,14 +799,37 @@ public actor DictationPipeline: PipelineProviding {
                 }
             }
 
-            let batchTask = Task.detached {
+            // Fallback path: try backup WebSocket first, then batch HTTP.
+            let fallbackTask = Task.detached {
+                // Attempt the backup WebSocket path first. This runs a
+                // full session on the standby connection (~0.3–0.9s).
+                do {
+                    let result = try await streaming.dictateViaBackup(
+                        audio: pcmData, context: context)
+                    Log.debug("[Pipeline] Backup dictation completed")
+                    lock.withLock {
+                        fallbackResult = result
+                        gotFallback = true
+                    }
+                    if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        tryResume(preferredText: result, source: "backup")
+                    } else {
+                        checkBothDone()
+                    }
+                    return
+                } catch {
+                    Log.debug(
+                        "[Pipeline] Backup dictation failed: \(error), falling back to batch HTTP")
+                }
+
+                // Backup unavailable or failed — fall back to batch HTTP.
                 do {
                     let result = try await dictationProvider.dictate(
                         audio: audioBuffer.data, context: context)
-                    Log.debug("[Pipeline] Batch completed")
+                    Log.debug("[Pipeline] Batch HTTP completed")
                     lock.withLock {
-                        batchResult = result
-                        gotBatch = true
+                        fallbackResult = result
+                        gotFallback = true
                     }
                     if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         tryResume(preferredText: result, source: "batch")
@@ -800,10 +837,10 @@ public actor DictationPipeline: PipelineProviding {
                         checkBothDone()
                     }
                 } catch {
-                    Log.debug("[Pipeline] Batch failed: \(error)")
+                    Log.debug("[Pipeline] Batch HTTP failed: \(error)")
                     lock.withLock {
-                        batchResult = nil
-                        gotBatch = true
+                        fallbackResult = nil
+                        gotFallback = true
                     }
                     checkBothDone()
                 }
@@ -814,7 +851,7 @@ public actor DictationPipeline: PipelineProviding {
             // don't need to explicitly cancel the loser because the
             // extra network call is acceptable for reliability.
             _ = streamingTask
-            _ = batchTask
+            _ = fallbackTask
         }
 
         return winner
