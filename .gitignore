@@ -43,6 +43,10 @@ __pycache__/
 *.pyc
 .venv/
 
+# Node.js (auth service)
+VoiceService/images/main/auth/node_modules/
+VoiceService/images/main/auth/.pnpm-store/
+
 # Environment
 .env
 .env.*
