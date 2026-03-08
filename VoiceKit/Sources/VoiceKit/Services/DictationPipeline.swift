@@ -37,14 +37,23 @@ public actor DictationPipeline: PipelineProviding {
     /// Minimum audio duration (in seconds) worth sending to the server.
     private let minimumAudioDuration: TimeInterval = 0.1
 
-    /// RMS level at or below which audio is considered silent.
-    /// On 16-bit PCM normalized to 0–1, ambient silence produces
-    /// RMS around 0.0005–0.001 with a built-in mic. AirPods with
-    /// noise cancellation or nearby fans raise the floor to ~0.002.
-    /// Quiet speech starts around 0.01 and normal speech is 0.03+.
-    /// A threshold of 0.005 rejects ambient noise while allowing
-    /// even quiet speech through.
+    /// Fixed RMS silence threshold, used as a fallback when ambient
+    /// calibration has not completed (recording shorter than 0.5s).
+    /// When ambient RMS is available, the pipeline computes an adaptive
+    /// threshold instead: `max(ambientRMS * 3.0, 0.0005)`.
     private let silenceThreshold: Float
+
+    /// Multiplier applied to the measured ambient RMS to produce an
+    /// adaptive silence threshold. Speech must exceed ambient × this
+    /// factor to be considered non-silent. 2.0 is calibrated from
+    /// real-world testing: built-in mic speech/ambient ratio is
+    /// 2.4–3.1x, so 2.0x lets all speech through; AirPods ambient
+    /// (~0.002) → threshold 0.004, still blocks hallucination noise.
+    private let ambientMultiplier: Float = 2.0
+
+    /// Absolute floor for the adaptive threshold. Even with zero
+    /// measured ambient noise, reject audio below this level.
+    private let minimumAdaptiveThreshold: Float = 0.0005
 
     /// Context captured concurrently during the recording phase.
     private var pendingContext: Task<AppContext, Never>?
@@ -80,6 +89,23 @@ public actor DictationPipeline: PipelineProviding {
         self.transcriptBuffer = transcriptBuffer
         self.silenceThreshold = silenceThreshold
         self.streamingProvider = streamingProvider
+    }
+
+    /// Compute the effective silence threshold for the current session.
+    ///
+    /// When the audio provider has completed ambient calibration (first
+    /// ~0.5s of recording), use an adaptive threshold based on observed
+    /// ambient noise. Otherwise fall back to the fixed `silenceThreshold`.
+    ///
+    /// The adaptive threshold adapts to the environment (quiet room vs
+    /// coffee shop) and to the mic type (built-in laptop mic has a lower
+    /// noise floor than AirPods), without needing per-device thresholds.
+    private func effectiveSilenceThreshold() -> Float {
+        let ambient = audioProvider.ambientRMS
+        if ambient > 0 {
+            return max(ambient * ambientMultiplier, minimumAdaptiveThreshold)
+        }
+        return silenceThreshold
     }
 
     // MARK: - PipelineProviding
@@ -184,6 +210,7 @@ public actor DictationPipeline: PipelineProviding {
             }
 
             let t5 = CFAbsoluteTimeGetCurrent()
+            let micProximity = audioProvider.micProximity
 
             // Timeout the streaming setup to avoid blocking complete()
             // indefinitely. ensureConnected()/sendPing can hang when the
@@ -194,7 +221,6 @@ public actor DictationPipeline: PipelineProviding {
             // timeout. This avoids zombie detached tasks that pile up
             // when the timeout fires but startStreaming() keeps retrying
             // ensureConnected() in the background.
-            let micProximity = audioProvider.micProximity
             Log.debug("[Pipeline] Starting streaming setup with 5s timeout")
             let streamingStarted: Bool = await Task.detached {
                 await withTaskGroup(of: Bool.self) { group in
@@ -202,8 +228,7 @@ public actor DictationPipeline: PipelineProviding {
                         do {
                             Log.debug("[Pipeline] streaming.startStreaming() entering")
                             try await streaming.startStreaming(
-                                context: context, language: nil,
-                                micProximity: micProximity)
+                                context: context, language: nil, micProximity: micProximity)
                             Log.debug("[Pipeline] streaming.startStreaming() returned OK")
                             return true
                         } catch {
@@ -291,7 +316,8 @@ public actor DictationPipeline: PipelineProviding {
         // recording, so it reflects the loudest moment. When it is below
         // the silence threshold, there is nothing to transcribe and
         // waiting 5-6s for a stale WebSocket ping to time out is waste.
-        if audioProvider.peakRMS <= silenceThreshold {
+        let earlyThreshold = effectiveSilenceThreshold()
+        if audioProvider.peakRMS <= earlyThreshold {
             if let setupTask = audioSetupTask {
                 setupTask.cancel()
                 if let streaming = streamingProvider {
@@ -304,7 +330,7 @@ public actor DictationPipeline: PipelineProviding {
             audioForwardingTask = nil
 
             Log.debug(
-                "[Pipeline] Early silence short-circuit: peak RMS \(audioProvider.peakRMS) <= \(silenceThreshold), skipping setup wait"
+                "[Pipeline] Early silence short-circuit: peak RMS \(audioProvider.peakRMS) <= \(earlyThreshold) (ambient: \(audioProvider.ambientRMS)), skipping setup wait"
             )
 
             // Stop audio and reset immediately.
@@ -339,7 +365,7 @@ public actor DictationPipeline: PipelineProviding {
                 // by the tap callback on the audio render thread so it
                 // is safe to read from a detached task via the lock in
                 // AudioCaptureProvider.
-                Task.detached { [audioProvider, silenceThreshold] in
+                Task.detached { [audioProvider, earlyThreshold] in
                     let deadline = Date().addingTimeInterval(6.0)
                     var silentTicks = 0
                     while Date() < deadline {
@@ -347,12 +373,12 @@ public actor DictationPipeline: PipelineProviding {
                         let alreadyDone = lock.withLock { resumed }
                         if alreadyDone { return }
 
-                        if audioProvider.peakRMS <= silenceThreshold {
+                        if audioProvider.peakRMS <= earlyThreshold {
                             silentTicks += 1
                             // 4 ticks × 50ms = 200ms of confirmed silence
                             if silentTicks >= 4 {
                                 Log.debug(
-                                    "[Pipeline] Setup wait bailing early: silent audio (peak RMS \(audioProvider.peakRMS))"
+                                    "[Pipeline] Setup wait bailing early: silent audio (peak RMS \(audioProvider.peakRMS), threshold \(earlyThreshold))"
                                 )
                                 break
                             }
@@ -394,8 +420,8 @@ public actor DictationPipeline: PipelineProviding {
         let task = Task {
             [
                 pendingContext, audioProvider, dictationProvider, streamingProvider,
-                textInjector, coordinator, minimumAudioDuration, silenceThreshold,
-                transcriptBuffer
+                textInjector, coordinator, minimumAudioDuration, transcriptBuffer,
+                earlyThreshold
             ] in
             let t0 = CFAbsoluteTimeGetCurrent()
 
@@ -424,10 +450,22 @@ public actor DictationPipeline: PipelineProviding {
             // waiting on the streaming forwarding task or any network
             // calls. This avoids the 5-7s delay users see when they
             // tap the hotkey without speaking.
+            // Recompute the threshold now that ambient calibration may
+            // have finished during recording. Use the adaptive value
+            // when available, otherwise fall back to the threshold
+            // captured at the start of complete().
+            let ambient = audioProvider.ambientRMS
+            let postRecordThreshold: Float
+            if ambient > 0 {
+                postRecordThreshold = max(ambient * 2.0, 0.0005)
+            } else {
+                postRecordThreshold = earlyThreshold
+            }
+
             let peakLevel = audioProvider.peakRMS
-            if peakLevel <= silenceThreshold {
+            if peakLevel <= postRecordThreshold {
                 Log.debug(
-                    "[Pipeline] Early silence gate: peak RMS \(peakLevel) <= \(silenceThreshold), skipping"
+                    "[Pipeline] Early silence gate: peak RMS \(peakLevel) <= \(postRecordThreshold) (ambient: \(ambient)), skipping"
                 )
                 forwardingTask?.cancel()
                 if useStreaming, let streaming = streamingProvider {
@@ -509,7 +547,7 @@ public actor DictationPipeline: PipelineProviding {
                     context: context,
                     dictationProvider: dictationProvider,
                     minimumAudioDuration: minimumAudioDuration,
-                    silenceThreshold: silenceThreshold
+                    silenceThreshold: postRecordThreshold
                 )
 
                 guard let text = streamingResult else {
@@ -527,7 +565,7 @@ public actor DictationPipeline: PipelineProviding {
                     context: context,
                     dictationProvider: dictationProvider,
                     minimumAudioDuration: minimumAudioDuration,
-                    silenceThreshold: silenceThreshold,
+                    silenceThreshold: postRecordThreshold,
                     coordinator: coordinator
                 )
                 guard let text = batchResult else { return }

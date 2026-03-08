@@ -20,6 +20,11 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     /// the pipeline does not reject mock recordings.
     public var stubbedPeakRMS: Float = 0.1
 
+    /// The ambient RMS level reported by `ambientRMS`. Defaults to 0
+    /// (no calibration) so existing tests use the fixed silence threshold
+    /// fallback. Set to a positive value to test adaptive thresholds.
+    public var stubbedAmbientRMS: Float = 0
+
     /// When true, `startRecording()` creates a `pcmAudioStream` that
     /// emits each chunk passed to `emitPCMChunk(_:)`. Defaults to false
     /// so existing tests are unaffected.
@@ -117,6 +122,10 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
 
     public var peakRMS: Float {
         lock.withLock { stubbedPeakRMS }
+    }
+
+    public var ambientRMS: Float {
+        lock.withLock { stubbedAmbientRMS }
     }
 
     public func stopRecording() async throws -> AudioBuffer {

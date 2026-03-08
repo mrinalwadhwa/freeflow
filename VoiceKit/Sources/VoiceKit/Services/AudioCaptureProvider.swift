@@ -33,6 +33,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     private var _isRecording = false
 
     private var _peakRMS: Float = 0
+    private var _ambientRMS: Float = 0
+    private var _ambientSampleCount: Int = 0
+    private var _ambientSumOfSquares: Double = 0
+    private var _ambientCalibrated: Bool = false
     private var _micProximity: MicProximity = .nearField
     private var pcmChunks: [Data] = []
 
@@ -88,6 +92,16 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         lock.withLock { _peakRMS }
     }
 
+    /// The ambient (background noise) RMS level measured during the first
+    /// ~0.5s of the current or most recent recording session. Used by
+    /// the pipeline to compute an adaptive silence threshold.
+    ///
+    /// Returns 0 if calibration has not completed (recording shorter
+    /// than 0.5s or no recording yet).
+    public var ambientRMS: Float {
+        lock.withLock { _ambientRMS }
+    }
+
     /// Mic proximity of the device used for the current or most recent
     /// recording session. Set during engine creation based on the
     /// configured device's transport type. Defaults to `.nearField`.
@@ -129,6 +143,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
                 pcmChunks = []
                 _peakRMS = 0
+                _ambientRMS = 0
+                _ambientSampleCount = 0
+                _ambientSumOfSquares = 0
+                _ambientCalibrated = false
 
                 // Set up the PCM audio stream before starting capture.
                 let (pcmStream, pcmCont) = AsyncStream<Data>.makeStream()
@@ -581,6 +599,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     #if canImport(AVFoundation)
         /// Compute RMS level from a float32 PCM buffer, update peak tracking,
         /// and emit the scaled level to the stream.
+        /// Ambient calibration window in samples at the hardware sample
+        /// rate. 0.5s × 16kHz = 8000 samples. The actual hardware rate
+        /// may differ (44.1kHz, 48kHz) but we use the target rate as an
+        /// approximation; the exact window length is not critical.
+        private static let ambientCalibrationSamples: Int = Int(targetSampleRate * 0.5)
+
         private func emitAudioLevel(_ buffer: AVAudioPCMBuffer) {
             guard let floatData = buffer.floatChannelData else { return }
             let frameLength = Int(buffer.frameLength)
@@ -604,6 +628,22 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 if rms > _peakRMS {
                     _peakRMS = rms
                 }
+
+                // Accumulate ambient noise level during the calibration
+                // window (first ~0.5s of recording). After enough samples,
+                // compute the ambient RMS once and stop accumulating.
+                if !_ambientCalibrated {
+                    _ambientSumOfSquares += Double(sumOfSquares)
+                    _ambientSampleCount += frameLength
+                    if _ambientSampleCount >= Self.ambientCalibrationSamples {
+                        _ambientRMS = Float(
+                            sqrt(
+                                _ambientSumOfSquares / Double(_ambientSampleCount)
+                            ))
+                        _ambientCalibrated = true
+                    }
+                }
+
                 levelContinuation?.yield(scaled)
             }
         }

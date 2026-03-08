@@ -45,6 +45,19 @@ public protocol AudioProviding: Sendable {
     /// ~0.0007, quiet speech starts around 0.01.
     var peakRMS: Float { get }
 
+    /// The ambient (background noise) RMS level measured during the first
+    /// ~0.5s of the current or most recent recording session. Reset to 0
+    /// on each `startRecording()`.
+    ///
+    /// The pipeline uses this to compute an adaptive silence threshold:
+    /// `max(ambientRMS * 3.0, 0.0005)`. This adapts to the environment
+    /// (quiet room vs coffee shop) and to the mic type (built-in laptop
+    /// mic has a lower noise floor than AirPods with noise cancellation).
+    ///
+    /// Returns 0 if calibration has not completed (recording shorter
+    /// than 0.5s or no recording yet).
+    var ambientRMS: Float { get }
+
     /// Mic proximity of the device used for the current or most recent
     /// recording session. The pipeline reads this after `startRecording()`
     /// to tell the server whether to apply near-field or far-field noise
@@ -67,6 +80,9 @@ extension AudioProviding {
 
     /// Default implementation returns 0 (no level tracking).
     public var peakRMS: Float { 0 }
+
+    /// Default implementation returns 0 (no ambient calibration).
+    public var ambientRMS: Float { 0 }
 
     /// Default implementation assumes a close-talking microphone.
     public var micProximity: MicProximity { .nearField }

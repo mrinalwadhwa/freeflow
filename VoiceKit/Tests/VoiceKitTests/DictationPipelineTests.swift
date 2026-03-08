@@ -702,4 +702,210 @@ final class DictationPipelineTests: XCTestCase {
         XCTAssertEqual(state, .idle)
         XCTAssertEqual(dictation.dictateCallCount, 1)
     }
+
+    // MARK: - Adaptive silence threshold
+
+    func testAdaptiveThresholdAllowsQuietBuiltInMicSpeech() async {
+        // Built-in MacBook mic: ambient ~0.001, quiet speech peaks at
+        // 0.004. The fixed threshold (0.005) would reject this, but the
+        // adaptive threshold (0.001 * 2.0 = 0.002) lets it through.
+        var pcmData = Data(capacity: 3200)
+        for i in 0..<1600 {
+            let sample: Int16 = i % 2 == 0 ? 130 : -130
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let quietBuffer = AudioBuffer(
+            data: wavData,
+            duration: 0.6,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: quietBuffer)
+        // peakRMS 0.004 is above adaptive threshold 0.002 but below
+        // fixed threshold 0.005.
+        audio.stubbedPeakRMS = 0.004
+        audio.stubbedAmbientRMS = 0.001
+
+        let dictation = MockDictationProvider(stubbedText: "quiet speech")
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // The adaptive threshold (0.002) lets the audio through.
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
+
+    func testAdaptiveThresholdRejectsAirPodsAmbientNoise() async {
+        // AirPods: ambient ~0.002, noise floor peaks at 0.003.
+        // Adaptive threshold = 0.002 * 2.0 = 0.004, rejects the noise.
+        var pcmData = Data(capacity: 3200)
+        for i in 0..<1600 {
+            let sample: Int16 = i % 2 == 0 ? 130 : -130
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let noiseBuffer = AudioBuffer(
+            data: wavData,
+            duration: 0.6,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: noiseBuffer)
+        audio.stubbedPeakRMS = 0.003
+        audio.stubbedAmbientRMS = 0.002
+
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Adaptive threshold (0.004) rejects the 0.003 peak.
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testFallsBackToFixedThresholdWhenNoAmbientCalibration() async {
+        // When ambientRMS is 0 (calibration not completed), the pipeline
+        // falls back to the fixed silenceThreshold.
+        var pcmData = Data(capacity: 3200)
+        for i in 0..<1600 {
+            let sample: Int16 = i % 2 == 0 ? 100 : -100
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let quietBuffer = AudioBuffer(
+            data: wavData,
+            duration: 0.1,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: quietBuffer)
+        audio.stubbedPeakRMS = 0.003
+        audio.stubbedAmbientRMS = 0  // No calibration
+
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        // Fixed threshold 0.005 rejects peakRMS 0.003.
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testAdaptiveThresholdFloorPreventsZeroThreshold() async {
+        // Even with very low ambient noise, the threshold should not
+        // drop below the minimum floor (0.0005).
+        var pcmData = Data(capacity: 3200)
+        for i in 0..<1600 {
+            let sample: Int16 = i % 2 == 0 ? 3 : -3
+            withUnsafeBytes(of: sample.littleEndian) { pcmData.append(contentsOf: $0) }
+        }
+        let wavData = WAVEncoder.encode(
+            pcmData: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let nearSilentBuffer = AudioBuffer(
+            data: wavData,
+            duration: 0.6,
+            sampleRate: 16000,
+            channels: 1,
+            bitsPerSample: 16
+        )
+
+        let audio = MockAudioProvider(stubbedBuffer: nearSilentBuffer)
+        // Ambient 0.0001 * 2.0 = 0.0002, below the floor of 0.0005.
+        // Effective threshold should be 0.0005, rejecting peakRMS 0.0003.
+        audio.stubbedPeakRMS = 0.0003
+        audio.stubbedAmbientRMS = 0.0001
+
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Floor threshold (0.0005) rejects the 0.0003 peak.
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testAdaptiveThresholdLetsSpeechThroughWithHighAmbient() async {
+        // Coffee shop: ambient ~0.003, speech peaks at 0.015.
+        // Adaptive threshold = 0.003 * 2.0 = 0.006, speech clears it.
+        let audio = MockAudioProvider()
+        audio.stubbedPeakRMS = 0.015
+        audio.stubbedAmbientRMS = 0.003
+
+        let dictation = MockDictationProvider(stubbedText: "coffee shop speech")
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
 }
