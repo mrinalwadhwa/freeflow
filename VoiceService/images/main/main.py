@@ -17,6 +17,7 @@ a standalone HTTP endpoint.
 
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from autonomy import HttpServer, Model, Node
@@ -35,13 +36,21 @@ from pydantic import BaseModel
 import context
 import polish
 import realtime
+import startup
 
 
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app):
+    await startup.start_auth()
+    yield
+    await startup.stop_auth()
+
+
+app = FastAPI(lifespan=lifespan)
 security = HTTPBearer()
 
 API_KEY = os.environ.get("API_KEY", "")
