@@ -1,4 +1,5 @@
 import Foundation
+import ObjCExceptionCatcher
 
 #if canImport(AVFoundation)
     import AVFoundation
@@ -52,6 +53,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         private var tapFormat: AVAudioFormat?
         /// Observer token for audio device configuration changes.
         private var configChangeObserver: NSObjectProtocol?
+        /// Timestamp when the engine was last created. Config-change
+        /// notifications that arrive within a short window after
+        /// creation are ignored because they are caused by our own
+        /// `setInputDevice` / `engine.start()` setup, not by an
+        /// external hardware change.
+        private var _engineCreatedAt: CFAbsoluteTime = 0
     #endif
 
     // MARK: - PCM audio stream
@@ -126,19 +133,71 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 self.levelContinuation = continuation
 
                 // Create or reuse the persistent engine.
-                let engine = try ensureEngine()
+                var engine = try ensureEngine()
 
-                // Reuse or create the converter. The converter depends on
-                // the tap format which is stable as long as the engine and
-                // hardware device are unchanged.
-                let converter = try ensureConverter()
-
+                // Install the audio tap. Pass nil as the format so
+                // AVAudioEngine uses the input node's current native
+                // format, avoiding a crash when the hardware sample
+                // rate changes between ensureEngine() and installTap()
+                // (e.g. AirPods finishing Bluetooth negotiation).
+                //
+                // AVAudioEngine throws ObjC exceptions (not Swift
+                // errors) on installTap failures such as stale audio
+                // hardware state after device switches. Catch the
+                // exception, tear down, rebuild, and retry once.
                 let bufferSize: AVAudioFrameCount = 4096
-                engine.inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: tapFormat) {
-                    [weak self] buffer, _ in
-                    self?.emitAudioLevel(buffer)
-                    self?.processAudioBuffer(buffer, converter: converter)
+                let tapException = ObjCTryCatch {
+                    engine.inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: nil) {
+                        [weak self] buffer, _ in
+                        self?.emitAudioLevel(buffer)
+                        self?.processAudioBuffer(buffer)
+                    }
                 }
+
+                if let tapException {
+                    Log.debug(
+                        "[AudioCapture] installTap failed: \(tapException.reason ?? tapException.name.rawValue), "
+                            + "rebuilding engine and retrying"
+                    )
+                    tearDownEngineLocked()
+                    engine = try ensureEngine()
+
+                    let retryException = ObjCTryCatch {
+                        engine.inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: nil) {
+                            [weak self] buffer, _ in
+                            self?.emitAudioLevel(buffer)
+                            self?.processAudioBuffer(buffer)
+                        }
+                    }
+                    if let retryException {
+                        Log.debug(
+                            "[AudioCapture] installTap retry failed: "
+                                + "\(retryException.reason ?? retryException.name.rawValue)"
+                        )
+                        tearDownEngineLocked()
+                        throw AudioCaptureError.noInputDevice
+                    }
+                }
+
+                // Read the actual tap format from the input node after
+                // installation. This is the format buffers will arrive
+                // in, which may differ from what outputFormat(forBus:)
+                // reported during ensureEngine().
+                let actualTapFormat = engine.inputNode.outputFormat(forBus: 0)
+                if self.tapFormat?.sampleRate != actualTapFormat.sampleRate
+                    || self.tapFormat?.channelCount != actualTapFormat.channelCount
+                {
+                    Log.debug(
+                        "[AudioCapture] Tap format updated: "
+                            + "sampleRate=\(actualTapFormat.sampleRate), "
+                            + "channels=\(actualTapFormat.channelCount)"
+                    )
+                    self.tapFormat = actualTapFormat
+                    self.converter = nil
+                }
+
+                // Build the converter against the actual tap format.
+                let _ = try ensureConverter()
 
                 _isRecording = true
             }
@@ -210,13 +269,31 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 bitsPerSample: Self.targetBitsPerSample
             )
 
-            return AudioBuffer(
+            let buffer = AudioBuffer(
                 data: wavData,
                 duration: duration,
                 sampleRate: Int(Self.targetSampleRate),
                 channels: Int(Self.targetChannels),
                 bitsPerSample: Self.targetBitsPerSample
             )
+
+            // If peak RMS is exactly zero, the audio tap received no
+            // data at all. This happens when Bluetooth devices (AirPods)
+            // fail to re-establish their SCO audio channel after a
+            // device switch. Tear down the engine so the next session
+            // gets a fresh one instead of reusing the broken state.
+            let peak = lock.withLock { _peakRMS }
+            if peak == 0, duration > 0.5 {
+                Log.debug(
+                    "[AudioCapture] Zero audio captured (\(String(format: "%.2f", duration))s), "
+                        + "tearing down engine"
+                )
+                lock.withLock {
+                    tearDownEngineLocked()
+                }
+            }
+
+            return buffer
         #else
             return .empty
         #endif
@@ -255,16 +332,32 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     tearDownEngineLocked()
                     // Fall through to create a new engine.
                 } else {
-                    // Engine exists for the correct device. Make sure it
-                    // is running (may have been stopped by a config change
-                    // notification that only invalidated the converter).
+                    // Engine exists for the correct device. Reuse it
+                    // for low latency. Make sure it is running (may
+                    // have been stopped by a config change notification).
                     if !engine.isRunning {
                         engine.prepare()
-                        try engine.start()
+                        let startException = ObjCTryCatch {
+                            do { try engine.start() } catch {}
+                        }
+                        if let startException {
+                            Log.debug(
+                                "[AudioCapture] engine.start() failed on reuse: "
+                                    + "\(startException.reason ?? startException.name.rawValue), "
+                                    + "rebuilding engine"
+                            )
+                            tearDownEngineLocked()
+                            // Fall through to create a new engine.
+                        } else {
+                            return engine
+                        }
+                    } else {
+                        return engine
                     }
-                    return engine
                 }
             }
+
+            _engineCreatedAt = CFAbsoluteTimeGetCurrent()
 
             let engine = AVAudioEngine()
 
@@ -273,10 +366,23 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             // use the wrong sample rate and channel count.
             #if canImport(CoreAudio)
                 if let deviceID = desiredDeviceID {
-                    try setInputDevice(deviceID, on: engine)
+                    do {
+                        try setInputDevice(deviceID, on: engine)
+                    } catch {
+                        // Device is no longer available (disconnected
+                        // AirPods, unplugged USB mic, etc.). Clear the
+                        // selection and fall back to the system default.
+                        Log.debug(
+                            "[AudioCapture] Device \(deviceID) unavailable, "
+                                + "falling back to system default"
+                        )
+                        _audioDeviceProvider?.clearSelection()
+                        // Continue without setInputDevice — the engine
+                        // will use the system default input device.
+                    }
                 }
             #endif
-            _configuredDeviceID = desiredDeviceID
+            _configuredDeviceID = _audioDeviceProvider?.selectedDeviceID
 
             let inputNode = engine.inputNode
 
@@ -298,7 +404,18 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             }
 
             engine.prepare()
-            try engine.start()
+            var startError: Error?
+            let startException = ObjCTryCatch {
+                do { try engine.start() } catch { startError = error }
+            }
+            if let startException {
+                throw AudioCaptureError.engineStartFailed(
+                    startException.reason ?? startException.name.rawValue
+                )
+            }
+            if let startError {
+                throw startError
+            }
 
             self.engine = engine
             self.tapFormat = tapFmt
@@ -405,6 +522,19 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         /// see them end. The engine is torn down; `ensureEngine()` will
         /// rebuild it on the next `startRecording()`.
         private func handleConfigChangeLocked() {
+            // Ignore config-change notifications that arrive shortly
+            // after engine creation. Setting the input device and
+            // starting the engine fire AVAudioEngineConfigurationChange
+            // asynchronously; without this guard the handler would tear
+            // down the engine and remove the tap mid-recording.
+            let age = CFAbsoluteTimeGetCurrent() - _engineCreatedAt
+            if age < 1.0 {
+                Log.debug(
+                    "[AudioCapture] Config change ignored (engine created "
+                        + "\(String(format: "%.3f", age))s ago)"
+                )
+                return
+            }
             if _isRecording {
                 // Remove tap before tearing down.
                 engine?.inputNode.removeTap(onBus: 0)
@@ -471,9 +601,13 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
     #if canImport(AVFoundation)
         private func processAudioBuffer(
-            _ buffer: AVAudioPCMBuffer,
-            converter: AVAudioConverter
+            _ buffer: AVAudioPCMBuffer
         ) {
+            // Acquire the converter under the lock. It is rebuilt when
+            // the tap format changes (device switch).
+            let converter: AVAudioConverter? = lock.withLock { self.converter }
+            guard let converter else { return }
+
             // Convert the tap buffer to the target format (16kHz mono int16).
             let frameCapacity = AVAudioFrameCount(
                 Double(buffer.frameLength) * Self.targetSampleRate
@@ -486,7 +620,9 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     pcmFormat: converter.outputFormat,
                     frameCapacity: frameCapacity + 1
                 )
-            else { return }
+            else {
+                return
+            }
 
             var error: NSError?
             var inputConsumed = false
@@ -541,6 +677,8 @@ public enum AudioCaptureError: Error, Sendable, CustomStringConvertible {
     case formatError
     /// Failed to set the requested input device on the audio engine.
     case deviceSelectionFailed(UInt32)
+    /// The audio engine threw an exception during start.
+    case engineStartFailed(String)
 
     public var description: String {
         switch self {
@@ -552,6 +690,8 @@ public enum AudioCaptureError: Error, Sendable, CustomStringConvertible {
             return "Failed to configure audio format"
         case .deviceSelectionFailed(let id):
             return "Failed to select audio input device \(id)"
+        case .engineStartFailed(let reason):
+            return "Audio engine failed to start: \(reason)"
         }
     }
 }

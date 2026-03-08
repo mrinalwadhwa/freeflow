@@ -73,8 +73,22 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
             guard devices.contains(where: { $0.id == id }) else {
                 throw CoreAudioDeviceError.deviceNotFound(id)
             }
-            lock.withLock { _selectedDeviceID = id }
-            Log.debug("[CoreAudioDeviceProvider] Selected device id=\(id)")
+            // If the selected device is the current system default,
+            // clear the explicit selection instead of storing an ID.
+            // This lets macOS manage audio routing (important for
+            // Bluetooth devices like AirPods whose SCO channel may
+            // not re-establish properly via explicit AudioUnit
+            // device selection after switching away and back).
+            let defaultDevice = devices.first(where: { $0.isDefault })
+            if defaultDevice?.id == id {
+                lock.withLock { _selectedDeviceID = nil }
+                Log.debug(
+                    "[CoreAudioDeviceProvider] Selected device id=\(id) is system default, clearing explicit selection"
+                )
+            } else {
+                lock.withLock { _selectedDeviceID = id }
+                Log.debug("[CoreAudioDeviceProvider] Selected device id=\(id)")
+            }
         #else
             throw CoreAudioDeviceError.coreAudioUnavailable
         #endif

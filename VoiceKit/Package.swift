@@ -11,11 +11,17 @@ let package = Package(
         .library(
             name: "VoiceKit",
             targets: ["VoiceKit"]
-        ),
+        )
     ],
     targets: [
         .target(
+            name: "ObjCExceptionCatcher",
+            path: "Sources/ObjCExceptionCatcher",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "VoiceKit",
+            dependencies: ["ObjCExceptionCatcher"],
             path: "Sources/VoiceKit"
         ),
         .testTarget(
