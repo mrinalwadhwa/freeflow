@@ -7,3 +7,5 @@ pods:
         image: main
         env:
           - API_KEY: secrets.API_KEY
+          - BETTER_AUTH_SECRET: secrets.BETTER_AUTH_SECRET
+          - ADMIN_TOKEN: secrets.ADMIN_TOKEN
