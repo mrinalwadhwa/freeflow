@@ -50,6 +50,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     /// engine needs rebuilding.
     private var _configuredDeviceID: UInt32?
 
+    /// Set by `handleConfigChangeLocked` when a device switch occurs
+    /// mid-recording. The current session keeps its tap and streams
+    /// intact; `ensureEngine()` checks this flag on the next
+    /// `startRecording()` and rebuilds the engine then.
+    private var _needsEngineRebuild: Bool = false
+
     #if canImport(AVFoundation)
         /// Persistent engine, created on first recording and reused.
         private var engine: AVAudioEngine?
@@ -349,12 +355,17 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             let desiredDeviceID = _audioDeviceProvider?.selectedDeviceID
 
             if let engine {
-                // If the selected device changed, tear down and rebuild.
-                if desiredDeviceID != _configuredDeviceID {
+                // If the selected device changed or a config change was
+                // deferred during a previous recording, tear down and
+                // rebuild with the current hardware.
+                if desiredDeviceID != _configuredDeviceID || _needsEngineRebuild {
                     Log.debug(
                         "[AudioCapture] Device changed from \(_configuredDeviceID?.description ?? "default") "
-                            + "to \(desiredDeviceID?.description ?? "default"), rebuilding engine"
+                            + "to \(desiredDeviceID?.description ?? "default")"
+                            + "\(_needsEngineRebuild ? " (deferred rebuild)" : "")"
+                            + ", rebuilding engine"
                     )
+                    _needsEngineRebuild = false
                     tearDownEngineLocked()
                     // Fall through to create a new engine.
                 } else {
@@ -548,9 +559,17 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         }
 
         /// Handle an audio configuration change while `lock` is held.
-        /// If recording, stop the current session's streams so consumers
-        /// see them end. The engine is torn down; `ensureEngine()` will
-        /// rebuild it on the next `startRecording()`.
+        ///
+        /// If a recording is in progress, defer the teardown: set
+        /// `_needsEngineRebuild` so the next `ensureEngine()` call
+        /// (at the start of the next recording session) rebuilds the
+        /// engine with the new hardware. The current session keeps its
+        /// tap and streams intact and finishes normally with whatever
+        /// audio was captured before the switch. This avoids ripping
+        /// out the tap mid-recording and producing zero audio.
+        ///
+        /// If not recording, tear down immediately so the engine is
+        /// rebuilt fresh on the next session.
         private func handleConfigChangeLocked() {
             // Ignore config-change notifications that arrive shortly
             // after engine creation. Setting the input device and
@@ -566,15 +585,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 return
             }
             if _isRecording {
-                // Remove tap before tearing down.
-                engine?.inputNode.removeTap(onBus: 0)
-                pcmContinuation?.finish()
-                pcmContinuation = nil
-                _pcmAudioStream = nil
-                levelContinuation?.finish()
-                levelContinuation = nil
-                _audioLevelStream = nil
-                _isRecording = false
+                // Defer teardown until the next startRecording().
+                _needsEngineRebuild = true
+                Log.debug(
+                    "[AudioCapture] Config change during recording, deferring rebuild"
+                )
+                return
             }
             tearDownEngineLocked()
         }
