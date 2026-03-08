@@ -10,6 +10,14 @@ import Foundation
 /// during idle periods, and the connection is automatically
 /// re-established if it drops between sessions.
 ///
+/// A warm backup WebSocket is established after each successful session.
+/// When `ensureConnected()` discovers the primary is dead (failed ping),
+/// it promotes the backup to primary near-instantly instead of building
+/// a new connection from scratch. This avoids the 3-4s reconnect path
+/// that races the 5s streaming-setup timeout and causes batch fallbacks.
+/// Only one backup exists at a time; it gets its own keepalive pings
+/// and is torn down if it goes stale.
+///
 /// Protocol (client -> server), per session:
 ///   1. `{"type":"start","context":{...},"language":"en"}`
 ///   2. `{"type":"audio","audio":"<base64 PCM16 16kHz>"}`  (repeated)
@@ -63,6 +71,28 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     /// are under the limit. Long-lived idle connections can go stale
     /// despite keepalive pings (load balancer timeouts, TCP RSTs).
     private let maxConnectionAge: TimeInterval = 300  // 5 minutes
+
+    // MARK: - Backup Connection
+    //
+    // A warm standby WebSocket that is ready to be promoted to primary
+    // when ensureConnected() discovers the primary is dead. This avoids
+    // the ~3-4s reconnect path that races the 5s streaming-setup timeout
+    // and causes batch fallbacks.
+
+    /// The backup WebSocket task, established after each successful session.
+    private var backupWebSocketTask: URLSessionWebSocketTask?
+
+    /// The URLSession backing the backup WebSocket.
+    private var backupURLSession: URLSession?
+
+    /// When the backup connection was established.
+    private var backupConnectionEstablishedAt: Date?
+
+    /// Background keepalive task for the backup connection.
+    private var backupKeepaliveTask: Task<Void, Never>?
+
+    /// Whether a backup connection is currently being established.
+    private var backupConnecting: Bool = false
 
     /// Create a provider with explicit configuration.
     ///
@@ -166,6 +196,10 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             startKeepalive()
         }
 
+        // Establish a backup connection in the background so it is
+        // ready if the primary goes stale before the next session.
+        establishBackupIfNeeded()
+
         return result
     }
 
@@ -180,12 +214,16 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             Log.debug("[StreamingProvider] Session cancelled")
         }
 
-        // On cancel, tear down the connection entirely. The server
+        // On cancel, tear down both connections entirely. The server
         // expects stop→transcript_done flow; a mid-session cancel
         // leaves the server-side session in an undefined state, so
-        // a fresh connection is needed next time.
+        // a fresh connection is needed next time. The backup is also
+        // torn down because if the primary broke mid-session, the
+        // backup may be stale too. A fresh backup will be established
+        // after the next successful session.
         stopKeepalive()
         await tearDownConnection()
+        await tearDownBackup()
     }
 
     /// Disconnect the persistent WebSocket. Call when the provider
@@ -193,6 +231,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     public func disconnect() async {
         stopKeepalive()
         await tearDownConnection()
+        await tearDownBackup()
         Log.debug("[StreamingProvider] Disconnected")
     }
 
@@ -203,6 +242,11 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     /// Proactively tears down connections that have exceeded the session
     /// limit or age limit before checking liveness, so the next session
     /// always starts on a healthy connection.
+    ///
+    /// When the primary connection is dead, checks for a warm backup
+    /// before creating a new connection from scratch. Promoting a backup
+    /// is near-instant and avoids the reconnect delay that races the 5s
+    /// streaming-setup timeout.
     private func ensureConnected() async throws {
         // Bail out early if the calling task has been cancelled (e.g. the
         // streaming-setup timeout fired and cancelled the detached task).
@@ -288,11 +332,18 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         // fired while we were tearing down the old connection.
         try Task.checkCancellation()
 
+        // Try to promote the backup connection before creating a new one.
+        // This is near-instant compared to building a fresh connection.
+        if try await promoteBackupIfAvailable() {
+            return
+        }
+
         // Build and start a new connection.
-        let task = try buildWebSocketTask()
+        let (task, session) = try buildWebSocketTask()
 
         lock.withLock {
             self.webSocketTask = task
+            self.urlSession = session
             self.sessionCount = 0
             self.connectionEstablishedAt = Date()
         }
@@ -310,16 +361,11 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     ///
     /// Always creates a fresh URLSession so that a prior `tearDownConnection()`
     /// (which calls `invalidateAndCancel()`) cannot affect the new task.
-    private func buildWebSocketTask() throws -> URLSessionWebSocketTask {
-        // Invalidate any leftover session first to avoid leaking sessions
-        // if buildWebSocketTask is called without a prior teardown.
-        let oldSession: URLSession? = lock.withLock {
-            let s = self.urlSession
-            self.urlSession = nil
-            return s
-        }
-        oldSession?.invalidateAndCancel()
-
+    ///
+    /// The returned task and its backing URLSession are independent of
+    /// any stored state. The caller is responsible for assigning them
+    /// to the primary or backup slots.
+    private func buildWebSocketTask() throws -> (URLSessionWebSocketTask, URLSession) {
         let trimmed = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
         // Convert HTTP(S) URL to WS(S).
@@ -340,11 +386,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         config.timeoutIntervalForRequest = 300  // Long timeout for persistent connection.
         let session = URLSession(configuration: config)
 
-        lock.withLock {
-            self.urlSession = session
-        }
-
-        return session.webSocketTask(with: url)
+        return (session.webSocketTask(with: url), session)
     }
 
     /// Tear down the WebSocket and URLSession, clearing all references.
@@ -361,6 +403,238 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
         task?.cancel(with: .normalClosure, reason: nil)
         session?.invalidateAndCancel()
+    }
+
+    // MARK: - Backup Connection
+
+    /// Establish a backup WebSocket in the background. No-op if a backup
+    /// already exists or one is currently being established.
+    private func establishBackupIfNeeded() {
+        let shouldCreate: Bool = lock.withLock {
+            if backupWebSocketTask != nil || backupConnecting {
+                return false
+            }
+            backupConnecting = true
+            return true
+        }
+        guard shouldCreate else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let (task, session) = try self.buildWebSocketTask()
+                task.resume()
+
+                self.lock.withLock {
+                    self.backupWebSocketTask = task
+                    self.backupURLSession = session
+                    self.backupConnectionEstablishedAt = Date()
+                    self.backupConnecting = false
+                }
+
+                self.startBackupKeepalive()
+                Log.debug("[StreamingProvider] Backup connection established")
+            } catch {
+                self.lock.withLock {
+                    self.backupConnecting = false
+                }
+                Log.debug("[StreamingProvider] Failed to establish backup: \(error)")
+            }
+        }
+    }
+
+    /// Try to promote the backup to primary. Returns true if successful.
+    ///
+    /// Verifies the backup is alive with a protocol-level ping (1s timeout)
+    /// before promoting. A dead backup is torn down silently.
+    private func promoteBackupIfAvailable() async throws -> Bool {
+        // Check cancellation before attempting promotion.
+        try Task.checkCancellation()
+
+        let backup: URLSessionWebSocketTask? = lock.withLock { self.backupWebSocketTask }
+        guard let backup else { return false }
+
+        // Verify the backup is alive with a quick ping (1s timeout).
+        let isAlive: Bool
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await withCheckedThrowingContinuation {
+                        (cont: CheckedContinuation<Void, Error>) in
+                        let pingLock = NSLock()
+                        var resumed = false
+                        backup.sendPing { error in
+                            let alreadyResumed = pingLock.withLock {
+                                let was = resumed
+                                resumed = true
+                                return was
+                            }
+                            guard !alreadyResumed else { return }
+                            if let error {
+                                cont.resume(throwing: error)
+                            } else {
+                                cont.resume()
+                            }
+                        }
+                    }
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    throw CancellationError()
+                }
+                try await group.next()
+                group.cancelAll()
+            }
+            isAlive = true
+        } catch {
+            isAlive = false
+        }
+
+        guard isAlive else {
+            Log.debug("[StreamingProvider] Backup connection dead, discarding")
+            await tearDownBackup()
+            return false
+        }
+
+        // Promote: move backup state into primary slots.
+        stopBackupKeepalive()
+        lock.withLock {
+            self.webSocketTask = self.backupWebSocketTask
+            self.urlSession = self.backupURLSession
+            self.connectionEstablishedAt = self.backupConnectionEstablishedAt
+            self.sessionCount = 0
+            self.backupWebSocketTask = nil
+            self.backupURLSession = nil
+            self.backupConnectionEstablishedAt = nil
+        }
+
+        // Start keepalive for the now-primary connection (will be paused
+        // when the session starts in startStreaming).
+        startKeepalive()
+
+        Log.debug("[StreamingProvider] Promoted backup to primary")
+        return true
+    }
+
+    /// Tear down the backup WebSocket and URLSession.
+    private func tearDownBackup() async {
+        stopBackupKeepalive()
+        let (task, session): (URLSessionWebSocketTask?, URLSession?) = lock.withLock {
+            let t = self.backupWebSocketTask
+            let s = self.backupURLSession
+            self.backupWebSocketTask = nil
+            self.backupURLSession = nil
+            self.backupConnectionEstablishedAt = nil
+            self.backupConnecting = false
+            return (t, s)
+        }
+
+        task?.cancel(with: .normalClosure, reason: nil)
+        session?.invalidateAndCancel()
+    }
+
+    /// Start keepalive pings for the backup connection.
+    private func startBackupKeepalive() {
+        stopBackupKeepalive()
+
+        let interval = keepaliveInterval
+        let maxAge = maxConnectionAge
+        backupKeepaliveTask = Task { [weak self] in
+            var consecutiveFailures = 0
+            var isFirstPing = true
+            while !Task.isCancelled {
+                let delay: TimeInterval = isFirstPing ? 2.0 : interval
+                isFirstPing = false
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled else { break }
+                guard let self else { break }
+
+                // Don't send backup keepalives during an active session —
+                // only the primary connection matters then.
+                let active: Bool = self.lock.withLock { self.sessionActive }
+                if active { continue }
+
+                // Tear down aged backup connections. A fresh backup will
+                // be created after the next successful session.
+                let age: TimeInterval? = self.lock.withLock {
+                    self.backupConnectionEstablishedAt.map {
+                        Date().timeIntervalSince($0)
+                    }
+                }
+                if let age, age > maxAge {
+                    Log.debug(
+                        "[StreamingProvider] Backup keepalive: connection aged out "
+                            + "(\(Int(age))s > \(Int(maxAge))s), tearing down"
+                    )
+                    await self.tearDownBackup()
+                    break
+                }
+
+                // Send an application-level ping to the backup. This
+                // generates real WebSocket text traffic that load
+                // balancers and ingress proxies recognize as activity.
+                // Protocol-level sendPing (TCP ping frame) is invisible
+                // to many L7 proxies, causing them to kill "idle"
+                // backup connections with POSIX error 53.
+                let task: URLSessionWebSocketTask? = self.lock.withLock {
+                    self.backupWebSocketTask
+                }
+                guard let task else { break }
+
+                do {
+                    try await self.send(json: ["type": "ping"], on: task)
+                    // Wait for the pong response to confirm the server
+                    // is alive. Timeout after 5s to avoid blocking.
+                    let pong = try await withThrowingTaskGroup(of: Bool.self) { group in
+                        group.addTask {
+                            while true {
+                                let msg = try await task.receive()
+                                if case .string(let text) = msg,
+                                    let data = text.data(using: .utf8),
+                                    let json = try? JSONSerialization.jsonObject(with: data)
+                                        as? [String: Any],
+                                    json["type"] as? String == "pong"
+                                {
+                                    return true
+                                }
+                            }
+                        }
+                        group.addTask {
+                            try await Task.sleep(nanoseconds: 5_000_000_000)
+                            return false
+                        }
+                        let result = try await group.next() ?? false
+                        group.cancelAll()
+                        return result
+                    }
+                    guard pong else {
+                        throw DictationError.networkError("Backup pong timeout")
+                    }
+                    consecutiveFailures = 0
+                    Log.debug("[StreamingProvider] Backup keepalive ping OK")
+                } catch {
+                    consecutiveFailures += 1
+                    Log.debug(
+                        "[StreamingProvider] Backup keepalive ping failed "
+                            + "(attempt \(consecutiveFailures)): \(error)"
+                    )
+                    if consecutiveFailures >= 2 {
+                        Log.debug(
+                            "[StreamingProvider] Backup keepalive: \(consecutiveFailures) "
+                                + "consecutive failures, tearing down"
+                        )
+                        await self.tearDownBackup()
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    /// Stop the backup keepalive task.
+    private func stopBackupKeepalive() {
+        backupKeepaliveTask?.cancel()
+        backupKeepaliveTask = nil
     }
 
     // MARK: - Keepalive
@@ -468,13 +742,18 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         return message
     }
 
-    /// Serialize a dictionary to JSON and send it over the WebSocket.
+    /// Serialize a dictionary to JSON and send it over the primary WebSocket.
     private func send(json dict: [String: Any]) async throws {
         let task: URLSessionWebSocketTask? = lock.withLock { self.webSocketTask }
         guard let task else {
             throw DictationError.networkError("No active streaming session")
         }
 
+        try await send(json: dict, on: task)
+    }
+
+    /// Serialize a dictionary to JSON and send it over a specific WebSocket task.
+    private func send(json dict: [String: Any], on task: URLSessionWebSocketTask) async throws {
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
             let text = String(data: data, encoding: .utf8)
         else {
@@ -498,17 +777,12 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
         seconds: TimeInterval,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        let timeoutOccurred = NSLock()
-        var didTimeout = false
-
         return try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask {
                 try await operation()
             }
             group.addTask { [weak self] in
                 try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-
-                timeoutOccurred.withLock { didTimeout = true }
 
                 // Force-cancel the WebSocket task so receive() throws.
                 if let self {
