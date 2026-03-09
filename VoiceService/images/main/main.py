@@ -30,10 +30,13 @@ from fastapi import (
     UploadFile,
     WebSocket,
 )
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import auth
 import context
+import db
+import invite
 import polish
 import realtime
 import startup
@@ -46,25 +49,16 @@ import startup
 @asynccontextmanager
 async def lifespan(app):
     await startup.start_auth()
+    await db.open_pool()
+    await invite.ensure_table()
     yield
+    await db.close_pool()
     await startup.stop_auth()
 
 
 app = FastAPI(lifespan=lifespan)
-security = HTTPBearer()
-
-API_KEY = os.environ.get("API_KEY", "")
 
 STT_MODEL = "gpt-4o-mini-transcribe"
-
-
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify the bearer token matches the configured API key."""
-    if not API_KEY:
-        raise HTTPException(status_code=500, detail="Server API key not configured")
-    if credentials.credentials != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return credentials
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +71,7 @@ async def dictate(
     file: UploadFile = File(...),
     ctx: str = Form("{}", alias="context"),
     language: Optional[str] = Form(None),
-    _credentials=Depends(verify_token),
+    user: auth.AuthUser = Depends(auth.require_auth),
 ):
     """Convert spoken audio into clean written text.
 
@@ -139,7 +133,7 @@ class PolishRequest(BaseModel):
 @app.post("/polish")
 async def polish_endpoint(
     request: PolishRequest,
-    _credentials=Depends(verify_token),
+    user: auth.AuthUser = Depends(auth.require_auth),
 ):
     """Polish raw transcript text via the polishing pipeline.
 
@@ -170,10 +164,84 @@ async def polish_endpoint(
 @app.post("/cleanup")
 async def cleanup_endpoint(
     request: PolishRequest,
-    _credentials=Depends(verify_token),
+    user: auth.AuthUser = Depends(auth.require_auth),
 ):
     """Alias for /polish. Kept for backward compatibility."""
-    return await polish_endpoint(request, _credentials)
+    return await polish_endpoint(request, user)
+
+
+# ---------------------------------------------------------------------------
+# /api/auth — invite redemption and capabilities
+# ---------------------------------------------------------------------------
+
+
+class RedeemRequest(BaseModel):
+    """Request body for invite redemption."""
+    token: str
+
+
+@app.post("/api/auth/redeem-invite")
+async def redeem_invite(request: RedeemRequest):
+    """Redeem an invite token to create a user and session.
+
+    No authentication required. The invite token is the credential.
+    Return the session token via set-auth-token header and user info
+    in the body.
+    """
+    try:
+        result = await invite.redeem(request.token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    response = JSONResponse(
+        content={
+            "user_id": result.user_id,
+            "has_email": result.has_email,
+        }
+    )
+    response.headers["set-auth-token"] = result.session_token
+    return response
+
+
+@app.get("/api/auth/capabilities")
+async def capabilities():
+    """Return server capabilities for client configuration.
+
+    No authentication required. The client checks this on launch to
+    discover feature availability and update URLs.
+    """
+    appcast_url = os.environ.get(
+        "APPCAST_URL",
+        "https://voice.autonomy.computer/appcast.xml",
+    )
+    return {
+        "invite": True,
+        "email_otp": False,
+        "require_email": False,
+        "require_email_deadline": None,
+        "appcast_url": appcast_url,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /health — combined health check
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health():
+    """Check health of both Python and Node.js auth processes."""
+    auth_ok = await auth.check_auth_health()
+
+    if not auth_ok:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "degraded", "auth": "unavailable"},
+        )
+
+    return {"status": "ok", "auth": "ok"}
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +252,7 @@ async def cleanup_endpoint(
 @app.websocket("/stream")
 async def stream_endpoint(ws: WebSocket):
     """Stream audio for real-time transcription via the Realtime API."""
-    await realtime.handle_stream(ws, API_KEY)
+    await realtime.handle_stream(ws)
 
 
 Node.start(http_server=HttpServer(app=app))

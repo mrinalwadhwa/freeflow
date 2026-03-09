@@ -1,3 +1,5 @@
 httpx
+psycopg[binary]
+psycopg-pool
 python-multipart
 websockets

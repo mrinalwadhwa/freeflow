@@ -27,6 +27,8 @@ import time
 import traceback
 from typing import Optional
 
+import auth
+
 from autonomy.models.clients.gateway_config import (
     get_gateway_url,
     get_gateway_api_key,
@@ -225,21 +227,7 @@ async def configure_session(
 # ---------------------------------------------------------------------------
 
 
-def verify_ws_token(authorization: Optional[str], api_key: str) -> bool:
-    """Check that a WebSocket Authorization value contains a valid token."""
-    if not api_key:
-        return False
-    if not authorization:
-        return False
-    # Accept "Bearer <token>" format.
-    parts = authorization.split(" ", 1)
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        return parts[1] == api_key
-    # Also accept bare token.
-    return authorization == api_key
-
-
-async def handle_stream(ws: WebSocket, api_key: str):
+async def handle_stream(ws: WebSocket):
     """Handle a persistent WebSocket that may carry multiple dictation sessions.
 
     The client keeps a single WebSocket open across dictations. Each
@@ -269,8 +257,10 @@ async def handle_stream(ws: WebSocket, api_key: str):
     # Authenticate via query parameter or header.
     token_param = ws.query_params.get("token", "")
     auth_header = ws.headers.get("authorization", "")
-    if not (verify_ws_token(token_param, api_key)
-            or verify_ws_token(auth_header, api_key)):
+    user = await auth.verify_ws_auth(auth_header)
+    if user is None and token_param:
+        user = await auth.verify_ws_auth(f"Bearer {token_param}")
+    if user is None:
         await ws.close(code=4001, reason="Unauthorized")
         return
 
