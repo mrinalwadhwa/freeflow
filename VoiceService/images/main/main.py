@@ -23,6 +23,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import httpx
 from autonomy import HttpServer, Model, Node
 from fastapi import (
     Depends,
@@ -30,10 +31,11 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     WebSocket,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -41,6 +43,7 @@ import admin
 import auth
 import context
 import db
+import email_config
 import invite
 import polish
 import realtime
@@ -58,6 +61,7 @@ async def lifespan(app):
     await db.open_pool()
     await invite.ensure_table()
     await admin.ensure_table()
+    await email_config.ensure_table()
     yield
     await db.close_pool()
     await startup.stop_auth()
@@ -229,13 +233,121 @@ async def capabilities():
         "APPCAST_URL",
         "https://voice.autonomy.computer/appcast.xml",
     )
+    email_caps = await email_config.get_capabilities()
     return {
         "invite": True,
-        "email_otp": False,
-        "require_email": False,
-        "require_email_deadline": None,
+        "email_otp": email_caps["email_otp"],
+        "require_email": email_caps["require_email"],
+        "require_email_deadline": email_caps["require_email_deadline"],
         "appcast_url": appcast_url,
     }
+
+
+# ---------------------------------------------------------------------------
+# /admin/api — admin endpoints for invite and user management
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# /admin/api/settings — email configuration and require-email policy
+# ---------------------------------------------------------------------------
+
+
+class SaveEmailConfigRequest(BaseModel):
+    """Request body for saving email configuration."""
+    provider: str
+    api_key: str
+    from_address: str
+
+
+class SaveRequireEmailRequest(BaseModel):
+    """Request body for the require-email policy."""
+    require: bool
+    grace_period_days: Optional[int] = 14
+
+
+class TestEmailRequest(BaseModel):
+    """Request body for sending a test email."""
+    to: str
+
+
+@app.post("/admin/api/settings/email")
+async def admin_save_email_config(
+    request: SaveEmailConfigRequest,
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Save email provider configuration. Requires admin session."""
+    if request.provider not in ("resend", "sendgrid"):
+        raise HTTPException(status_code=400, detail="Unsupported provider. Use 'resend' or 'sendgrid'.")
+    if not request.api_key:
+        raise HTTPException(status_code=400, detail="API key is required.")
+    if not request.from_address:
+        raise HTTPException(status_code=400, detail="From address is required.")
+
+    config = await email_config.save_config(
+        provider=request.provider,
+        api_key=request.api_key,
+        from_address=request.from_address,
+    )
+    return {
+        "ok": True,
+        "provider": config.provider,
+        "from_address": config.from_address,
+        "verified": config.verified,
+    }
+
+
+@app.post("/admin/api/settings/email/test")
+async def admin_test_email(
+    request: TestEmailRequest,
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Send a test email to verify the configuration. Requires admin session."""
+    try:
+        message = await email_config.send_test_email(request.to)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"ok": True, "message": message}
+
+
+@app.get("/admin/api/settings/email")
+async def admin_get_email_config(
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Return the current email configuration (without the API key). Requires admin session."""
+    config = await email_config.get_config()
+    if config is None:
+        return {"configured": False}
+    return {
+        "configured": config.is_configured,
+        "provider": config.provider,
+        "from_address": config.from_address,
+        "verified": config.verified,
+        "require_email": config.require_email,
+        "require_email_deadline": config.require_email_deadline.isoformat() if config.require_email_deadline else None,
+    }
+
+
+@app.post("/admin/api/settings/require-email")
+async def admin_save_require_email(
+    request: SaveRequireEmailRequest,
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Toggle the require-email policy. Requires admin session and configured email."""
+    if request.require:
+        configured = await email_config.is_email_configured()
+        if not configured:
+            raise HTTPException(
+                status_code=400,
+                detail="Email must be configured and verified before requiring email.",
+            )
+    await email_config.save_require_email(
+        require=request.require,
+        grace_period_days=request.grace_period_days,
+    )
+    return {"ok": True, "require_email": request.require}
 
 
 # ---------------------------------------------------------------------------
@@ -247,16 +359,22 @@ class CreateInviteRequest(BaseModel):
     """Request body for creating an invite."""
     label: Optional[str] = None
     email: Optional[str] = None
+    send_email: bool = False
     max_uses: int = 1
     expires_in_hours: Optional[int] = None
 
 
 @app.post("/admin/api/invites")
 async def admin_create_invite(
+    raw_request: Request,
     request: CreateInviteRequest,
     user: auth.AuthUser = Depends(admin.require_admin),
 ):
-    """Create a new invite token. Requires admin session."""
+    """Create a new invite token. Requires admin session.
+
+    When send_email is true and email is provided, send the invite link
+    directly to the recipient via the configured email provider.
+    """
     token, invite_id = await invite.create_invite(
         created_by=user.user_id,
         label=request.label,
@@ -264,9 +382,32 @@ async def admin_create_invite(
         max_uses=request.max_uses,
         expires_in_hours=request.expires_in_hours,
     )
+
+    email_sent = False
+    if request.send_email and request.email:
+        base_url = web._zone_base_url(raw_request)
+        try:
+            await invite.send_invite_email(
+                token=token,
+                email=request.email,
+                base_url=base_url,
+                label=request.label,
+            )
+            email_sent = True
+        except (ValueError, RuntimeError) as e:
+            # Invite was created but email failed. Return the token so
+            # the admin can share the link manually.
+            return {
+                "id": invite_id,
+                "token": token,
+                "email_sent": False,
+                "email_error": str(e),
+            }
+
     return {
         "id": invite_id,
         "token": token,
+        "email_sent": email_sent,
     }
 
 
@@ -416,6 +557,69 @@ async def health():
 async def stream_endpoint(ws: WebSocket):
     """Stream audio for real-time transcription via the Realtime API."""
     await realtime.handle_stream(ws)
+
+
+# ---------------------------------------------------------------------------
+# /api/auth/* — proxy unmatched auth routes to better-auth (Node.js)
+# ---------------------------------------------------------------------------
+
+_AUTH_PROXY_BASE = "http://localhost:3456"
+
+
+@app.api_route(
+    "/api/auth/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def auth_proxy(request: Request, path: str):
+    """Forward unmatched /api/auth/* requests to the Node.js auth service.
+
+    Routes defined above (redeem-invite, capabilities) take priority.
+    This catch-all proxies everything else, including better-auth's
+    email-otp, change-email, sign-in, and session endpoints.
+    """
+    target_url = f"{_AUTH_PROXY_BASE}/api/auth/{path}"
+
+    # Forward query string if present.
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    body = await request.body()
+
+    # Forward relevant headers (content-type, authorization, cookies).
+    forward_headers = {}
+    if "content-type" in request.headers:
+        forward_headers["content-type"] = request.headers["content-type"]
+    if "authorization" in request.headers:
+        forward_headers["authorization"] = request.headers["authorization"]
+    elif "auth_token" in request.cookies:
+        # Web pages store the session token in an auth_token cookie.
+        # better-auth's bearer plugin expects Authorization: Bearer.
+        forward_headers["authorization"] = f"Bearer {request.cookies['auth_token']}"
+    if "cookie" in request.headers:
+        forward_headers["cookie"] = request.headers["cookie"]
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.request(
+            method=request.method,
+            url=target_url,
+            content=body,
+            headers=forward_headers,
+        )
+
+    # Forward the response, including headers the client may need
+    # (set-auth-token, set-cookie, etc.).
+    excluded = {"transfer-encoding", "content-encoding", "content-length"}
+    response_headers = {
+        k: v
+        for k, v in resp.headers.items()
+        if k.lower() not in excluded
+    }
+
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=response_headers,
+    )
 
 
 Node.start(http_server=HttpServer(app=app))

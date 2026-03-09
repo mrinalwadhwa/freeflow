@@ -3,7 +3,8 @@
 Create, redeem, revoke, and list invite tokens stored in PostgreSQL.
 Tokens are 32-byte random hex strings, stored as SHA-256 hashes.
 Redemption validates the token and calls better-auth to create a user
-and session.
+and session. Email-invites send the invite link directly to the
+recipient via the configured email provider.
 """
 
 import hashlib
@@ -17,6 +18,7 @@ import httpx
 
 import admin
 import db
+import email_config
 
 AUTH_BASE_URL = "http://localhost:3456"
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
@@ -250,6 +252,59 @@ async def revoke(invite_id: int):
         row = await result.fetchone()
         if row is None:
             raise ValueError("Invite not found")
+
+
+async def send_invite_email(
+    token: str,
+    email: str,
+    base_url: str,
+    label: Optional[str] = None,
+) -> None:
+    """Send an invite link to an email address via the configured provider.
+
+    Raise ValueError if email is not configured. Raise RuntimeError if
+    the email send fails.
+    """
+    config = await email_config.get_config()
+    if config is None or not config.is_configured or not config.verified:
+        raise ValueError("Email is not configured. Set up an email provider first.")
+
+    invite_url = f"{base_url}/invite/{token}"
+    app_name = "Voice"
+    recipient_label = label or "there"
+
+    subject = f"You're invited to {app_name}"
+    text = (
+        f"Hi {recipient_label},\n\n"
+        f"You've been invited to use {app_name}. "
+        f"Click the link below to get started:\n\n"
+        f"{invite_url}\n\n"
+        f"This link will help you set up {app_name} on your Mac."
+    )
+    html = (
+        f"<p>Hi {recipient_label},</p>"
+        f"<p>You've been invited to use <strong>{app_name}</strong>.</p>"
+        f'<p style="margin:24px 0">'
+        f'<a href="{invite_url}" style="display:inline-block;padding:12px 24px;'
+        f"background:#0066cc;color:#fff;border-radius:8px;text-decoration:none;"
+        f'font-weight:500">Get started with {app_name}</a></p>'
+        f'<p style="color:#6e6e73;font-size:14px">'
+        f"Or copy this link: {invite_url}</p>"
+    )
+
+    api_key = config.api_key
+    from_address = config.from_address
+
+    if config.provider == "resend":
+        await email_config._send_via_resend(
+            api_key, from_address, email, subject, text, html,
+        )
+    elif config.provider == "sendgrid":
+        await email_config._send_via_sendgrid(
+            api_key, from_address, email, subject, text, html,
+        )
+    else:
+        raise RuntimeError(f"Unsupported email provider: {config.provider}")
 
 
 async def list_invites() -> list[Invite]:

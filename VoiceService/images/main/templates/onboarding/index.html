@@ -1,0 +1,621 @@
+{% set app_name = "Voice" %}
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Set up {{ app_name }}</title>
+        <link rel="stylesheet" href="/static/styles.css" />
+        <style>
+            /* ---------------------------------------------------------- */
+            /* Onboarding layout                                           */
+            /* ---------------------------------------------------------- */
+
+            body {
+                background: var(--color-bg);
+                overflow: hidden;
+            }
+
+            .onboarding {
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                max-width: 480px;
+                margin: 0 auto;
+                padding: 1.5rem 1.5rem 1.5rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Step indicator                                              */
+            /* ---------------------------------------------------------- */
+
+            .step-indicator {
+                display: flex;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0 0 1.5rem;
+                flex-shrink: 0;
+                height: 1.5rem; /* 1 baseline unit */
+                align-items: center;
+            }
+
+            .step-indicator-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--color-border);
+                transition:
+                    background 0.3s,
+                    transform 0.3s;
+            }
+
+            .step-indicator-dot.active {
+                background: var(--color-text);
+                transform: scale(1.4);
+            }
+
+            .step-indicator-dot.completed {
+                background: var(--color-green);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Step sections                                               */
+            /* ---------------------------------------------------------- */
+
+            .step-section {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                text-align: center;
+                transition:
+                    opacity 0.2s ease,
+                    transform 0.2s ease;
+            }
+
+            .step-hidden {
+                display: none !important;
+            }
+
+            .step-active {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            .step-exit {
+                opacity: 0;
+                transform: translateY(-12px);
+                pointer-events: none;
+            }
+
+            .step-section h1 {
+                font-size: 1.625rem;
+                font-weight: 700;
+                line-height: 1.384615; /* ~2.25rem; 2 lines = 4.5rem = 3 units */
+                margin-bottom: 0.461538em; /* 0.75rem in base = 0.5 unit */
+                letter-spacing: -0.025em;
+            }
+
+            .step-section p {
+                font-size: 0.9375rem;
+                color: var(--color-muted);
+                max-width: 340px;
+                margin: 0 auto 1.5rem;
+                line-height: 1.6; /* 0.9375 * 1.6 = 1.5rem = 1 unit */
+            }
+
+            .step-section .btn {
+                min-width: 200px;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Step icon                                                   */
+            /* ---------------------------------------------------------- */
+
+            .step-icon {
+                width: 3rem; /* 2 baseline units */
+                height: 3rem;
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.375rem;
+                margin-bottom: 1.5rem;
+                flex-shrink: 0;
+            }
+
+            .step-icon-warm {
+                background: var(--color-surface);
+                color: var(--color-text);
+                border: 1px solid var(--color-border-light);
+            }
+
+            .step-icon-green {
+                background: var(--color-green-bg);
+                color: var(--color-green);
+            }
+
+            .step-icon-subtle {
+                background: var(--color-bg);
+                color: var(--color-muted);
+                border: 1px solid var(--color-border-light);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Connect step                                                */
+            /* ---------------------------------------------------------- */
+
+            .connect-state {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .connect-spinner {
+                margin-bottom: 1.5rem;
+            }
+
+            .connect-spinner .spinner {
+                width: 1.5rem;
+                height: 1.5rem;
+                border-width: 2px;
+            }
+
+            .connect-checkmark {
+                width: 3rem;
+                height: 3rem;
+                border-radius: 50%;
+                background: var(--color-green);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 1.5rem;
+                animation: checkmark-pop 0.3s ease;
+            }
+
+            .connect-checkmark svg {
+                width: 1.25rem;
+                height: 1.25rem;
+                stroke: var(--color-white);
+                stroke-width: 3;
+                fill: none;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+            }
+
+            @keyframes checkmark-pop {
+                0% {
+                    transform: scale(0.5);
+                    opacity: 0;
+                }
+                70% {
+                    transform: scale(1.1);
+                }
+                100% {
+                    transform: scale(1);
+                    opacity: 1;
+                }
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Permission status                                           */
+            /* ---------------------------------------------------------- */
+
+            .permission-status {
+                font-size: 0.875rem;
+                line-height: 1.714286; /* 1 unit */
+                min-height: 1.5rem;
+                margin-bottom: 0.75rem;
+                transition: color 0.2s;
+            }
+
+            .permission-granted {
+                color: var(--color-green);
+                font-weight: 500;
+            }
+
+            .permission-waiting {
+                color: var(--color-yellow);
+            }
+
+            .permission-denied {
+                color: var(--color-red);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Hotkey visual                                               */
+            /* ---------------------------------------------------------- */
+
+            .hotkey-demo {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                margin-bottom: 1.5rem;
+                padding: 1.5rem;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+            }
+
+            .key-cap {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 80px;
+                padding: 0.375rem 0.75rem;
+                background: var(--color-white);
+                border: 1px solid var(--color-border);
+                border-bottom-width: 2px;
+                border-radius: 8px;
+                font-size: 0.8125rem;
+                font-weight: 600;
+                line-height: 1.5rem;
+                color: var(--color-text);
+                white-space: nowrap;
+            }
+
+            .hotkey-arrow {
+                color: var(--color-light);
+                font-size: 1.125rem;
+                flex-shrink: 0;
+            }
+
+            .hotkey-label {
+                font-size: 0.8125rem;
+                line-height: 1.384615;
+                color: var(--color-muted);
+            }
+
+            .hotkey-steps {
+                text-align: left;
+                max-width: 300px;
+                margin: 0 auto 1.5rem;
+            }
+
+            .hotkey-step {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-start;
+                margin-bottom: 0.75rem; /* 0.5 unit */
+            }
+
+            .hotkey-step:last-child {
+                margin-bottom: 0;
+            }
+
+            .hotkey-step-num {
+                flex-shrink: 0;
+                width: 1.5rem;
+                height: 1.5rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.6875rem;
+                font-weight: 600;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                color: var(--color-muted);
+                border-radius: 50%;
+            }
+
+            .hotkey-step-text {
+                font-size: 0.875rem;
+                color: var(--color-muted);
+                line-height: 1.714286; /* 1 unit */
+            }
+
+            .hotkey-step-text strong {
+                color: var(--color-text);
+                font-weight: 600;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Try-it step                                                 */
+            /* ---------------------------------------------------------- */
+
+            .try-it-area {
+                width: 100%;
+                max-width: 340px;
+                margin-bottom: 0.75rem;
+            }
+
+            .try-it-area textarea {
+                width: 100%;
+                height: 6rem; /* 4 baseline units */
+                padding: 0.75rem;
+                font-size: 0.9375rem;
+                font-family: inherit;
+                line-height: 1.6;
+                color: var(--color-text);
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 12px;
+                resize: none;
+                transition:
+                    border-color 0.2s,
+                    background 0.2s;
+            }
+
+            .try-it-area textarea:focus {
+                outline: none;
+                border-color: var(--color-text);
+                background: var(--color-white);
+            }
+
+            .try-it-area textarea.try-it-received {
+                border-color: var(--color-green);
+                background: var(--color-green-bg);
+            }
+
+            .try-it-hint {
+                font-size: 0.8125rem;
+                color: var(--color-light);
+                margin-bottom: 1.5rem;
+                line-height: 1.5rem;
+            }
+
+            .try-it-success-msg {
+                display: flex;
+                align-items: center;
+                gap: 0.375rem;
+                font-size: 0.875rem;
+                color: var(--color-green);
+                font-weight: 500;
+                line-height: 1.5rem;
+                margin-bottom: 0.75rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Done step                                                   */
+            /* ---------------------------------------------------------- */
+
+            .done-menu-bar {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.75rem 1.25rem;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 12px;
+                margin-bottom: 1.5rem;
+                font-size: 0.875rem;
+                line-height: 1.714286;
+                color: var(--color-muted);
+            }
+
+            .done-menu-bar-icon {
+                font-size: 1rem;
+            }
+
+            .share-section {
+                margin-top: 0.75rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid var(--color-border-light);
+                width: 100%;
+                max-width: 340px;
+            }
+
+            .share-section h3 {
+                font-size: 0.9375rem;
+                line-height: 1.6;
+                margin-bottom: 0.375rem;
+            }
+
+            .share-section p {
+                font-size: 0.8125rem;
+                line-height: 1.384615;
+            }
+
+            .share-section a {
+                color: var(--color-text);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Button row                                                  */
+            /* ---------------------------------------------------------- */
+
+            .btn-row {
+                display: flex;
+                gap: 0.75rem;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .btn-link {
+                background: none;
+                border: none;
+                color: var(--color-light);
+                font-size: 0.8125rem;
+                cursor: pointer;
+                padding: 0.375rem 0.5rem;
+                line-height: 1.5rem;
+                text-decoration: underline;
+                text-decoration-color: var(--color-border);
+                text-underline-offset: 0.15em;
+                transition:
+                    color 0.15s,
+                    text-decoration-color 0.15s;
+            }
+
+            .btn-link:hover {
+                color: var(--color-text);
+                text-decoration-color: var(--color-text);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="onboarding">
+            <!-- Step indicator dots -->
+            <div class="step-indicator">
+                <div class="step-indicator-dot"></div>
+                <div class="step-indicator-dot"></div>
+                <div class="step-indicator-dot"></div>
+                <div class="step-indicator-dot"></div>
+                <div class="step-indicator-dot"></div>
+                <div class="step-indicator-dot"></div>
+            </div>
+
+            <!-- ====================================================== -->
+            <!-- Screen 1: Connect                                       -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="connect">
+                <!-- Loading state -->
+                <div id="connect-loading" class="connect-state">
+                    <div class="connect-spinner">
+                        <div class="spinner"></div>
+                    </div>
+                    <h1>Connecting</h1>
+                    <p>Setting up your account&#8230;</p>
+                </div>
+
+                <!-- Success state -->
+                <div id="connect-success" class="connect-state hidden">
+                    <div class="connect-checkmark">
+                        <svg viewBox="0 0 24 24"><polyline points="5 13 10 18 19 6"></polyline></svg>
+                    </div>
+                    <h1>Connected</h1>
+                    <p>Welcome<span id="connect-user-name"></span>! Your {{ app_name }} service is ready.</p>
+                </div>
+
+                <!-- Error state -->
+                <div id="connect-error" class="connect-state hidden">
+                    <div class="step-icon step-icon-warm">&#9888;</div>
+                    <h1>Connection failed</h1>
+                    <p id="connect-error-message">Could not connect. Please try again.</p>
+                    <button id="connect-retry" class="btn btn-primary">Try again</button>
+                </div>
+            </section>
+
+            <!-- ====================================================== -->
+            <!-- Screen 2: Accessibility                                 -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="accessibility">
+                <div class="step-icon step-icon-warm">&#9881;</div>
+                <h1>Accessibility access</h1>
+                <p>{{ app_name }} needs accessibility access to detect which app you are in and type text for you.</p>
+
+                <div id="accessibility-status" class="permission-status"></div>
+
+                <div class="btn-row">
+                    <button id="accessibility-open-settings" class="btn btn-primary">Open Settings</button>
+                </div>
+                <div class="btn-row" style="margin-top: 0.75rem">
+                    <button id="accessibility-continue" class="btn btn-secondary" disabled>Continue</button>
+                </div>
+            </section>
+
+            <!-- ====================================================== -->
+            <!-- Screen 3: Microphone                                    -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="microphone">
+                <div class="step-icon step-icon-warm">&#127908;</div>
+                <h1>Microphone access</h1>
+                <p>{{ app_name }} uses your microphone to hear what you say and convert it to text.</p>
+
+                <div id="microphone-status" class="permission-status"></div>
+
+                <div class="btn-row">
+                    <button id="microphone-request" class="btn btn-primary">Allow microphone</button>
+                </div>
+                <div class="btn-row" style="margin-top: 0.75rem">
+                    <button id="microphone-continue" class="btn btn-secondary" disabled>Continue</button>
+                </div>
+            </section>
+
+            <!-- ====================================================== -->
+            <!-- Screen 4: How it works                                  -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="how-it-works">
+                <div class="step-icon step-icon-warm">&#9000;</div>
+                <h1>How it works</h1>
+
+                <div class="hotkey-steps">
+                    <div class="hotkey-step">
+                        <div class="hotkey-step-num">1</div>
+                        <div class="hotkey-step-text"><strong>Hold</strong> the Right Option key</div>
+                    </div>
+                    <div class="hotkey-step">
+                        <div class="hotkey-step-num">2</div>
+                        <div class="hotkey-step-text"><strong>Speak</strong> naturally</div>
+                    </div>
+                    <div class="hotkey-step">
+                        <div class="hotkey-step-num">3</div>
+                        <div class="hotkey-step-text">
+                            <strong>Release</strong> the key. Polished text appears at your cursor.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hotkey-demo">
+                    <div class="key-cap">&#8997; Option</div>
+                    <div class="hotkey-arrow">&#8594;</div>
+                    <div class="hotkey-label">Hold to speak,<br />release to type</div>
+                </div>
+
+                <button id="how-it-works-continue" class="btn btn-primary">Try it now</button>
+            </section>
+
+            <!-- ====================================================== -->
+            <!-- Screen 5: Try it                                        -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="try-it">
+                <div class="step-icon step-icon-green">&#127911;</div>
+                <h1>Give it a try</h1>
+                <p>Hold the Right Option key, say something, then release. Your text will appear below.</p>
+
+                <div class="try-it-area">
+                    <textarea
+                        id="try-it-textarea"
+                        placeholder="Your dictated text will appear here&#8230;"
+                        readonly
+                    ></textarea>
+                </div>
+
+                <div class="try-it-hint">Hold Right Option and speak</div>
+
+                <div id="try-it-success" class="try-it-success-msg hidden">&#10003; It works!</div>
+
+                <div class="btn-row">
+                    <button id="try-it-done" class="btn btn-primary" disabled>Continue</button>
+                </div>
+                <div class="btn-row" style="margin-top: 0.5rem">
+                    <button id="try-it-skip" class="btn-link">Skip for now</button>
+                </div>
+            </section>
+
+            <!-- ====================================================== -->
+            <!-- Screen 6: Done                                          -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="done">
+                <div class="connect-checkmark">
+                    <svg viewBox="0 0 24 24"><polyline points="5 13 10 18 19 6"></polyline></svg>
+                </div>
+                <h1>You're all set</h1>
+                <p>{{ app_name }} lives in your menu bar. Hold Right Option any time to dictate.</p>
+
+                <div class="done-menu-bar">
+                    <span class="done-menu-bar-icon">&#9776;</span>
+                    <span>Look for {{ app_name }} in your menu bar at the top of the screen.</span>
+                </div>
+
+                {% if is_admin %}
+                <div class="share-section">
+                    <h3>Share with your team</h3>
+                    <p>
+                        Create invite links from your
+                        <a href="{{ base_url }}/admin/invites" target="_blank">admin dashboard</a> to invite others.
+                    </p>
+                </div>
+                {% endif %}
+
+                <div class="btn-row" style="margin-top: 1.5rem">
+                    <button id="done-finish" class="btn btn-primary">Finish</button>
+                </div>
+            </section>
+        </div>
+
+        <script src="/static/bridge.js"></script>
+        <script src="/static/onboarding.js"></script>
+    </body>
+</html>

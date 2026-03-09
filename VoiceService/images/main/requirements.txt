@@ -1,3 +1,4 @@
+cryptography
 httpx
 jinja2
 aiofiles

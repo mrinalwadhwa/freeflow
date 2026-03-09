@@ -97,6 +97,63 @@ async def _require_admin_web(request: Request) -> auth.AuthUser:
 # ------------------------------------------------------------------
 
 
+@public_router.get("/account/add-email", response_class=HTMLResponse)
+async def account_add_email(request: Request):
+    """Add email page for Tier 2 email recovery.
+
+    Displayed in the macOS app's WKWebView when the admin enables email
+    and the user has no email on file. Single-page multi-step flow:
+    enter email, receive OTP, verify. The variant query parameter
+    controls the messaging: voluntary, grace, or enforced.
+
+    Requires a valid session (the user is already signed in).
+    """
+    return await _render("account/add-email.html")
+
+
+@public_router.get("/account/sign-in", response_class=HTMLResponse)
+async def account_sign_in(request: Request):
+    """Email OTP sign-in page for session recovery.
+
+    Displayed in the macOS app's WKWebView when the user's session has
+    expired and they have an email on file. Single-page multi-step flow:
+    email input, OTP input, success. The email query parameter pre-fills
+    the email field. The has_email query parameter controls whether to
+    show the sign-in form or a fallback message.
+
+    No session required (the user's session has expired).
+    """
+    return await _render("account/sign-in.html")
+
+
+@public_router.get("/onboarding/", response_class=HTMLResponse)
+async def onboarding(request: Request):
+    """Single-page onboarding flow for the macOS app WKWebView.
+
+    All 6 screens are rendered in one HTML document. JavaScript manages
+    step transitions without page refreshes. The token query parameter
+    is passed through for invite redemption on screen 1.
+
+    No authentication required. The onboarding page is a UI shell that
+    delegates sensitive operations (token redemption, Keychain writes,
+    permission grants) to the native bridge.
+    """
+    base_url = _zone_base_url(request)
+
+    # Check if the visitor has an admin session (used to show the
+    # "Share with your team" section on the done screen).
+    is_admin_user = False
+    user = await _get_session_user(request)
+    if user is not None:
+        is_admin_user = await admin.is_admin(user.user_id)
+
+    return await _render(
+        "onboarding/index.html",
+        base_url=base_url,
+        is_admin=is_admin_user,
+    )
+
+
 @public_router.get("/", response_class=HTMLResponse)
 async def homepage(request: Request):
     """Zone homepage.

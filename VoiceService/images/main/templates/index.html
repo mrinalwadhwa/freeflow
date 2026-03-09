@@ -1,13 +1,8 @@
-{% extends "base.html" %}
-
-{% block title %}{{ app_name }}{% endblock %}
-
-{% block content %}
-{% if admin_user %}
-{# ---- Admin dashboard view ---- #}
+{% extends "base.html" %} {% block title %}{{ app_name }}{% endblock %} {% block content %} {% if admin_user %} {# ----
+Admin dashboard view ---- #}
 <div class="mb-4">
     <h1>Welcome back</h1>
-    <p class="text-secondary">Your {{ app_name }} service is running.</p>
+    <p>Your {{ app_name }} service is running.</p>
 </div>
 
 <div class="stats-grid">
@@ -32,8 +27,7 @@
     </div>
 </div>
 
-{% else %}
-{# ---- Public visitor view ---- #}
+{% else %} {# ---- Public visitor view ---- #}
 <div class="hero">
     <h1>{{ app_name }}</h1>
     <p>Hold a key, speak, release. Polished text appears at your cursor.</p>
@@ -44,14 +38,13 @@
 
 <div class="card">
     <h3>Have an invite?</h3>
-    <p class="text-secondary mb-0">Click the invite link you received to set up {{ app_name }} on your Mac.</p>
+    <p class="mb-0">Click the invite link you received to set up {{ app_name }} on your Mac.</p>
 </div>
 
 <div class="card" id="download">
     <h3>Download {{ app_name }}</h3>
-    <p class="text-secondary">Download the app first, then click your invite link to connect.</p>
+    <p>Download the app first, then click your invite link to connect.</p>
     <a href="#" class="btn btn-secondary">Download for macOS</a>
-    <p class="text-small text-secondary mt-2">Requires macOS 14 or later.</p>
+    <p class="text-small mt-2" style="color: var(--color-light)">Requires macOS 14 or later.</p>
 </div>
-{% endif %}
-{% endblock %}
+{% endif %} {% endblock %}
