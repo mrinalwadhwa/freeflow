@@ -50,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyProvider.unregister()
         hudController?.stop()
@@ -248,14 +252,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         controller.permissionProvider = permissionProvider
+        controller.audioDeviceProvider = audioDeviceProvider
+        controller.audioPreviewProvider = audioProvider
 
         controller.onRegisterHotkey = { [weak self] in
             self?.registerHotkey()
+            self?.startOnboardingDictationObserver()
         }
 
         controller.onComplete = { [weak self] in
             guard let self else { return }
             Log.debug("[AppDelegate] Onboarding complete")
+            self.stopOnboardingDictationObserver()
             self.onboardingController = nil
             self.checkPermissions()
             self.checkCapabilitiesInBackground()
@@ -263,6 +271,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         onboardingController = controller
         return controller
+    }
+
+    // MARK: - Onboarding dictation observer
+
+    /// Observe coordinator state changes during onboarding to push
+    /// dictation results to the try-it screen via the bridge.
+    ///
+    /// Uses `stateStream` instead of polling so no transitions are missed.
+    /// The transcript buffer is populated before injection starts, so
+    /// reading it on any exit from `.injecting` (success or failure)
+    /// reliably captures the result.
+    private var onboardingDictationTask: Task<Void, Never>?
+
+    private func startOnboardingDictationObserver() {
+        stopOnboardingDictationObserver()
+        let coord = coordinator
+        let buffer = transcriptBuffer
+        onboardingDictationTask = Task { [weak self] in
+            Log.debug("[OnboardingObserver] Started")
+            var previousState: RecordingState = .idle
+            for await state in await coord.stateStream {
+                if Task.isCancelled { break }
+
+                Log.debug("[OnboardingObserver] State: \(previousState) → \(state)")
+
+                // Trigger on any exit from .injecting: the transcript
+                // buffer was written before the injecting transition,
+                // so it is available whether injection succeeded (.idle)
+                // or failed (.injectionFailed).
+                if previousState == .injecting
+                    && (state == .idle || state == .injectionFailed)
+                {
+                    let text = await buffer.lastTranscript
+                    Log.debug("[OnboardingObserver] Buffer text: \(text ?? "<nil>")")
+                    if let text, !text.isEmpty {
+                        let hasCallback = await MainActor.run {
+                            self?.onboardingController?.onDictationResult != nil
+                        }
+                        Log.debug(
+                            "[OnboardingObserver] onDictationResult callback present: \(hasCallback)"
+                        )
+                        await MainActor.run {
+                            self?.onboardingController?.onDictationResult?(text)
+                        }
+                        Log.debug("[OnboardingObserver] Pushed dictation result to bridge")
+                    }
+                    // During onboarding the system injection target is
+                    // the app itself, so .injectionFailed is expected.
+                    // Reset to idle to dismiss the no-target HUD hint.
+                    if state == .injectionFailed {
+                        Log.debug("[OnboardingObserver] Resetting injectionFailed → idle")
+                        await coord.finishInjecting()
+                    }
+                }
+                previousState = state
+            }
+            Log.debug("[OnboardingObserver] Stopped")
+        }
+    }
+
+    private func stopOnboardingDictationObserver() {
+        onboardingDictationTask?.cancel()
+        onboardingDictationTask = nil
     }
 
     // MARK: - Updater

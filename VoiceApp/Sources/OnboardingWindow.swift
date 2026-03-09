@@ -10,7 +10,11 @@ import WebKit
 /// onboarding, add-email, sign-in, and session recovery. Call
 /// `navigate(to:)` to load a different page without recreating the
 /// window.
-final class OnboardingWindow: NSWindow {
+final class OnboardingWindow: NSWindow, WKNavigationDelegate {
+
+    private static func log(_ msg: String) {
+        NSLog("[OnboardingWindow] %@", msg)
+    }
 
     /// The web view that displays zone-hosted pages.
     let webView: WKWebView
@@ -68,6 +72,31 @@ final class OnboardingWindow: NSWindow {
         isMovableByWindowBackground = true
         contentView = webView
         center()
+
+        webView.navigationDelegate = self
+    }
+
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        Self.log("didStartProvisionalNavigation: \(webView.url?.absoluteString ?? "nil")")
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Self.log("didFinish: \(webView.url?.absoluteString ?? "nil")")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Self.log("didFail: \(error.localizedDescription)")
+    }
+
+    func webView(
+        _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        Self.log(
+            "didFailProvisionalNavigation: \(error.localizedDescription) url=\(webView.url?.absoluteString ?? "nil")"
+        )
     }
 
     // MARK: - Navigation
@@ -78,6 +107,7 @@ final class OnboardingWindow: NSWindow {
     /// on the zone. The URL should be a full URL including the zone
     /// base (e.g. `https://zone.example.com/onboarding/?token=abc`).
     func navigate(to url: URL) {
+        Self.log("navigate(to: \(url.absoluteString))")
         let request = URLRequest(url: url)
         webView.load(request)
     }
@@ -88,10 +118,56 @@ final class OnboardingWindow: NSWindow {
     ///   - baseURL: The zone base URL (e.g. `https://zone.example.com`).
     ///   - path: The path to load (e.g. `/onboarding/?token=abc`).
     func navigate(baseURL: String, path: String) {
-        guard let url = URL(string: "\(baseURL)\(path)") else {
+        let combined = "\(baseURL)\(path)"
+        guard let url = URL(string: combined) else {
+            Self.log("navigate(baseURL:path:) failed to create URL from: \(combined)")
             return
         }
         navigate(to: url)
+    }
+
+    // MARK: - Placeholder
+
+    /// Show a local placeholder page while waiting for an invite link.
+    ///
+    /// Displayed on fresh launch before a `voice://connect` URL has
+    /// been received. The page shows a brief instruction so the user
+    /// knows the app is waiting for their invite link click.
+    func loadWaitingPlaceholder() {
+        let html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                background: #EEECEB;
+                color: #292929;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                padding: 2rem;
+                text-align: center;
+                -webkit-user-select: none;
+              }
+              .icon { font-size: 2.5rem; margin-bottom: 1.5rem; }
+              h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem; }
+              p { font-size: 0.9375rem; color: #7A7775; line-height: 1.5; }
+            </style>
+            </head>
+            <body>
+              <div class="icon">&#9993;</div>
+              <h1>Click your invite link</h1>
+              <p>Open the invite link you received to get started.</p>
+            </body>
+            </html>
+            """
+        webView.loadHTMLString(html, baseURL: nil)
     }
 
     // MARK: - Presentation
@@ -102,12 +178,17 @@ final class OnboardingWindow: NSWindow {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Close the window and remove the bridge handler to break any
+    /// Hide the window and remove the bridge handler to break any
     /// reference cycles.
+    ///
+    /// Uses `orderOut` instead of `close` so SwiftUI's lifecycle does
+    /// not see "last window closed" and terminate the app. The window
+    /// is deallocated when the OnboardingController sets its reference
+    /// to nil.
     func dismiss() {
         webConfig.userContentController.removeScriptMessageHandler(
             forName: Self.bridgeHandlerName
         )
-        close()
+        orderOut(nil)
     }
 }

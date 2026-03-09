@@ -43,6 +43,12 @@ def _zone_base_url(request: Request) -> str:
     """Return the zone base URL from the request."""
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("host", request.url.hostname or "localhost")
+    # Production traffic always terminates TLS at the load balancer, but
+    # x-forwarded-proto may still report "http". Force HTTPS for any
+    # non-localhost host to ensure voice:// connect URLs and WKWebView
+    # page loads use the correct scheme.
+    if host != "localhost" and not host.startswith("127."):
+        scheme = "https"
     return f"{scheme}://{host}"
 
 

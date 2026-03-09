@@ -262,6 +262,13 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             // callbacks will fire.
             engineToStop.inputNode.removeTap(onBus: 0)
 
+            // Stop the engine to release the microphone hardware. This
+            // dismisses the orange mic indicator in the menu bar between
+            // sessions. The engine is kept around for fast restart:
+            // ensureEngine() calls engine.start() which re-acquires the
+            // hardware without the full ~800ms creation cost.
+            engineToStop.stop()
+
             // Collect accumulated data and tear down streams under the
             // lock. No tap callbacks can race here because removeTap
             // has already drained them.
