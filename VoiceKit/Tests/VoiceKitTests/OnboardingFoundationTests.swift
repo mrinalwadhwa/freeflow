@@ -5,7 +5,9 @@ import Testing
 
 // MARK: - KeychainService tests
 
-@Suite("KeychainService")
+@Suite(
+    "KeychainService",
+    .enabled(if: ProcessInfo.processInfo.environment["VOICE_TEST_KEYCHAIN"] == "1"))
 struct KeychainServiceTests {
 
     /// Use a unique service name per test run to avoid cross-contamination
@@ -174,7 +176,9 @@ struct KeychainServiceTests {
 
 // MARK: - ServiceConfig layered resolution tests
 
-@Suite("ServiceConfig layered resolution")
+@Suite(
+    "ServiceConfig layered resolution",
+    .enabled(if: ProcessInfo.processInfo.environment["VOICE_TEST_KEYCHAIN"] == "1"))
 struct ServiceConfigLayeredTests {
 
     private func makeKeychain() -> KeychainService {

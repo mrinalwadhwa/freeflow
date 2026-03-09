@@ -173,6 +173,13 @@ final class HangingStreamingDictationProvider: StreamingDictationProviding, @unc
 
 final class PipelineTimeoutTests: XCTestCase {
 
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["VOICE_TEST_SLOW"] == "1",
+            "Slow timeout tests skipped (set VOICE_TEST_SLOW=1 to run)")
+    }
+
     // MARK: - Helpers
 
     private func makeStreamingAudioProvider() -> MockAudioProvider {

@@ -36,16 +36,33 @@ from both frameworks. Verify the "Combined" line at the end to confirm all tests
 
 ```bash
 make test
-# ── Combined: 219 tests (77 XCTest + 142 Swift Testing), 0 failures ──
+# ── Combined: 451 tests (150 XCTest + 301 Swift Testing), 0 failures ──
 ```
 
-**The full test run takes ~1.5 minutes.** Always capture output with `tee` so you can inspect
-failures without re-running:
+**`make test` runs the fast suite (~5s).** Slow and Keychain-dependent tests are skipped by
+default. Use `make test-all` to run everything (~90s, requires Keychain access):
 
 ```bash
-make test 2>&1 | tee /tmp/voice-test.log | tail -5
-# then inspect failures:
-grep -E '✘|FAIL|failures' /tmp/voice-test.log
+make test-all
+# ── Combined: 475 tests (174 XCTest + 301 Swift Testing), 0 failures ──
+```
+
+**Environment variable gates:**
+- `VOICE_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests,
+  ServiceConfigLayeredTests, DictationProviderKeychainTests). These trigger macOS login Keychain
+  password prompts.
+- `VOICE_TEST_SLOW=1` — enables timeout and backup connection tests (PipelineTimeoutTests ~75s,
+  BackupConnectionTests ~7s). These use real timeouts and waits.
+
+Both are set automatically by `make test-all`.
+
+Test output is written to `/tmp/voice-test.log` (not to the terminal). Only the summary line
+is printed. On failure, the first 20 matching error lines are shown. Inspect the full log for
+details:
+
+```bash
+cat /tmp/voice-test.log                          # full output
+grep -E '✘|FAIL|failed|error:' /tmp/voice-test.log  # just failures
 ```
 
 **Run new tests first.** When adding or modifying tests, run only the affected tests before

@@ -157,6 +157,25 @@ struct DictationProviderTests {
                 != DictationError.networkError("refused"))
     }
 
+    @Test("StreamingProvider uses explicit overrides for tests")
+    func streamingProviderExplicitOverrides() {
+        // This is the pattern used by BackupConnectionTests.
+        let provider = VoiceServiceStreamingProvider(
+            baseURL: "http://127.0.0.1:9999",
+            apiKey: "test-key")
+
+        // Provider created successfully with explicit values.
+        _ = provider
+    }
+}
+
+// MARK: - Dynamic credential resolution (requires Keychain access)
+
+@Suite(
+    "Dictation provider Keychain",
+    .enabled(if: ProcessInfo.processInfo.environment["VOICE_TEST_KEYCHAIN"] == "1"))
+struct DictationProviderKeychainTests {
+
     // MARK: - ServiceConfig
 
     @Test("ServiceConfig has default values")
@@ -169,12 +188,14 @@ struct DictationProviderTests {
         _ = ServiceConfig.apiKey
     }
 
-    // MARK: - Dynamic credential resolution
+    private func makeKeychain() -> KeychainService {
+        let id = UUID().uuidString.prefix(8)
+        return KeychainService(service: "computer.autonomy.voice.test.\(id)")
+    }
 
     @Test("DictationProvider reads baseURL from ServiceConfig at request time")
     func dictationProviderDynamicBaseURL() throws {
-        let keychain = KeychainService(
-            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
+        let keychain = makeKeychain()
         defer { keychain.deleteAll() }
 
         let config = ServiceConfig(keychain: keychain)
@@ -197,8 +218,7 @@ struct DictationProviderTests {
 
     @Test("DictationProvider uses explicit overrides over ServiceConfig")
     func dictationProviderExplicitOverrides() throws {
-        let keychain = KeychainService(
-            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
+        let keychain = makeKeychain()
         defer { keychain.deleteAll() }
 
         keychain.saveServiceURL("https://keychain-url.example.com")
@@ -223,8 +243,7 @@ struct DictationProviderTests {
 
     @Test("DictationProvider picks up credential changes between requests")
     func dictationProviderCredentialRotation() throws {
-        let keychain = KeychainService(
-            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
+        let keychain = makeKeychain()
         defer { keychain.deleteAll() }
 
         let config = ServiceConfig(keychain: keychain)
@@ -254,8 +273,7 @@ struct DictationProviderTests {
 
     @Test("StreamingProvider reads baseURL from ServiceConfig at connection time")
     func streamingProviderDynamicConfig() {
-        let keychain = KeychainService(
-            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
+        let keychain = makeKeychain()
         defer { keychain.deleteAll() }
 
         let config = ServiceConfig(keychain: keychain)
@@ -271,17 +289,6 @@ struct DictationProviderTests {
         // verify the provider was created successfully and will read
         // from config. The explicit-override path is tested via
         // BackupConnectionTests which passes baseURL/apiKey directly.
-        _ = provider
-    }
-
-    @Test("StreamingProvider uses explicit overrides for tests")
-    func streamingProviderExplicitOverrides() {
-        // This is the pattern used by BackupConnectionTests.
-        let provider = VoiceServiceStreamingProvider(
-            baseURL: "http://127.0.0.1:9999",
-            apiKey: "test-key")
-
-        // Provider created successfully with explicit values.
         _ = provider
     }
 }

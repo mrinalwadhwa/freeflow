@@ -220,6 +220,9 @@ final class BackupConnectionTests: XCTestCase {
     private var server: LocalWebSocketServer!
 
     override func setUp() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["VOICE_TEST_SLOW"] == "1",
+            "Slow backup connection tests skipped (set VOICE_TEST_SLOW=1 to run)")
         try await super.setUp()
         server = try LocalWebSocketServer()
         await server.start()
@@ -227,7 +230,7 @@ final class BackupConnectionTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        server.stop()
+        server?.stop()
         server = nil
         try await super.tearDown()
     }

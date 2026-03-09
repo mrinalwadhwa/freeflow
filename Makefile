@@ -13,8 +13,9 @@ NOTARIZE_PROFILE := voice-notarize
 ARCHIVE_PATH     := build/Voice.xcarchive
 APP_PATH         := build/Voice.app
 RELEASE_DIR      := releases
-ZIP_NAME         := Voice.zip
-ZIP_PATH         := $(RELEASE_DIR)/$(ZIP_NAME)
+DMG_NAME         := Voice.dmg
+DMG_PATH         := $(RELEASE_DIR)/$(DMG_NAME)
+DMG_STAGING      := build/dmg_contents
 DOWNLOAD_URL     := https://autonomy.computer/voice/
 SPARKLE_BIN      := $(shell find ~/Library/Developer/Xcode/DerivedData/Voice-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)
 
@@ -37,12 +38,18 @@ run: build
 # swift test runs both XCTest-based and Swift Testing suites in one invocation,
 # but the final summary line only counts Swift Testing tests. This target parses
 # the full output to report a combined total from both frameworks.
+#
+# Output is written to /tmp/voice-test.log to avoid flooding the terminal.
+# Only the summary line is printed. Inspect the log for details on failures.
+TEST_LOG := /tmp/voice-test.log
+
 test:
-	@cd VoiceKit && swift test 2>&1 | tee .test_output; \
+	@echo "Running fast tests… output → $(TEST_LOG)"
+	@cd VoiceKit && swift test > $(TEST_LOG) 2>&1; \
 	exit_code=$$?; \
-	xc_pass=`grep -c '^Test Case.*passed' .test_output || true`; \
-	xc_fail=`grep -c '^Test Case.*failed' .test_output || true`; \
-	st_line=`grep 'Test run with' .test_output || true`; \
+	xc_pass=`grep -c '^Test Case.*passed' $(TEST_LOG) || true`; \
+	xc_fail=`grep -c '^Test Case.*failed' $(TEST_LOG) || true`; \
+	st_line=`grep 'Test run with' $(TEST_LOG) || true`; \
 	st_total=`echo "$$st_line" | sed -n 's/.*with \([0-9]*\) tests.*/\1/p'`; \
 	st_total=$${st_total:-0}; \
 	xc_pass=$${xc_pass:-0}; \
@@ -50,8 +57,37 @@ test:
 	total=`expr $$xc_pass + $$xc_fail + $$st_total`; \
 	fail=$$xc_fail; \
 	echo ""; \
+	if [ $$exit_code -ne 0 ] || [ $$fail -ne 0 ]; then \
+		echo "── FAILURES ──"; \
+		grep -E '✘|FAIL|failed|error:' $(TEST_LOG) | head -20; \
+		echo ""; \
+	fi; \
 	echo "── Combined: $$total tests (`expr $$xc_pass + $$xc_fail` XCTest + $$st_total Swift Testing), $$fail failures ──"; \
-	rm -f .test_output; \
+	echo "Full log: $(TEST_LOG)"; \
+	exit $$exit_code
+
+# Run all tests including Keychain-dependent suites (requires macOS login Keychain access).
+test-all:
+	@echo "Running all tests (including Keychain + slow)… output → $(TEST_LOG)"
+	@cd VoiceKit && VOICE_TEST_KEYCHAIN=1 VOICE_TEST_SLOW=1 swift test > $(TEST_LOG) 2>&1; \
+	exit_code=$$?; \
+	xc_pass=`grep -c '^Test Case.*passed' $(TEST_LOG) || true`; \
+	xc_fail=`grep -c '^Test Case.*failed' $(TEST_LOG) || true`; \
+	st_line=`grep 'Test run with' $(TEST_LOG) || true`; \
+	st_total=`echo "$$st_line" | sed -n 's/.*with \([0-9]*\) tests.*/\1/p'`; \
+	st_total=$${st_total:-0}; \
+	xc_pass=$${xc_pass:-0}; \
+	xc_fail=$${xc_fail:-0}; \
+	total=`expr $$xc_pass + $$xc_fail + $$st_total`; \
+	fail=$$xc_fail; \
+	echo ""; \
+	if [ $$exit_code -ne 0 ] || [ $$fail -ne 0 ]; then \
+		echo "── FAILURES ──"; \
+		grep -E '✘|FAIL|failed|error:' $(TEST_LOG) | head -20; \
+		echo ""; \
+	fi; \
+	echo "── Combined: $$total tests (`expr $$xc_pass + $$xc_fail` XCTest + $$st_total Swift Testing), $$fail failures ──"; \
+	echo "Full log: $(TEST_LOG)"; \
 	exit $$exit_code
 
 # Clean build artifacts
@@ -69,15 +105,15 @@ $(PROJECT): project.yml
 	$(MAKE) generate
 
 # ---------------------------------------------------------------------------
-# Release pipeline: archive → sign → zip → notarize → staple → appcast
+# Release pipeline: archive → sign → dmg → notarize → staple → appcast
 # ---------------------------------------------------------------------------
 
 # Full release pipeline
-release: archive sign notarize appcast
+release: archive sign dmg notarize appcast
 	@echo ""
 	@echo "══════════════════════════════════════════════════"
 	@echo "  Release complete!"
-	@echo "  ZIP:     $(ZIP_PATH)"
+	@echo "  DMG:     $(DMG_PATH)"
 	@echo "  Appcast: $(RELEASE_DIR)/appcast.xml"
 	@echo "══════════════════════════════════════════════════"
 
@@ -129,28 +165,38 @@ sign:
 		$(APP_PATH)
 	@echo "── Verifying signature ──"
 	codesign --verify --deep --strict --verbose=2 $(APP_PATH)
-	@echo "── Creating ZIP ──"
-	@mkdir -p $(RELEASE_DIR)
-	@rm -f $(ZIP_PATH)
-	@cd build && ditto -c -k --keepParent Voice.app ../$(ZIP_PATH)
-	@echo "  $(ZIP_PATH) ($$(du -h $(ZIP_PATH) | cut -f1))"
+	@echo "── Stripping extended attributes ──"
+	xattr -cr $(APP_PATH)
 
-# Submit ZIP to Apple notarization and staple the ticket
+# Create a DMG with the signed app and an Applications symlink
+dmg:
+	@echo "── Creating DMG ──"
+	@rm -rf $(DMG_STAGING)
+	@mkdir -p $(DMG_STAGING)
+	@cp -R $(APP_PATH) $(DMG_STAGING)/
+	@ln -s /Applications $(DMG_STAGING)/Applications
+	@mkdir -p $(RELEASE_DIR)
+	@rm -f $(DMG_PATH)
+	hdiutil create -volname "Voice" -srcfolder $(DMG_STAGING) -ov -format UDZO $(DMG_PATH)
+	@rm -rf $(DMG_STAGING)
+	@echo "  $(DMG_PATH) ($$(du -h $(DMG_PATH) | cut -f1))"
+
+# Submit DMG to Apple notarization and staple the ticket
 notarize:
-	@echo "── Submitting to Apple notarization ──"
-	xcrun notarytool submit $(ZIP_PATH) \
+	@echo "── Submitting DMG to Apple notarization ──"
+	xcrun notarytool submit $(DMG_PATH) \
 		--keychain-profile "$(NOTARIZE_PROFILE)" \
 		--wait
-	@echo "── Stapling notarization ticket ──"
-	xcrun stapler staple $(APP_PATH)
-	@echo "── Re-creating ZIP with stapled ticket ──"
-	@rm -f $(ZIP_PATH)
-	@cd build && ditto -c -k --keepParent Voice.app ../$(ZIP_PATH)
-	@echo "  $(ZIP_PATH) ($$(du -h $(ZIP_PATH) | cut -f1))"
+	@echo "── Stapling notarization ticket to DMG ──"
+	xcrun stapler staple $(DMG_PATH)
+	@echo "  $(DMG_PATH) ($$(du -h $(DMG_PATH) | cut -f1))"
 	@echo "── Verifying Gatekeeper approval ──"
-	spctl --assess --type execute --verbose=2 $(APP_PATH)
+	@# DMGs are notarized but not code-signed. Verify the app inside.
+	hdiutil attach $(DMG_PATH) -nobrowse -quiet
+	spctl --assess --type execute --verbose=2 /Volumes/Voice/Voice.app
+	hdiutil detach /Volumes/Voice -quiet
 
-# Generate or update appcast.xml from the release ZIP
+# Generate or update appcast.xml from the release DMG
 appcast:
 ifeq ($(SPARKLE_BIN),)
 	$(error "Sparkle tools not found. Run 'make build' first to fetch the Sparkle package.")
