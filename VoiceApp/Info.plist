@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice needs access to your microphone to capture speech for transcription.</string>
+	<key>SUPublicEDKey</key>
+	<string>PLACEHOLDER_EDDSA_PUBLIC_KEY</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

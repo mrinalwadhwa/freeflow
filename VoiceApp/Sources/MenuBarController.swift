@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import VoiceKit
 
 /// Build and manage the menu bar status item, icon, and dropdown menu.
@@ -20,12 +21,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var transcriptBuffer: TranscriptBuffer?
     private var textInjector: (any TextInjecting)?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
+    private var updaterService: UpdaterService?
     private var shortcuts: ShortcutConfiguration = .default
 
     // MARK: - Menu items that need dynamic updates
 
     private var pasteItem: NSMenuItem?
     private var micSubmenuItem: NSMenuItem?
+    private var checkForUpdatesItem: NSMenuItem?
     private var statusMenuItem: NSMenuItem?
 
     // MARK: - State tracking
@@ -51,6 +54,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         transcriptBuffer: TranscriptBuffer? = nil,
         textInjector: (any TextInjecting)? = nil,
         audioDeviceProvider: (any AudioDeviceProviding)? = nil,
+        updaterService: UpdaterService? = nil,
         shortcuts: ShortcutConfiguration = .default,
         hotkeyRegistered: Bool = false
     ) {
@@ -59,6 +63,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.transcriptBuffer = transcriptBuffer
         self.textInjector = textInjector
         self.audioDeviceProvider = audioDeviceProvider
+        self.updaterService = updaterService
         self.shortcuts = shortcuts
         self.hotkeyRegistered = hotkeyRegistered
 
@@ -136,6 +141,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // --- Updates ---
+
+        let checkForUpdates = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(checkForUpdatesAction),
+            keyEquivalent: ""
+        )
+        checkForUpdates.target = self
+        checkForUpdates.isEnabled = updaterService?.canCheckForUpdates ?? false
+        menu.addItem(checkForUpdates)
+        checkForUpdatesItem = checkForUpdates
+
+        menu.addItem(.separator())
+
         // --- App ---
 
         let about = NSMenuItem(
@@ -164,6 +183,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshPasteItem()
         refreshMicSubmenu()
+        refreshCheckForUpdatesItem()
         refreshStatusItem()
     }
 
@@ -219,6 +239,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 submenu.addItem(item)
             }
         }
+    }
+
+    private func refreshCheckForUpdatesItem() {
+        checkForUpdatesItem?.isEnabled = updaterService?.canCheckForUpdates ?? false
     }
 
     private func refreshStatusItem() {
@@ -288,6 +312,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 debugPrint("[MenuBar] Failed to select microphone: \(error)")
             }
         }
+    }
+
+    @objc private func checkForUpdatesAction() {
+        updaterService?.checkForUpdates()
     }
 
     @objc private func showAbout() {

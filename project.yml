@@ -15,6 +15,9 @@ settings:
 packages:
   VoiceKit:
     path: VoiceKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.0
 
 targets:
   VoiceApp:
@@ -34,6 +37,7 @@ targets:
         COMBINE_HIDPI_IMAGES: true
     dependencies:
       - package: VoiceKit
+      - package: Sparkle
     entitlements:
       path: VoiceApp/Voice.entitlements
       properties:

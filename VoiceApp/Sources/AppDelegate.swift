@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let keychain = KeychainService()
     private let authClient = AuthClient()
     private let capabilitiesService = CapabilitiesService()
+    private var updaterService: UpdaterService?
 
     // MARK: - Controllers
 
@@ -37,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         setupPipeline()
         setupHUD()
+        setupUpdater()
         setupMenuBarState()
 
         // Process any voice:// URLs received before launch finished.
@@ -142,7 +144,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Proceed to permissions and hotkey.
                 checkPermissions()
 
-                // Check capabilities in the background.
+                // Check capabilities in the background, then start the
+                // updater once the appcast URL is cached.
                 checkCapabilitiesInBackground()
 
             } catch let error as AuthClient.AuthError where error.isSessionExpired {
@@ -157,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     "[AppDelegate] Session validation failed (network?): \(error), proceeding optimistically"
                 )
                 checkPermissions()
-                checkCapabilitiesInBackground()
+                checkCapabilitiesInBackground(startUpdater: true)
             }
         }
     }
@@ -180,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Capabilities
 
-    private func checkCapabilitiesInBackground() {
+    private func checkCapabilitiesInBackground(startUpdater: Bool = true) {
         let config = ServiceConfig.shared
 
         Task {
@@ -193,6 +196,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // If email is required and user doesn't have one, prompt.
                 if caps.emailOtp && !UserDefaults.standard.bool(forKey: "hasEmailOnFile") {
                     evaluateEmailPrompt(capabilities: caps)
+                }
+
+                // Start the updater now that the appcast URL is cached.
+                if startUpdater {
+                    updaterService?.startIfNeeded()
                 }
             } catch {
                 Log.debug("[AppDelegate] Capabilities check failed: \(error)")
@@ -255,6 +263,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         onboardingController = controller
         return controller
+    }
+
+    // MARK: - Updater
+
+    private func setupUpdater() {
+        let service = UpdaterService(capabilitiesService: capabilitiesService)
+        updaterService = service
     }
 
     // MARK: - Menu Bar
@@ -342,6 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptBuffer: transcriptBuffer,
             textInjector: textInjector,
             audioDeviceProvider: audioDeviceProvider,
+            updaterService: updaterService,
             shortcuts: .default
         )
         menuBarController = controller
