@@ -224,48 +224,8 @@
             }
 
             /* ---------------------------------------------------------- */
-            /* Hotkey visual                                               */
+            /* Hotkey steps                                                */
             /* ---------------------------------------------------------- */
-
-            .hotkey-demo {
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                margin-bottom: 1.5rem;
-                padding: 1.5rem;
-                background: var(--color-surface);
-                border: 1px solid var(--color-border-light);
-                border-radius: 16px;
-            }
-
-            .key-cap {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-width: 80px;
-                padding: 0.375rem 0.75rem;
-                background: var(--color-white);
-                border: 1px solid var(--color-border);
-                border-bottom-width: 2px;
-                border-radius: 8px;
-                font-size: 0.8125rem;
-                font-weight: 600;
-                line-height: 1.5rem;
-                color: var(--color-text);
-                white-space: nowrap;
-            }
-
-            .hotkey-arrow {
-                color: var(--color-light);
-                font-size: 1.125rem;
-                flex-shrink: 0;
-            }
-
-            .hotkey-label {
-                font-size: 0.8125rem;
-                line-height: 1.384615;
-                color: var(--color-muted);
-            }
 
             .hotkey-steps {
                 text-align: left;
@@ -348,11 +308,83 @@
                 background: var(--color-green-bg);
             }
 
-            .try-it-hint {
-                font-size: 0.8125rem;
-                color: var(--color-light);
+            .try-it-area textarea.try-it-has-text {
+                border-color: var(--color-green);
+                background: var(--color-surface);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Mic selector                                                */
+            /* ---------------------------------------------------------- */
+
+            .mic-selector {
+                width: 100%;
+                max-width: 340px;
                 margin-bottom: 1.5rem;
+            }
+
+            .mic-level-container {
+                width: 100%;
+                max-width: 340px;
+                margin-bottom: 1.5rem;
+            }
+
+            .mic-level-label {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                margin-bottom: 0.5rem;
+            }
+
+            .mic-level-label .mic-icon {
+                font-size: 1rem;
+            }
+
+            .mic-level-bar {
+                width: 100%;
+                height: 6px;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 3px;
+                overflow: hidden;
+            }
+
+            .mic-level-fill {
+                height: 100%;
+                width: 0%;
+                background: var(--color-green);
+                border-radius: 2px;
+                transition: width 0.05s ease-out;
+            }
+
+            .mic-level-fill.active {
+                background: linear-gradient(90deg, var(--color-green) 0%, #4ade80 100%);
+            }
+
+            .mic-selector select {
+                width: 100%;
+                padding: 0.5rem 2rem 0.5rem 0.75rem;
+                font-size: 0.875rem;
+                font-family: inherit;
                 line-height: 1.5rem;
+                color: var(--color-text);
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 10px;
+                appearance: none;
+                -webkit-appearance: none;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%237A7775' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+                background-repeat: no-repeat;
+                background-position: right 0.75rem center;
+                cursor: pointer;
+                transition: border-color 0.2s;
+            }
+
+            .mic-selector select:focus {
+                outline: none;
+                border-color: var(--color-text);
             }
 
             .try-it-success-msg {
@@ -364,6 +396,14 @@
                 font-weight: 500;
                 line-height: 1.5rem;
                 margin-bottom: 0.75rem;
+                visibility: hidden;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+
+            .try-it-success-msg.visible {
+                visibility: visible;
+                opacity: 1;
             }
 
             /* ---------------------------------------------------------- */
@@ -524,11 +564,38 @@
             </section>
 
             <!-- ====================================================== -->
-            <!-- Screen 4: How it works                                  -->
+            <!-- Screen 4: Select microphone                             -->
             <!-- ====================================================== -->
-            <section class="step-section step-hidden" data-step="how-it-works">
-                <div class="step-icon step-icon-warm">&#9000;</div>
-                <h1>How it works</h1>
+            <section class="step-section step-hidden" data-step="microphone-select">
+                <div class="step-icon step-icon-warm">&#127908;</div>
+                <h1>Select your microphone</h1>
+                <p>Choose the microphone you want to use for dictation.</p>
+
+                <div class="mic-selector">
+                    <select id="mic-select"></select>
+                </div>
+
+                <div class="mic-level-container">
+                    <div class="mic-level-label">
+                        <span class="mic-icon">&#127908;</span>
+                        <span>Speak to test your microphone</span>
+                    </div>
+                    <div class="mic-level-bar">
+                        <div id="mic-level-fill" class="mic-level-fill"></div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button id="mic-select-continue" class="btn btn-primary">Continue</button>
+                </div>
+            </section>
+
+            <!-- ====================================================== -->
+            <!-- Screen 5: Try it (instructions + live test)             -->
+            <!-- ====================================================== -->
+            <section class="step-section step-hidden" data-step="try-it">
+                <div class="step-icon step-icon-warm">&#127911;</div>
+                <h1>Try it</h1>
 
                 <div class="hotkey-steps">
                     <div class="hotkey-step">
@@ -542,27 +609,10 @@
                     <div class="hotkey-step">
                         <div class="hotkey-step-num">3</div>
                         <div class="hotkey-step-text">
-                            <strong>Release</strong> the key. Polished text appears at your cursor.
+                            <strong>Release</strong> the key. Polished text appears below.
                         </div>
                     </div>
                 </div>
-
-                <div class="hotkey-demo">
-                    <div class="key-cap">&#8997; Option</div>
-                    <div class="hotkey-arrow">&#8594;</div>
-                    <div class="hotkey-label">Hold to speak,<br />release to type</div>
-                </div>
-
-                <button id="how-it-works-continue" class="btn btn-primary">Try it now</button>
-            </section>
-
-            <!-- ====================================================== -->
-            <!-- Screen 5: Try it                                        -->
-            <!-- ====================================================== -->
-            <section class="step-section step-hidden" data-step="try-it">
-                <div class="step-icon step-icon-green">&#127911;</div>
-                <h1>Give it a try</h1>
-                <p>Hold the Right Option key, say something, then release. Your text will appear below.</p>
 
                 <div class="try-it-area">
                     <textarea
@@ -572,9 +622,7 @@
                     ></textarea>
                 </div>
 
-                <div class="try-it-hint">Hold Right Option and speak</div>
-
-                <div id="try-it-success" class="try-it-success-msg hidden">&#10003; It works!</div>
+                <div id="try-it-success" class="try-it-success-msg">&#10003; It works!</div>
 
                 <div class="btn-row">
                     <button id="try-it-done" class="btn btn-primary" disabled>Continue</button>

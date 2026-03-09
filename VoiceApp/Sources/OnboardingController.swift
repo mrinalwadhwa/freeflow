@@ -1,6 +1,16 @@
 import AVFoundation
 import AppKit
+import OSLog
 import VoiceKit
+
+/// Provide audio capture for mic preview during onboarding.
+protocol AudioPreviewProviding: AnyObject {
+    func startRecording() async throws
+    func stopRecording() async throws -> VoiceKit.AudioBuffer
+    var audioLevelStream: AsyncStream<Float>? { get }
+}
+
+extension AudioCaptureProvider: AudioPreviewProviding {}
 
 /// Coordinate bridge actions from the onboarding web pages with native
 /// services. Each bridge action is handled by calling the appropriate
@@ -37,8 +47,17 @@ final class OnboardingController {
     /// The accessibility permission provider, set by AppDelegate.
     var permissionProvider: (any PermissionProviding)?
 
+    /// The audio device provider for mic selection, set by AppDelegate.
+    var audioDeviceProvider: CoreAudioDeviceProvider?
+
+    /// The audio capture provider for mic preview, set by AppDelegate.
+    var audioPreviewProvider: AudioPreviewProviding?
+
     /// Polling timer for accessibility permission checks.
     private var accessibilityPollTimer: Timer?
+
+    /// Task for streaming audio levels during mic preview.
+    private var audioLevelTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
@@ -62,7 +81,10 @@ final class OnboardingController {
     /// Open the onboarding window and navigate to the given path.
     ///
     /// If the window already exists, it navigates to the new path
-    /// without recreating it.
+    /// without recreating it. When no service URL is configured yet
+    /// (fresh install before an invite link is clicked), the window
+    /// is presented empty and waits for a `voice://connect` URL to
+    /// provide the service URL.
     ///
     /// - Parameter path: The path to load, e.g. `/onboarding/?token=abc`.
     func showWindow(path: String) {
@@ -73,7 +95,15 @@ final class OnboardingController {
         }
 
         let baseURL = config.baseURL
-        window?.navigate(baseURL: baseURL, path: path)
+        // Only navigate if we have a real service URL. The localhost
+        // fallback means no Keychain URL and no env var, so the zone
+        // is unreachable. Show a placeholder page until handleConnectURL
+        // stores a service URL and navigates.
+        if !baseURL.contains("localhost") {
+            window?.navigate(baseURL: baseURL, path: path)
+        } else {
+            window?.loadWaitingPlaceholder()
+        }
         window?.present()
     }
 
@@ -124,6 +154,7 @@ final class OnboardingController {
     /// Dismiss the onboarding window and clean up.
     func dismissWindow() {
         stopAccessibilityPolling()
+        handleStopMicPreview()
         window?.dismiss()
         window = nil
     }
@@ -153,6 +184,22 @@ final class OnboardingController {
 
         bridge.onRequestMicrophone = { [weak self] in
             self?.handleRequestMicrophone()
+        }
+
+        bridge.onListMicrophones = { [weak self] in
+            self?.handleListMicrophones()
+        }
+
+        bridge.onSelectMicrophone = { [weak self] id in
+            self?.handleSelectMicrophone(id: id)
+        }
+
+        bridge.onStartMicPreview = { [weak self] in
+            self?.handleStartMicPreview()
+        }
+
+        bridge.onStopMicPreview = { [weak self] in
+            self?.handleStopMicPreview()
         }
 
         bridge.onRegisterHotkey = { [weak self] in
@@ -235,15 +282,136 @@ final class OnboardingController {
         UserDefaults.standard.set(email, forKey: "userEmail")
     }
 
+    // MARK: - Action: listMicrophones
+
+    private func handleListMicrophones() {
+        guard let audioDeviceProvider else { return }
+        Task {
+            let devices = await audioDeviceProvider.availableDevices()
+            let current = await audioDeviceProvider.currentDevice()
+
+            let deviceList: [[String: Any]] = devices.map { device in
+                [
+                    "id": device.id,
+                    "name": device.name,
+                    "isDefault": device.isDefault,
+                ]
+            }
+
+            bridge.pushMicrophoneList(
+                devices: deviceList,
+                currentId: current?.id
+            )
+        }
+    }
+
+    // MARK: - Action: selectMicrophone
+
+    private func handleSelectMicrophone(id: UInt32) {
+        guard let audioDeviceProvider, let audioPreviewProvider else { return }
+        Task {
+            do {
+                // Stop current preview and wait for it to complete.
+                await stopMicPreviewAsync()
+
+                // Select the new device.
+                try await audioDeviceProvider.selectDevice(id: id)
+                NSLog("[OnboardingController] Selected mic id=%d", id)
+                bridge.pushMicrophoneSelected(id: id)
+
+                // Small delay to let the audio system settle after device change.
+                try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+
+                // Start preview with the new device.
+                await startMicPreviewAsync()
+            } catch {
+                NSLog("[OnboardingController] selectMicrophone failed: %@", "\(error)")
+            }
+        }
+    }
+
+    // MARK: - Action: startMicPreview
+
+    private func handleStartMicPreview() {
+        Task {
+            await startMicPreviewAsync()
+        }
+    }
+
+    private func startMicPreviewAsync() async {
+        guard let audioPreviewProvider else {
+            NSLog("[OnboardingController] startMicPreview: no audioPreviewProvider")
+            return
+        }
+
+        // Stop any existing preview first.
+        await stopMicPreviewAsync()
+
+        do {
+            NSLog("[OnboardingController] Starting mic preview")
+            try await audioPreviewProvider.startRecording()
+            NSLog("[OnboardingController] Mic preview started, setting up level stream")
+
+            // Stream audio levels to the bridge.
+            audioLevelTask = Task { [weak self] in
+                guard let stream = audioPreviewProvider.audioLevelStream else {
+                    NSLog("[OnboardingController] No audio level stream available")
+                    return
+                }
+                NSLog("[OnboardingController] Audio level stream started")
+                for await level in stream {
+                    if Task.isCancelled { break }
+                    await MainActor.run {
+                        self?.bridge.pushAudioLevel(level: level)
+                    }
+                }
+                NSLog("[OnboardingController] Audio level stream ended")
+            }
+        } catch {
+            NSLog("[OnboardingController] startMicPreview failed: %@", "\(error)")
+        }
+    }
+
+    // MARK: - Action: stopMicPreview
+
+    private func handleStopMicPreview() {
+        Task {
+            await stopMicPreviewAsync()
+        }
+    }
+
+    private func stopMicPreviewAsync() async {
+        audioLevelTask?.cancel()
+        audioLevelTask = nil
+
+        guard let audioPreviewProvider else { return }
+        NSLog("[OnboardingController] Stopping mic preview")
+        _ = try? await audioPreviewProvider.stopRecording()
+        NSLog("[OnboardingController] Mic preview stopped")
+    }
+
     // MARK: - Action: checkAccessibility
 
     private func handleCheckAccessibility() {
         let granted = permissionProvider?.checkAccessibility() == .granted
-        let micGranted = UserDefaults.standard.bool(forKey: "microphoneGranted")
+
+        // Check the actual system microphone authorization status rather
+        // than relying on a UserDefaults flag that may not be set if the
+        // permission was granted outside the onboarding flow.
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let micGranted = micStatus == .authorized
+        if micGranted {
+            UserDefaults.standard.set(true, forKey: "microphoneGranted")
+        }
+
+        NSLog(
+            "[OnboardingController] checkAccessibility: ax=%@, mic=%@",
+            granted ? "granted" : "denied",
+            micGranted ? "granted" : (micStatus == .denied ? "denied" : "unknown"))
 
         bridge.pushPermissionStatus(
             accessibility: granted ? "granted" : "denied",
-            microphone: micGranted ? "granted" : "unknown"
+            microphone: micGranted ? "granted" : (micStatus == .denied ? "denied" : "unknown")
         )
 
         // Start polling every 2s until granted.
@@ -271,11 +439,16 @@ final class OnboardingController {
 
     private func pollAccessibility() {
         let granted = permissionProvider?.checkAccessibility() == .granted
-        let micGranted = UserDefaults.standard.bool(forKey: "microphoneGranted")
+
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let micGranted = micStatus == .authorized
+        if micGranted {
+            UserDefaults.standard.set(true, forKey: "microphoneGranted")
+        }
 
         bridge.pushPermissionStatus(
             accessibility: granted ? "granted" : "denied",
-            microphone: micGranted ? "granted" : "unknown"
+            microphone: micGranted ? "granted" : (micStatus == .denied ? "denied" : "unknown")
         )
 
         if granted {
@@ -298,6 +471,10 @@ final class OnboardingController {
             if granted {
                 UserDefaults.standard.set(true, forKey: "microphoneGranted")
             }
+
+            NSLog(
+                "[OnboardingController] requestMicrophone result: %@",
+                granted ? "granted" : "denied")
 
             let accGranted = permissionProvider?.checkAccessibility() == .granted
             bridge.pushPermissionStatus(

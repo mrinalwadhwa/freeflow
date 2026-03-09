@@ -18,6 +18,10 @@ import WebKit
 ///   - checkAccessibility: { action }
 ///   - openAccessibilitySettings: { action }
 ///   - requestMicrophone: { action }
+///   - listMicrophones: { action }
+///   - selectMicrophone: { action, data: { id } }
+///   - startMicPreview: { action }
+///   - stopMicPreview: { action }
 ///   - registerHotkey: { action }
 ///   - completeOnboarding: { action }
 ///
@@ -25,6 +29,9 @@ import WebKit
 ///   - inviteRedeemed: { event, userId, hasEmail }
 ///   - inviteRedeemFailed: { event, error }
 ///   - permissionStatus: { event, accessibility, microphone }
+///   - microphoneList: { event, devices: [...], currentId }
+///   - microphoneSelected: { event, id }
+///   - audioLevel: { event, level }
 ///   - dictationResult: { event, text }
 ///   - tokenStored: { event }
 @MainActor
@@ -42,6 +49,10 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
     var onCheckAccessibility: (() -> Void)?
     var onOpenAccessibilitySettings: (() -> Void)?
     var onRequestMicrophone: (() -> Void)?
+    var onListMicrophones: (() -> Void)?
+    var onSelectMicrophone: ((_ id: UInt32) -> Void)?
+    var onStartMicPreview: (() -> Void)?
+    var onStopMicPreview: (() -> Void)?
     var onRegisterHotkey: (() -> Void)?
     var onCompleteOnboarding: (() -> Void)?
 
@@ -63,19 +74,24 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
             return
         }
 
+        // The JS bridge wraps payload fields inside a "data" key:
+        //   bridge.send("redeemInvite", { token: "abc" })
+        // becomes { action: "redeemInvite", data: { token: "abc" } }.
+        let data = body["data"] as? [String: Any] ?? [:]
+
         switch action {
         case "redeemInvite":
-            if let token = body["token"] as? String {
+            if let token = data["token"] as? String {
                 onRedeemInvite?(token)
             }
 
         case "storeToken":
-            if let token = body["token"] as? String {
+            if let token = data["token"] as? String {
                 onStoreToken?(token)
             }
 
         case "emailAdded":
-            if let email = body["email"] as? String {
+            if let email = data["email"] as? String {
                 onEmailAdded?(email)
             }
 
@@ -87,6 +103,22 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
         case "requestMicrophone":
             onRequestMicrophone?()
+
+        case "listMicrophones":
+            onListMicrophones?()
+
+        case "selectMicrophone":
+            if let idNumber = data["id"] as? NSNumber {
+                onSelectMicrophone?(idNumber.uint32Value)
+            } else if let idInt = data["id"] as? Int {
+                onSelectMicrophone?(UInt32(idInt))
+            }
+
+        case "startMicPreview":
+            onStartMicPreview?()
+
+        case "stopMicPreview":
+            onStopMicPreview?()
 
         case "registerHotkey":
             onRegisterHotkey?()
@@ -156,6 +188,25 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
                 "accessibility": accessibility,
                 "microphone": microphone,
             ])
+    }
+
+    /// Push a microphoneList event with available devices.
+    func pushMicrophoneList(devices: [[String: Any]], currentId: UInt32?) {
+        var data: [String: Any] = ["devices": devices]
+        if let currentId {
+            data["currentId"] = currentId
+        }
+        pushEvent(name: "microphoneList", data: data)
+    }
+
+    /// Push a microphoneSelected confirmation event.
+    func pushMicrophoneSelected(id: UInt32) {
+        pushEvent(name: "microphoneSelected", data: ["id": id])
+    }
+
+    /// Push an audioLevel event with the current RMS level.
+    func pushAudioLevel(level: Float) {
+        pushEvent(name: "audioLevel", data: ["level": level])
     }
 
     /// Push a dictationResult event.
