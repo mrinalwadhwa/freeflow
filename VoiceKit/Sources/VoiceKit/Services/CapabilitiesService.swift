@@ -12,7 +12,7 @@ public final class CapabilitiesService: @unchecked Sendable {
     private let defaults: UserDefaults
 
     /// UserDefaults key for the cached capabilities JSON.
-    private static let cacheKey = "com.buildtrust.voice.capabilities"
+    private static let cacheKey = "computer.autonomy.voice.capabilities"
 
     public init(
         session: URLSession = .shared,

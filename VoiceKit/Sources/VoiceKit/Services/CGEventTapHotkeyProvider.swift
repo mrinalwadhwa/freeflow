@@ -88,7 +88,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
                 CGEvent.tapEnable(tap: tap, enable: true)
                 CFRunLoopRun()
             }
-            thread.name = "com.buildtrust.voice.hotkey"
+            thread.name = "computer.autonomy.voice.hotkey"
             thread.qualityOfService = .userInteractive
             self.tapThread = thread
             thread.start()

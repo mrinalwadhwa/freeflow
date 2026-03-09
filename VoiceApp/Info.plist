@@ -25,7 +25,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice needs access to your microphone to capture speech for transcription.</string>
 	<key>SUPublicEDKey</key>
-	<string>PLACEHOLDER_EDDSA_PUBLIC_KEY</string>
+	<string>SGVZHUaaj05vmgHozFiH4i1OI8WAAGKCXLLNY0BPZPg=</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -34,7 +34,7 @@
 				<string>voice</string>
 			</array>
 			<key>CFBundleURLName</key>
-			<string>com.buildtrust.voice</string>
+			<string>computer.autonomy.voice</string>
 		</dict>
 	</array>
 </dict>

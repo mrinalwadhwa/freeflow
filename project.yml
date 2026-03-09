@@ -1,16 +1,27 @@
 name: Voice
 options:
-  bundleIdPrefix: com.buildtrust
+  bundleIdPrefix: computer.autonomy
   deploymentTarget:
     macOS: "13.0"
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
   groupSortPosition: top
 
+configs:
+  Debug: debug
+  Release: release
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "13.0"
+  configs:
+    Release:
+      ENABLE_HARDENED_RUNTIME: true
+      CODE_SIGN_IDENTITY: "Developer ID Application"
+      DEVELOPMENT_TEAM: "3A56YKKGA5"
+      CODE_SIGN_STYLE: Manual
+      OTHER_CODE_SIGN_FLAGS: "--timestamp"
 
 packages:
   VoiceKit:
@@ -28,7 +39,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Voice
-        PRODUCT_BUNDLE_IDENTIFIER: com.buildtrust.voice
+        PRODUCT_BUNDLE_IDENTIFIER: computer.autonomy.voice
         INFOPLIST_FILE: VoiceApp/Info.plist
         CODE_SIGN_ENTITLEMENTS: VoiceApp/Voice.entitlements
         ENABLE_APP_SANDBOX: false

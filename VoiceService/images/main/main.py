@@ -231,7 +231,7 @@ async def capabilities():
     """
     appcast_url = os.environ.get(
         "APPCAST_URL",
-        "https://voice.autonomy.computer/appcast.xml",
+        "https://autonomy.computer/voice/appcast.xml",
     )
     email_caps = await email_config.get_capabilities()
     return {

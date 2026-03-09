@@ -3,7 +3,7 @@ import Security
 
 /// Store and retrieve session credentials from the macOS Keychain.
 ///
-/// Each item is stored under the service name `com.buildtrust.voice`
+/// Each item is stored under the service name `computer.autonomy.voice`
 /// with a distinct account key. The session token and service URL are
 /// stored as separate items so they can be updated independently.
 public final class KeychainService: @unchecked Sendable {
@@ -16,7 +16,7 @@ public final class KeychainService: @unchecked Sendable {
         static let serviceURL = "service-url"
     }
 
-    public init(service: String = "com.buildtrust.voice") {
+    public init(service: String = "computer.autonomy.voice") {
         self.service = service
     }
 

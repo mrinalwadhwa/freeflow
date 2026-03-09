@@ -12,7 +12,7 @@ struct KeychainServiceTests {
     /// with the real app's Keychain entries.
     private func makeKeychain() -> KeychainService {
         let id = UUID().uuidString.prefix(8)
-        return KeychainService(service: "com.buildtrust.voice.test.\(id)")
+        return KeychainService(service: "computer.autonomy.voice.test.\(id)")
     }
 
     @Test("Save and retrieve session token")
@@ -146,7 +146,7 @@ struct KeychainServiceTests {
 
     @Test("Two KeychainService instances with same service share data")
     func sharedService() {
-        let serviceName = "com.buildtrust.voice.test.shared.\(UUID().uuidString.prefix(8))"
+        let serviceName = "computer.autonomy.voice.test.shared.\(UUID().uuidString.prefix(8))"
         let keychain1 = KeychainService(service: serviceName)
         let keychain2 = KeychainService(service: serviceName)
         defer { keychain1.deleteAll() }
@@ -179,7 +179,7 @@ struct ServiceConfigLayeredTests {
 
     private func makeKeychain() -> KeychainService {
         let id = UUID().uuidString.prefix(8)
-        return KeychainService(service: "com.buildtrust.voice.test.\(id)")
+        return KeychainService(service: "computer.autonomy.voice.test.\(id)")
     }
 
     @Test("baseURL returns Keychain value when present")

@@ -1,6 +1,9 @@
 # Scratch/research docs
 .scratch/
 
+# Release artifacts (signed ZIPs, appcast)
+releases/
+
 # Temp test output (created by make test)
 .test_output
 

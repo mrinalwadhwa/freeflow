@@ -174,7 +174,7 @@ struct DictationProviderTests {
     @Test("DictationProvider reads baseURL from ServiceConfig at request time")
     func dictationProviderDynamicBaseURL() throws {
         let keychain = KeychainService(
-            service: "com.buildtrust.voice.test.\(UUID().uuidString.prefix(8))")
+            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
         defer { keychain.deleteAll() }
 
         let config = ServiceConfig(keychain: keychain)
@@ -198,7 +198,7 @@ struct DictationProviderTests {
     @Test("DictationProvider uses explicit overrides over ServiceConfig")
     func dictationProviderExplicitOverrides() throws {
         let keychain = KeychainService(
-            service: "com.buildtrust.voice.test.\(UUID().uuidString.prefix(8))")
+            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
         defer { keychain.deleteAll() }
 
         keychain.saveServiceURL("https://keychain-url.example.com")
@@ -224,7 +224,7 @@ struct DictationProviderTests {
     @Test("DictationProvider picks up credential changes between requests")
     func dictationProviderCredentialRotation() throws {
         let keychain = KeychainService(
-            service: "com.buildtrust.voice.test.\(UUID().uuidString.prefix(8))")
+            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
         defer { keychain.deleteAll() }
 
         let config = ServiceConfig(keychain: keychain)
@@ -255,7 +255,7 @@ struct DictationProviderTests {
     @Test("StreamingProvider reads baseURL from ServiceConfig at connection time")
     func streamingProviderDynamicConfig() {
         let keychain = KeychainService(
-            service: "com.buildtrust.voice.test.\(UUID().uuidString.prefix(8))")
+            service: "computer.autonomy.voice.test.\(UUID().uuidString.prefix(8))")
         defer { keychain.deleteAll() }
 
         let config = ServiceConfig(keychain: keychain)
