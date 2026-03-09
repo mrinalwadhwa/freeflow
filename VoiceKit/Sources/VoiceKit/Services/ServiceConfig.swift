@@ -92,13 +92,13 @@ public final class ServiceConfig: @unchecked Sendable {
 
     /// Base URL from the shared instance.
     ///
-    /// Preserves the existing call-site pattern `ServiceConfig.baseURL`
-    /// used by VoiceServiceDictationProvider and
-    /// VoiceServiceStreamingProvider.
+    /// Convenience accessor for call sites that don't hold a reference
+    /// to a specific `ServiceConfig` instance.
     public static var baseURL: String { shared.baseURL }
 
     /// API key from the shared instance.
     ///
-    /// Preserves the existing call-site pattern `ServiceConfig.apiKey`.
+    /// Convenience accessor for call sites that don't hold a reference
+    /// to a specific `ServiceConfig` instance.
     public static var apiKey: String { shared.apiKey }
 }

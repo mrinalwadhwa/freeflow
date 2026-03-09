@@ -5,25 +5,52 @@ import Foundation
 /// Send a WAV file and application context as a multipart form POST.
 /// The server returns polished text ready for injection along with the
 /// raw transcription.
+///
+/// Auth credentials are read from `ServiceConfig` at the point of use
+/// rather than cached at init time. This ensures that credentials
+/// populated during onboarding (after the provider is created) are
+/// picked up automatically.
 public struct VoiceServiceDictationProvider: DictationProviding {
 
-    private let baseURL: String
-    private let apiKey: String
+    /// Explicit overrides for testing. When non-nil these take
+    /// priority over `ServiceConfig`.
+    private let overrideBaseURL: String?
+    private let overrideApiKey: String?
+
+    private let config: ServiceConfig
     private let session: URLSession
+
+    /// Resolved base URL: explicit override if provided, otherwise
+    /// the current value from `ServiceConfig`.
+    private var baseURL: String {
+        overrideBaseURL ?? config.baseURL
+    }
+
+    /// Resolved auth token: explicit override if provided, otherwise
+    /// the current value from `ServiceConfig`.
+    private var apiKey: String {
+        overrideApiKey ?? config.authToken
+    }
 
     /// Create a provider with explicit configuration.
     ///
     /// - Parameters:
-    ///   - baseURL: Base URL of the VoiceService.
-    ///   - apiKey: Bearer token for authentication.
+    ///   - baseURL: Base URL of the VoiceService. When nil, reads from
+    ///     `ServiceConfig` at each request (picks up onboarding changes).
+    ///   - apiKey: Bearer token for authentication. When nil, reads from
+    ///     `ServiceConfig` at each request.
+    ///   - config: The `ServiceConfig` instance to read from when no
+    ///     explicit overrides are provided. Defaults to `.shared`.
     ///   - session: URLSession to use for requests (default: shared).
     public init(
         baseURL: String? = nil,
         apiKey: String? = nil,
+        config: ServiceConfig = .shared,
         session: URLSession? = nil
     ) {
-        self.baseURL = baseURL ?? ServiceConfig.baseURL
-        self.apiKey = apiKey ?? ServiceConfig.apiKey
+        self.overrideBaseURL = baseURL
+        self.overrideApiKey = apiKey
+        self.config = config
 
         if let session {
             self.session = session

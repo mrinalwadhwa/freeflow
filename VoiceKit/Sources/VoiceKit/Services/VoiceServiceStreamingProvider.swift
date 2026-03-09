@@ -33,8 +33,24 @@ import Foundation
 /// and expects `{"type":"pong"}` back from the server.
 public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @unchecked Sendable {
 
-    private let baseURL: String
-    private let apiKey: String
+    /// Explicit overrides for testing. When non-nil these take
+    /// priority over `ServiceConfig`.
+    private let overrideBaseURL: String?
+    private let overrideApiKey: String?
+
+    private let config: ServiceConfig
+
+    /// Resolved base URL: explicit override if provided, otherwise
+    /// the current value from `ServiceConfig`.
+    private var baseURL: String {
+        overrideBaseURL ?? config.baseURL
+    }
+
+    /// Resolved auth token: explicit override if provided, otherwise
+    /// the current value from `ServiceConfig`.
+    private var apiKey: String {
+        overrideApiKey ?? config.authToken
+    }
 
     /// Protects mutable session state across concurrent callers.
     private let lock = NSLock()
@@ -97,11 +113,16 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     /// Create a provider with explicit configuration.
     ///
     /// - Parameters:
-    ///   - baseURL: Base URL of the VoiceService (e.g. "https://...cluster.autonomy.computer").
-    ///   - apiKey: Bearer token for authentication.
-    public init(baseURL: String? = nil, apiKey: String? = nil) {
-        self.baseURL = baseURL ?? ServiceConfig.baseURL
-        self.apiKey = apiKey ?? ServiceConfig.apiKey
+    ///   - baseURL: Base URL of the VoiceService. When nil, reads from
+    ///     `ServiceConfig` at each use (picks up onboarding changes).
+    ///   - apiKey: Bearer token for authentication. When nil, reads from
+    ///     `ServiceConfig` at each use.
+    ///   - config: The `ServiceConfig` instance to read from when no
+    ///     explicit overrides are provided. Defaults to `.shared`.
+    public init(baseURL: String? = nil, apiKey: String? = nil, config: ServiceConfig = .shared) {
+        self.overrideBaseURL = baseURL
+        self.overrideApiKey = apiKey
+        self.config = config
     }
 
     // MARK: - StreamingDictationProviding
