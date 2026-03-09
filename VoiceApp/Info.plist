@@ -24,5 +24,16 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice needs access to your microphone to capture speech for transcription.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>voice</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.buildtrust.voice</string>
+		</dict>
+	</array>
 </dict>
 </plist>
