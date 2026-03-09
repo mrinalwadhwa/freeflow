@@ -68,6 +68,9 @@ async def _validate_session_token(token: str) -> Optional[AuthUser]:
     except Exception:
         return None
 
+    if not isinstance(data, dict):
+        return None
+
     # better-auth returns { session: {...}, user: { id, email, ... } }
     user = data.get("user")
     if not user or not user.get("id"):

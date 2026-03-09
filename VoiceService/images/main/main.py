@@ -33,6 +33,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import admin
 import auth
 import context
 import db
@@ -51,6 +52,7 @@ async def lifespan(app):
     await startup.start_auth()
     await db.open_pool()
     await invite.ensure_table()
+    await admin.ensure_table()
     yield
     await db.close_pool()
     await startup.stop_auth()
@@ -223,6 +225,156 @@ async def capabilities():
         "require_email_deadline": None,
         "appcast_url": appcast_url,
     }
+
+
+# ---------------------------------------------------------------------------
+# /admin/api — admin endpoints for invite and user management
+# ---------------------------------------------------------------------------
+
+
+class CreateInviteRequest(BaseModel):
+    """Request body for creating an invite."""
+    label: Optional[str] = None
+    email: Optional[str] = None
+    max_uses: int = 1
+    expires_in_hours: Optional[int] = None
+
+
+@app.post("/admin/api/invites")
+async def admin_create_invite(
+    request: CreateInviteRequest,
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Create a new invite token. Requires admin session."""
+    token, invite_id = await invite.create_invite(
+        created_by=user.user_id,
+        label=request.label,
+        email=request.email,
+        max_uses=request.max_uses,
+        expires_in_hours=request.expires_in_hours,
+    )
+    return {
+        "id": invite_id,
+        "token": token,
+    }
+
+
+@app.get("/admin/api/invites")
+async def admin_list_invites(
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """List all invite tokens. Requires admin session."""
+    invites = await invite.list_invites()
+    return [
+        {
+            "id": inv.id,
+            "label": inv.label,
+            "email": inv.email,
+            "created_at": inv.created_at.isoformat(),
+            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+            "max_uses": inv.max_uses,
+            "use_count": inv.use_count,
+            "revoked": inv.revoked,
+        }
+        for inv in invites
+    ]
+
+
+@app.delete("/admin/api/invites/{invite_id}")
+async def admin_revoke_invite(
+    invite_id: int,
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Revoke an invite token. Requires admin session."""
+    try:
+        await invite.revoke(invite_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"ok": True}
+
+
+@app.get("/admin/api/users")
+async def admin_list_users(
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """List all users with email status. Requires admin session."""
+    users = await _list_users_from_auth()
+    return users
+
+
+@app.post("/admin/api/users/{target_user_id}/revoke")
+async def admin_revoke_user(
+    target_user_id: str,
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Revoke a user by deleting their sessions. Requires admin session."""
+    pool = db.get_pool()
+    async with pool.connection() as conn:
+        result = await conn.execute(
+            'DELETE FROM auth_session WHERE "userId" = %s',
+            (target_user_id,),
+        )
+        deleted = result.rowcount
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="User not found or has no sessions")
+    return {"ok": True, "sessions_deleted": deleted}
+
+
+@app.get("/admin/api/users/email-status")
+async def admin_email_status(
+    user: auth.AuthUser = Depends(admin.require_admin),
+):
+    """Summary of user email status. Requires admin session."""
+    users = await _list_users_from_auth()
+    with_email = [u for u in users if u["has_email"]]
+    without_email = [u for u in users if not u["has_email"]]
+    return {
+        "total": len(users),
+        "with_email": len(with_email),
+        "without_email": len(without_email),
+        "users_without_email": [
+            {
+                "id": u["id"],
+                "name": u["name"],
+                "created_at": u["created_at"],
+            }
+            for u in without_email
+        ],
+    }
+
+
+async def _list_users_from_auth() -> list[dict]:
+    """Fetch all users from better-auth's user table.
+
+    Read directly from the database rather than calling better-auth's
+    API, which has no list-users endpoint. The auth_user table is
+    managed by better-auth with known column names.
+    """
+    pool = db.get_pool()
+    async with pool.connection() as conn:
+        result = await conn.execute(
+            """
+            SELECT id, name, email, "emailVerified", "createdAt"
+            FROM auth_user
+            ORDER BY "createdAt" DESC
+            """
+        )
+        rows = await result.fetchall()
+
+    users = []
+    for row in rows:
+        user_id, name, email, email_verified, created_at = row
+        is_placeholder = email and email.endswith("@placeholder.voice.local")
+        is_admin_user = await admin.is_admin(user_id)
+        users.append({
+            "id": user_id,
+            "name": name,
+            "email": email if not is_placeholder else None,
+            "has_email": not is_placeholder and bool(email_verified),
+            "is_admin": is_admin_user,
+            "created_at": created_at.isoformat() if created_at else None,
+        })
+    return users
 
 
 # ---------------------------------------------------------------------------

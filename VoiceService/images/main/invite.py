@@ -15,6 +15,7 @@ from typing import Optional
 
 import httpx
 
+import admin
 import db
 
 AUTH_BASE_URL = "http://localhost:3456"
@@ -218,6 +219,9 @@ async def redeem(token: str) -> RedeemResult:
         label = "Admin" if is_admin_token else (invite.label or "Invited user")
 
     user_id, session_token = await _create_user_via_auth(email, label)
+
+    if is_admin_token:
+        await admin.mark_admin(user_id)
 
     if not is_admin_token:
         # Increment use count.
