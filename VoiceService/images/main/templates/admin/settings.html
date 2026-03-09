@@ -1,0 +1,119 @@
+{% extends "base.html" %} {% block title %}Settings – {{ app_name }}{% endblock %} {% block content %}
+<div class="mb-4">
+    <h1>Settings</h1>
+    <p class="text-secondary">Configure your {{ app_name }} service.</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Email configuration</h3>
+    </div>
+    <p class="text-secondary">
+        Configure an email provider to unlock email-based invites, session recovery, and the "require email" policy for
+        your users.
+    </p>
+
+    <div class="alert alert-info">Email configuration is not yet available. This feature is coming soon.</div>
+
+    <form id="email-config-form">
+        <div class="form-group">
+            <label class="form-label" for="email-provider">Provider</label>
+            <select class="form-input" id="email-provider" name="provider" disabled>
+                <option value="">Select a provider</option>
+                <option value="resend">Resend</option>
+                <option value="sendgrid">SendGrid</option>
+                <option value="smtp">SMTP</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="email-api-key">API key</label>
+            <input
+                class="form-input"
+                type="password"
+                id="email-api-key"
+                name="api_key"
+                placeholder="Your provider API key"
+                disabled
+            />
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="email-from">From address</label>
+            <input
+                class="form-input"
+                type="email"
+                id="email-from"
+                name="from_address"
+                placeholder="noreply@example.com"
+                disabled
+            />
+        </div>
+        <div style="margin-top: 0.75rem">
+            <button type="submit" class="btn btn-primary" disabled>Save email configuration</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Require email</h3>
+    </div>
+    <p class="text-secondary">
+        Require all users to add a verified email address. This enables session recovery and gives you a way to contact
+        your users. Email must be configured before this setting can be enabled.
+    </p>
+
+    <div class="form-group">
+        <label class="form-label" for="require-email-toggle">Policy</label>
+        <select class="form-input" id="require-email-toggle" name="require_email" disabled>
+            <option value="off">Off (voluntary)</option>
+            <option value="grace">Grace period (dismissable prompt)</option>
+            <option value="enforced">Enforced (blocks dictation)</option>
+        </select>
+        <p class="form-hint">
+            Grace period shows a prompt on each launch but allows dictation. Enforced blocks dictation until the user
+            adds their email.
+        </p>
+    </div>
+    <div class="form-group">
+        <label class="form-label" for="grace-period-days">Grace period (days)</label>
+        <input
+            class="form-input"
+            type="number"
+            id="grace-period-days"
+            name="grace_period_days"
+            value="14"
+            min="1"
+            max="90"
+            disabled
+        />
+        <p class="form-hint">How long users have to add their email before enforcement begins.</p>
+    </div>
+    <div style="margin-top: 0.75rem">
+        <button type="button" class="btn btn-primary" disabled>Save policy</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Service info</h3>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+                <tr>
+                    <td style="font-weight: 500">Status</td>
+                    <td><span class="badge badge-green">Running</span></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 500">Auth service</td>
+                    <td><span class="badge badge-green">Healthy</span></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 500">Email</td>
+                    <td><span class="badge badge-gray">Not configured</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

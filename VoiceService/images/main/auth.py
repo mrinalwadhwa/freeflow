@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 AUTH_SESSION_URL = "http://localhost:3456/api/auth/get-session"
 API_KEY = os.environ.get("API_KEY", "")
 
-_security = HTTPBearer()
+_security = HTTPBearer(auto_error=False)
 
 # Reusable async client for internal auth calls. Created once per
 # process and reused across requests to avoid connection overhead.
@@ -80,16 +80,29 @@ async def _validate_session_token(token: str) -> Optional[AuthUser]:
 
 
 async def require_auth(
-    credentials: HTTPAuthorizationCredentials = Depends(_security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),
 ) -> AuthUser:
     """FastAPI dependency that authenticates via session token or API_KEY.
 
     Check order:
-    1. If the bearer token matches API_KEY, return a synthetic dev user.
-    2. Otherwise, validate as a better-auth session token.
-    3. If both fail, raise 401.
+    1. If a Bearer token is present and matches API_KEY, return a
+       synthetic dev user.
+    2. If a Bearer token is present, validate as a better-auth session
+       token.
+    3. If no Bearer token, check for an auth_token cookie (web
+       dashboard sessions).
+    4. If all fail, raise 401.
     """
-    token = credentials.credentials
+    token = None
+    if credentials is not None:
+        token = credentials.credentials
+    else:
+        # Fall back to session cookie for browser-based admin pages.
+        token = request.cookies.get("auth_token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication")
 
     # API_KEY fallback for dev workflow.
     if API_KEY and token == API_KEY:

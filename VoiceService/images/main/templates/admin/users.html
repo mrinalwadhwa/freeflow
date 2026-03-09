@@ -1,0 +1,113 @@
+{% extends "base.html" %} {% block title %}Users – {{ app_name }}{% endblock %} {% block content %}
+<div class="mb-4">
+    <h1>Users</h1>
+    <p class="text-secondary">Manage users connected to your {{ app_name }} service.</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ users | length }}</div>
+        <div class="stat-label">total {{ "user" if users | length == 1 else "users" }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ users | selectattr("has_email") | list | length }}</div>
+        <div class="stat-label">with email</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ users | rejectattr("has_email") | list | length }}</div>
+        <div class="stat-label">without email</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Connected users</h3>
+    </div>
+
+    {% if users | length == 0 %}
+    <div class="empty-state">
+        <p>No users yet. Create an invite to add your first user.</p>
+        <a href="/admin/invites" class="btn btn-primary btn-small mt-2">Create invite</a>
+    </div>
+    {% else %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Joined</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td>{{ u.name or "–" }}</td>
+                    <td>
+                        {% if u.has_email %} {{ u.email }} {% else %}
+                        <span class="badge badge-yellow">No email</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if u.is_admin %}
+                        <span class="badge badge-green">Admin</span>
+                        {% else %}
+                        <span class="text-secondary">User</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if u.created_at %}
+                        <span title="{{ u.created_at.isoformat() }}">{{ u.created_at.strftime('%b %d, %Y') }}</span>
+                        {% else %}
+                        <span class="text-secondary">–</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right">
+                        {% if not u.is_admin %}
+                        <button
+                            class="btn btn-danger btn-small revoke-user-btn"
+                            data-user-id="{{ u.id }}"
+                            data-user-name="{{ u.name or 'this user' }}"
+                        >
+                            Revoke
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %} {% block scripts %}
+<script>
+    (function () {
+        document.querySelectorAll(".revoke-user-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var userId = btn.getAttribute("data-user-id");
+                var userName = btn.getAttribute("data-user-name");
+                if (!confirm("Revoke " + userName + "? Their active sessions will be deleted.")) return;
+                btn.disabled = true;
+                btn.textContent = "Revoking…";
+
+                fetch("/admin/api/users/" + userId + "/revoke", {
+                    method: "POST",
+                    credentials: "same-origin",
+                })
+                    .then(function (resp) {
+                        if (!resp.ok) throw new Error("Failed to revoke user");
+                        window.location.reload();
+                    })
+                    .catch(function (err) {
+                        alert(err.message);
+                        btn.disabled = false;
+                        btn.textContent = "Revoke";
+                    });
+            });
+        });
+    })();
+</script>
+{% endblock %}

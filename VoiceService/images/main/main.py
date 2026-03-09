@@ -13,6 +13,9 @@ ends, then polished via LLM before returning to the client.
 Expose a /polish endpoint that accepts raw transcript text and context,
 and returns polished text. This is the polish_text function exposed as
 a standalone HTTP endpoint.
+
+Serve zone web pages (homepage, invite landing, admin dashboard) via
+Jinja2 templates and static files.
 """
 
 import os
@@ -31,6 +34,7 @@ from fastapi import (
     WebSocket,
 )
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import admin
@@ -41,6 +45,7 @@ import invite
 import polish
 import realtime
 import startup
+import web
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +64,12 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Mount web page routes and static files.
+app.include_router(web.admin_router)
+app.include_router(web.public_router)
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 STT_MODEL = "gpt-4o-mini-transcribe"
 

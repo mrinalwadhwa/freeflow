@@ -1,0 +1,122 @@
+{% extends "base.html" %} {% block title %}You're invited to {{ app_name }}{% endblock %} {% block nav %}{% endblock %}
+{% block content %} {% if not token_valid %}
+<div class="invite-page">
+    <h1>Invite unavailable</h1>
+    <p>{{ token_error or "This invite link is no longer valid." }}</p>
+    <a href="/" class="btn btn-secondary">Go to homepage</a>
+</div>
+
+{% elif is_admin_token and admin_user %}
+<div class="invite-page">
+    <h1>Already set up</h1>
+    <p>You are already signed in as an admin.</p>
+    <a href="/" class="btn btn-primary">Go to dashboard</a>
+</div>
+
+{% elif is_admin_token %}
+<div class="invite-page">
+    <h1>Set up {{ app_name }}</h1>
+    <p>This link creates your admin account and opens the dashboard.</p>
+
+    <div class="mb-4">
+        <form id="admin-redeem-form" method="POST" action="/invite/{{ token }}/redeem">
+            <button type="submit" class="btn btn-primary" id="admin-redeem-btn">Set up as admin</button>
+        </form>
+    </div>
+
+    <div id="admin-redeem-error" class="hidden">
+        <div class="alert alert-error" id="admin-redeem-error-message"></div>
+    </div>
+
+    <p class="text-small text-secondary">
+        You can also <a href="{{ voice_url }}">open in {{ app_name }}</a> if you have the app installed.
+    </p>
+</div>
+
+{% else %}
+<div class="invite-page">
+    <h1>You're invited to {{ app_name }}</h1>
+    <p>Hold a key, speak, release. Polished text appears at your cursor.</p>
+
+    <div class="mb-4">
+        <a id="open-app" href="{{ voice_url }}" class="btn btn-primary">Open in {{ app_name }}</a>
+    </div>
+
+    <div id="install-instructions" class="card hidden" style="text-align: left">
+        <h3>Don't have {{ app_name }} yet?</h3>
+        <div class="invite-steps">
+            <div class="invite-step">
+                <div class="invite-step-number">1</div>
+                <div class="invite-step-text">
+                    <a href="#" class="btn btn-secondary btn-small">Download for macOS</a>
+                    <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
+                        >Requires macOS 14 or later</span
+                    >
+                </div>
+            </div>
+            <div class="invite-step">
+                <div class="invite-step-number">2</div>
+                <div class="invite-step-text">Open the downloaded app</div>
+            </div>
+            <div class="invite-step">
+                <div class="invite-step-number">3</div>
+                <div class="invite-step-text">
+                    <a href="{{ voice_url }}" class="btn btn-secondary btn-small">Click here to connect</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <p class="text-small text-secondary" id="show-install-link">
+        Don't have the app? <a href="#" id="show-install">Install {{ app_name }} first</a>
+    </p>
+</div>
+{% endif %} {% endblock %} {% block scripts %} {% if token_valid and is_admin_token and not admin_user %}
+<script>
+    (function () {
+        var form = document.getElementById("admin-redeem-form");
+        var btn = document.getElementById("admin-redeem-btn");
+        var errorDiv = document.getElementById("admin-redeem-error");
+        var errorMsg = document.getElementById("admin-redeem-error-message");
+
+        form.addEventListener("submit", function () {
+            btn.disabled = true;
+            btn.textContent = "Setting up…";
+        });
+    })();
+</script>
+{% elif token_valid and not is_admin_token %}
+<script>
+    (function () {
+        var openBtn = document.getElementById("open-app");
+        var instructions = document.getElementById("install-instructions");
+        var showLink = document.getElementById("show-install-link");
+        var showInstall = document.getElementById("show-install");
+
+        // Try to open the app via URL scheme. If the page is still visible
+        // after a short delay, the app is probably not installed.
+        var appOpened = false;
+
+        function onBlur() {
+            appOpened = true;
+        }
+        window.addEventListener("blur", onBlur);
+
+        openBtn.addEventListener("click", function () {
+            setTimeout(function () {
+                window.removeEventListener("blur", onBlur);
+                if (!appOpened) {
+                    instructions.classList.remove("hidden");
+                    showLink.classList.add("hidden");
+                }
+            }, 1500);
+        });
+
+        showInstall.addEventListener("click", function (e) {
+            e.preventDefault();
+            instructions.classList.remove("hidden");
+            showLink.classList.add("hidden");
+        });
+    })();
+</script>
+{% endif %} {% endblock %}

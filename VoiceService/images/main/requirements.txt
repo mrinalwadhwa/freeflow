@@ -1,4 +1,6 @@
 httpx
+jinja2
+aiofiles
 psycopg[binary]
 psycopg-pool
 python-multipart
