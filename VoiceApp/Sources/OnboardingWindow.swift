@@ -32,6 +32,9 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     /// onboarding page design at 480px width).
     private static let defaultSize = NSSize(width: 480, height: 640)
 
+    /// Height of the transparent drag handle at the top of the window.
+    private static let dragHandleHeight: CGFloat = 76
+
     // MARK: - Initialization
 
     /// Create a new onboarding window.
@@ -70,10 +73,45 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isMovableByWindowBackground = true
-        contentView = webView
+        level = .floating
+
+        // Use a container view so we can layer the drag handle on top
+        // of the web view. The drag handle is a transparent view that
+        // covers the top of the window, providing a generous drag
+        // target beyond the tiny hidden title bar.
+        let container = NSView(frame: NSRect(origin: .zero, size: Self.defaultSize))
+        container.autoresizingMask = [.width, .height]
+
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+
+        let dragHandle = WindowDragHandleView(
+            frame: NSRect(
+                x: 0,
+                y: Self.defaultSize.height - Self.dragHandleHeight,
+                width: Self.defaultSize.width,
+                height: Self.dragHandleHeight
+            )
+        )
+        dragHandle.autoresizingMask = [.width, .minYMargin]
+        container.addSubview(dragHandle)
+
+        contentView = container
         center()
 
         webView.navigationDelegate = self
+    }
+
+    // MARK: - Close override
+
+    /// Override close to hide instead of destroy. The close button (×)
+    /// sends `close()`, which would deallocate the window while
+    /// `OnboardingController` still holds a reference. Using `orderOut`
+    /// keeps the window alive so it can be re-presented via the menu
+    /// bar "Open Setup…" item.
+    override func close() {
+        orderOut(nil)
     }
 
     // MARK: - WKNavigationDelegate
@@ -190,5 +228,48 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
             forName: Self.bridgeHandlerName
         )
         orderOut(nil)
+    }
+}
+
+// MARK: - Drag Handle
+
+/// A transparent view that enables window dragging from the top area.
+///
+/// Placed over the web view at the top of the window. Passes through
+/// clicks to the web view for any interactive elements underneath, but
+/// enables window dragging on the empty background area.
+private final class WindowDragHandleView: NSView {
+
+    /// Inset from the left edge to avoid covering the close button.
+    private static let closeButtonInset: CGFloat = 68
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Only claim hits in our frame — let everything else fall
+        // through to the web view below.
+        guard frame.contains(point) else { return nil }
+
+        // Let the close button (top-left corner) receive clicks and
+        // show the default arrow cursor instead of the drag hand.
+        let localPoint = convert(point, from: superview)
+        if localPoint.x < Self.closeButtonInset { return nil }
+
+        return self
+    }
+
+    override func resetCursorRects() {
+        // Cursor rect excludes the close button area on the left.
+        let dragRect = NSRect(
+            x: Self.closeButtonInset,
+            y: 0,
+            width: bounds.width - Self.closeButtonInset,
+            height: bounds.height
+        )
+        addCursorRect(dragRect, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
     }
 }

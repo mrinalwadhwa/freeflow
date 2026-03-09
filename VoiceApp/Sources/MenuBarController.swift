@@ -24,6 +24,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var updaterService: UpdaterService?
     private var shortcuts: ShortcutConfiguration = .default
 
+    // MARK: - Onboarding mode
+
+    /// When true, the menu shows a minimal onboarding hint instead of
+    /// the full operational menu.
+    private var onboardingMode: Bool = false
+
+    /// Callback invoked when the user clicks "Open Setup…" in the
+    /// onboarding menu. The AppDelegate wires this to re-present the
+    /// onboarding window.
+    var onReopenOnboarding: (() -> Void)?
+
     // MARK: - Menu items that need dynamic updates
 
     private var pasteItem: NSMenuItem?
@@ -92,7 +103,52 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         hotkeyRegistered = registered
     }
 
+    /// Switch to onboarding mode: show a minimal menu with a setup hint.
+    func setOnboardingMode(_ enabled: Bool) {
+        onboardingMode = enabled
+        guard let statusItem else { return }
+        if enabled {
+            buildOnboardingMenu(for: statusItem)
+        } else {
+            buildMenu(for: statusItem)
+        }
+    }
+
     // MARK: - Menu construction
+
+    private func buildOnboardingMenu(for statusItem: NSStatusItem) {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let hint = NSMenuItem(
+            title: "Click your invite link to get started",
+            action: nil,
+            keyEquivalent: ""
+        )
+        hint.isEnabled = false
+        menu.addItem(hint)
+
+        menu.addItem(.separator())
+
+        let openSetup = NSMenuItem(
+            title: "Open Setup…",
+            action: #selector(reopenOnboarding),
+            keyEquivalent: ""
+        )
+        openSetup.target = self
+        menu.addItem(openSetup)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(
+            title: "Quit Voice",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        menu.addItem(quit)
+
+        statusItem.menu = menu
+    }
 
     private func buildMenu(for statusItem: NSStatusItem) {
         let menu = NSMenu()
@@ -321,6 +377,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func reopenOnboarding() {
+        onReopenOnboarding?()
     }
 
     // MARK: - Icon mapping

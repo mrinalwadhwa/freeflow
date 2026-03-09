@@ -235,6 +235,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Onboarding
 
     private func showOnboarding() {
+        menuBarController?.onReopenOnboarding = { [weak self] in
+            self?.onboardingController?.showWindow(path: "/onboarding/")
+        }
+        menuBarController?.setOnboardingMode(true)
         let controller = ensureOnboardingController()
         controller.showWindow(path: "/onboarding/")
     }
@@ -265,6 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.debug("[AppDelegate] Onboarding complete")
             self.stopOnboardingDictationObserver()
             self.onboardingController = nil
+            self.menuBarController?.setOnboardingMode(false)
+            self.menuBarController?.onReopenOnboarding = nil
             self.checkPermissions()
             self.checkCapabilitiesInBackground()
         }
