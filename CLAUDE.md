@@ -48,6 +48,16 @@ make test 2>&1 | tee /tmp/voice-test.log | tail -5
 grep -E '✘|FAIL|failures' /tmp/voice-test.log
 ```
 
+**Run new tests first.** When adding or modifying tests, run only the affected tests before
+running the full suite. This catches failures fast without waiting ~1.5 minutes:
+
+```bash
+cd VoiceKit
+swift test --filter "testNameA|testNameB" 2>&1 | tail -20
+```
+
+Move to `make test` for the full suite only after the new tests pass.
+
 ## Interactive Commands
 
 Some git commands open an interactive pager that blocks terminal execution. Always pipe output

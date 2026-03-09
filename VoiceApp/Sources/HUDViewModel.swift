@@ -232,6 +232,10 @@ final class HUDViewModel: ObservableObject {
 
         case .injectionFailed:
             recalculate()
+
+        case .sessionExpired:
+            stopAudioLevelObservation()
+            recalculate()
         }
     }
 
@@ -279,6 +283,9 @@ final class HUDViewModel: ObservableObject {
 
         case .injectionFailed:
             return .noTarget
+
+        case .sessionExpired:
+            return .sessionExpired
         }
     }
 

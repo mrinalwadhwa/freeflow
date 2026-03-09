@@ -12,7 +12,8 @@ final class DictationPipelineTests: XCTestCase {
         dictationProvider: MockDictationProvider = MockDictationProvider(),
         textInjector: MockTextInjector = MockTextInjector(),
         coordinator: RecordingCoordinator = RecordingCoordinator(),
-        transcriptBuffer: TranscriptBuffer? = nil
+        transcriptBuffer: TranscriptBuffer? = nil,
+        onSessionExpired: (@Sendable () -> Void)? = nil
     ) -> (
         DictationPipeline, MockAudioProvider, MockAppContextProvider, MockDictationProvider,
         MockTextInjector, RecordingCoordinator
@@ -23,7 +24,8 @@ final class DictationPipelineTests: XCTestCase {
             dictationProvider: dictationProvider,
             textInjector: textInjector,
             coordinator: coordinator,
-            transcriptBuffer: transcriptBuffer
+            transcriptBuffer: transcriptBuffer,
+            onSessionExpired: onSessionExpired
         )
         return (
             pipeline, audioProvider, contextProvider, dictationProvider, textInjector, coordinator
@@ -907,5 +909,112 @@ final class DictationPipelineTests: XCTestCase {
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
         XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
+
+    // MARK: - Session expiry (401 handling)
+
+    func testBatchDictation401TransitionsToSessionExpired() async {
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.authenticationFailed
+        let coordinator = RecordingCoordinator()
+
+        let callbackExpectation = expectation(description: "onSessionExpired called")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            dictationProvider: dictation,
+            coordinator: coordinator,
+            onSessionExpired: { callbackExpectation.fulfill() }
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(
+            state, .sessionExpired,
+            "Pipeline should transition to .sessionExpired on 401")
+
+        await fulfillment(of: [callbackExpectation], timeout: 2.0)
+    }
+
+    func testSessionExpiredDoesNotInjectText() async {
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.authenticationFailed
+        let injector = MockTextInjector()
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            dictationProvider: dictation,
+            textInjector: injector,
+            onSessionExpired: {}
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        XCTAssertEqual(
+            injector.injectionCount, 0,
+            "Text should not be injected when session is expired")
+    }
+
+    func testSessionExpiredDoesNotStoreInBuffer() async {
+        let buffer = TranscriptBuffer()
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.authenticationFailed
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            dictationProvider: dictation,
+            transcriptBuffer: buffer,
+            onSessionExpired: {}
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let stored = await buffer.lastTranscript
+        XCTAssertNil(stored, "401 failure should not store anything in buffer")
+    }
+
+    func testNon401ErrorDoesNotTriggerSessionExpired() async {
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.requestFailed(statusCode: 500, message: "fail")
+        let coordinator = RecordingCoordinator()
+
+        var callbackCalled = false
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            dictationProvider: dictation,
+            coordinator: coordinator,
+            onSessionExpired: { callbackCalled = true }
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(
+            state, .idle,
+            "Non-401 errors should reset to idle, not sessionExpired")
+        XCTAssertFalse(callbackCalled, "onSessionExpired should not fire for non-401 errors")
+    }
+
+    func testCoordinatorExpireSessionTransition() async {
+        let coordinator = RecordingCoordinator()
+        // expireSession is only valid from .processing.
+        await coordinator.startRecording()
+        await coordinator.stopRecording()
+        let expired = await coordinator.expireSession()
+        let state = await coordinator.state
+        XCTAssertTrue(expired)
+        XCTAssertEqual(state, .sessionExpired)
+
+        // finishInjecting resets from sessionExpired to idle.
+        let finished = await coordinator.finishInjecting()
+        let resetState = await coordinator.state
+        XCTAssertTrue(finished)
+        XCTAssertEqual(resetState, .idle)
+    }
+
+    func testExpireSessionInvalidFromIdle() async {
+        let coordinator = RecordingCoordinator()
+        let expired = await coordinator.expireSession()
+        XCTAssertFalse(expired, "expireSession should fail from idle")
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
     }
 }

@@ -853,8 +853,16 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
             do {
                 message = try await task.receive()
             } catch {
+                // The server closes with code 4001 when the session token
+                // is invalid or expired. URLSessionWebSocketTask surfaces
+                // this as an error whose description contains the close
+                // code or reason string.
+                let desc = error.localizedDescription
+                if desc.contains("4001") || desc.contains("Unauthorized") {
+                    throw DictationError.authenticationFailed
+                }
                 throw DictationError.networkError(
-                    "WebSocket closed before transcript received: \(error.localizedDescription)")
+                    "WebSocket closed before transcript received: \(desc)")
             }
 
             switch message {
@@ -873,6 +881,15 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
                 case "error":
                     let errorMsg = json["error"] as? String ?? "Unknown server error"
+                    // The server may send an auth_error type or include
+                    // "unauthorized"/"401" in the error message when the
+                    // token is rejected mid-session.
+                    let lower = errorMsg.lowercased()
+                    if lower.contains("unauthorized") || lower.contains("401")
+                        || lower.contains("auth")
+                    {
+                        throw DictationError.authenticationFailed
+                    }
                     throw DictationError.requestFailed(statusCode: 0, message: errorMsg)
 
                 case "transcript_delta":

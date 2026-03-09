@@ -92,16 +92,30 @@ public actor RecordingCoordinator {
         return true
     }
 
+    /// Transition to `.sessionExpired`. Valid from `.processing`.
+    ///
+    /// The HUD shows a "Session expired" message and the app enters
+    /// the recovery flow (clear Keychain, open sign-in or onboarding).
+    ///
+    /// - Returns: `true` if the transition succeeded.
+    @discardableResult
+    public func expireSession() -> Bool {
+        guard _state == .processing else { return false }
+        transition(to: .sessionExpired)
+        return true
+    }
+
     /// Transition to `.idle`. Valid from `.injecting` (normal completion),
-    /// `.processing` (cancellation / error recovery), or `.injectionFailed`
-    /// (user dismissed the no-target state).
+    /// `.processing` (cancellation / error recovery), `.injectionFailed`
+    /// (user dismissed the no-target state), or `.sessionExpired` (after
+    /// the recovery flow has been triggered).
     ///
     /// - Returns: `true` if the transition succeeded.
     @discardableResult
     public func finishInjecting() -> Bool {
         guard
             _state == .injecting || _state == .processing
-                || _state == .injectionFailed
+                || _state == .injectionFailed || _state == .sessionExpired
         else { return false }
         transition(to: .idle)
         return true

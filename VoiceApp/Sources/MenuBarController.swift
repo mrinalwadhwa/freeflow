@@ -236,6 +236,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             stateLabel = "Injecting"
         case .injectionFailed:
             stateLabel = "No Target"
+        case .sessionExpired:
+            stateLabel = "Session Expired"
         }
 
         let hotkeyLabel = hotkeyRegistered ? "Hotkey: ✓" : "Hotkey: Not registered"

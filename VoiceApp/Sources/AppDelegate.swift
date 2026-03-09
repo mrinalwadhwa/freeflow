@@ -285,8 +285,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             textInjector: textInjector,
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer,
-            streamingProvider: VoiceServiceStreamingProvider()
+            streamingProvider: VoiceServiceStreamingProvider(),
+            onSessionExpired: { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.handleInlineSessionExpired()
+                }
+            }
         )
+    }
+
+    /// Handle a 401 auth error from a dictation request mid-session.
+    ///
+    /// Clear the stored session token so subsequent requests do not keep
+    /// failing, then enter the recovery flow (sign-in if the user has an
+    /// email on file, onboarding otherwise). The coordinator is already
+    /// in `.sessionExpired` state (set by the pipeline), so the HUD shows
+    /// a brief "Session expired" message while recovery opens.
+    private func handleInlineSessionExpired() {
+        Log.debug("[AppDelegate] Inline 401: clearing Keychain, entering recovery")
+        keychain.deleteSessionToken()
+        hotkeyProvider.unregister()
+        menuBarController?.setHotkeyRegistered(false)
+
+        // Brief delay so the user sees the "Session expired" HUD message
+        // before the recovery window appears.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self else { return }
+            await self.coordinator.reset()
+            self.handleSessionExpired()
+        }
     }
 
     // MARK: - HUD

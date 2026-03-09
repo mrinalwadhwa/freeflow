@@ -381,6 +381,9 @@ final class HUDController {
         case .noTarget:
             dismissNoTarget()
             return true
+        case .sessionExpired:
+            dismissNoTarget()
+            return true
         case .minimized, .ready, .listeningHeld, .processing:
             return false
         }

@@ -178,6 +178,10 @@ final class HUDOverlayWindow: NSPanel {
             pillWidth = 260
             pillHeight = 32
             padding = 4
+        case .sessionExpired:
+            pillWidth = 200
+            pillHeight = 32
+            padding = 4
         }
 
         // The pill is centered horizontally and bottom-aligned in the window.

@@ -35,6 +35,8 @@ struct HUDContentView: View {
             return 180
         case .noTarget:
             return 260
+        case .sessionExpired:
+            return 200
         }
     }
 
@@ -45,7 +47,7 @@ struct HUDContentView: View {
         case .ready:
             return 10
         case .listeningHeld, .listeningHandsFree, .processing,
-            .processingSlow, .noTarget:
+            .processingSlow, .noTarget, .sessionExpired:
             return 32
         }
     }
@@ -55,7 +57,7 @@ struct HUDContentView: View {
         case .minimized:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree, .processing,
-            .processingSlow, .noTarget:
+            .processingSlow, .noTarget, .sessionExpired:
             return 0.5
         }
     }
@@ -65,7 +67,7 @@ struct HUDContentView: View {
         case .minimized:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree, .processing,
-            .processingSlow, .noTarget:
+            .processingSlow, .noTarget, .sessionExpired:
             return 0.7
         }
     }
@@ -80,7 +82,7 @@ struct HUDContentView: View {
         case .minimized, .ready:
             return false
         case .listeningHeld, .listeningHandsFree, .processing,
-            .processingSlow, .noTarget:
+            .processingSlow, .noTarget, .sessionExpired:
             return true
         }
     }
@@ -167,6 +169,9 @@ struct HUDContentView: View {
                 .transition(.opacity)
         case .noTarget:
             noTargetContent
+                .transition(.opacity)
+        case .sessionExpired:
+            sessionExpiredContent
                 .transition(.opacity)
         }
     }
@@ -290,6 +295,23 @@ struct HUDContentView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - Session Expired
+
+    /// Session token was rejected. Brief message before recovery flow takes over.
+    private var sessionExpiredContent: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.orange.opacity(0.9))
+
+            Text("Session expired")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .lineLimit(1)
         }
         .padding(.horizontal, 12)
     }

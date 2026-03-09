@@ -34,6 +34,11 @@ public actor DictationPipeline: PipelineProviding {
     private let coordinator: RecordingCoordinator
     private let transcriptBuffer: TranscriptBuffer?
 
+    /// Called when a dictation request fails with a 401 authentication
+    /// error. The app should clear stored credentials and enter the
+    /// session recovery flow. Invoked at most once per pipeline run.
+    private let onSessionExpired: (@Sendable () -> Void)?
+
     /// Minimum audio duration (in seconds) worth sending to the server.
     private let minimumAudioDuration: TimeInterval = 0.1
 
@@ -79,7 +84,8 @@ public actor DictationPipeline: PipelineProviding {
         coordinator: RecordingCoordinator,
         transcriptBuffer: TranscriptBuffer? = nil,
         silenceThreshold: Float = 0.005,
-        streamingProvider: StreamingDictationProviding? = nil
+        streamingProvider: StreamingDictationProviding? = nil,
+        onSessionExpired: (@Sendable () -> Void)? = nil
     ) {
         self.audioProvider = audioProvider
         self.contextProvider = contextProvider
@@ -89,6 +95,7 @@ public actor DictationPipeline: PipelineProviding {
         self.transcriptBuffer = transcriptBuffer
         self.silenceThreshold = silenceThreshold
         self.streamingProvider = streamingProvider
+        self.onSessionExpired = onSessionExpired
     }
 
     /// Compute the effective silence threshold for the current session.
@@ -712,7 +719,9 @@ public actor DictationPipeline: PipelineProviding {
     /// succeeds first. If streaming wins, cancel the batch task. If batch
     /// wins (streaming timed out or failed), use the batch result.
     ///
-    /// Returns nil only if both paths fail.
+    /// Returns nil if both paths fail. When the batch HTTP path returns a
+    /// 401 auth error, the pipeline transitions to `.sessionExpired` and
+    /// invokes the `onSessionExpired` callback before returning nil.
     private func raceStreamingAndBatch(
         streaming: StreamingDictationProviding,
         audioBuffer: AudioBuffer,
@@ -753,6 +762,18 @@ public actor DictationPipeline: PipelineProviding {
         }
 
         let t0 = CFAbsoluteTimeGetCurrent()
+
+        // Thread-safe box to propagate an auth-error flag out of the
+        // continuation closure. The detached tasks write to it under
+        // its internal lock; the outer scope reads it after the
+        // continuation returns (by which time both tasks have finished).
+        final class AuthErrorFlag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = false
+            func set() { lock.withLock { _value = true } }
+            var isSet: Bool { lock.withLock { _value } }
+        }
+        let authError = AuthErrorFlag()
 
         // Race streaming (primary) and backup WebSocket with true
         // first-to-finish semantics.
@@ -877,6 +898,14 @@ public actor DictationPipeline: PipelineProviding {
                     } else {
                         checkBothDone()
                     }
+                } catch let error as DictationError where error == .authenticationFailed {
+                    Log.debug("[Pipeline] Batch HTTP returned 401")
+                    authError.set()
+                    lock.withLock {
+                        fallbackResult = nil
+                        gotFallback = true
+                    }
+                    checkBothDone()
                 } catch {
                     Log.debug("[Pipeline] Batch HTTP failed: \(error)")
                     lock.withLock {
@@ -893,6 +922,15 @@ public actor DictationPipeline: PipelineProviding {
             // extra network call is acceptable for reliability.
             _ = streamingTask
             _ = fallbackTask
+        }
+
+        // The batch HTTP path is the definitive 401 signal. WebSocket
+        // paths surface auth failures as generic connection errors
+        // (close code 4001), but the batch endpoint returns a clean
+        // HTTP 401 that the provider maps to .authenticationFailed.
+        if authError.isSet && winner == nil {
+            await notifySessionExpired()
+            return nil
         }
 
         return winner
@@ -941,10 +979,23 @@ public actor DictationPipeline: PipelineProviding {
             let text = try await dictationProvider.dictate(
                 audio: audioBuffer.data, context: context)
             return text
+        } catch let error as DictationError where error == .authenticationFailed {
+            Log.debug("[Pipeline] Dictation returned 401, session expired")
+            await notifySessionExpired()
+            return nil
         } catch {
             Log.debug("[Pipeline] Dictation failed: \(error)")
             await coordinator.reset()
             return nil
         }
+    }
+
+    // MARK: - Session expiry
+
+    /// Transition the coordinator to `.sessionExpired` and invoke the
+    /// callback so the app can clear credentials and start recovery.
+    private func notifySessionExpired() async {
+        await coordinator.expireSession()
+        onSessionExpired?()
     }
 }

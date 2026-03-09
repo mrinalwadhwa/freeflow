@@ -30,13 +30,18 @@ enum HUDVisualState: Equatable {
     /// Injection failed — no focused text field. Shows paste-shortcut hint and ✕ dismiss.
     case noTarget
 
+    /// Session token expired or rejected. Shows "Session expired" message briefly
+    /// before the app enters the recovery flow (sign-in or onboarding).
+    case sessionExpired
+
     /// Whether the HUD should accept mouse events in this state.
     ///
     /// States that rely on the keyboard as the control surface disable mouse
     /// events so clicks pass through to the app underneath.
     var acceptsMouseEvents: Bool {
         switch self {
-        case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget:
+        case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
+            .sessionExpired:
             return true
         case .listeningHeld, .processing:
             return false
@@ -52,7 +57,8 @@ enum HUDVisualState: Equatable {
         switch self {
         case .minimized, .ready:
             return false
-        case .listeningHeld, .listeningHandsFree, .processing, .processingSlow, .noTarget:
+        case .listeningHeld, .listeningHandsFree, .processing, .processingSlow, .noTarget,
+            .sessionExpired:
             return true
         }
     }
@@ -87,7 +93,7 @@ enum HUDVisualState: Equatable {
     /// Available in hands-free listening, slow processing, and no-target states.
     var showsCancelButton: Bool {
         switch self {
-        case .listeningHandsFree, .processingSlow, .noTarget:
+        case .listeningHandsFree, .processingSlow, .noTarget, .sessionExpired:
             return true
         default:
             return false
