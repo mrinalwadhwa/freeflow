@@ -39,14 +39,15 @@ POLISH_MODEL = "gpt-4.1-nano"
 # System prompt (loaded once at import time)
 # ---------------------------------------------------------------------------
 
-def _load_prompt() -> str:
-    """Load the system prompt from polish_prompt.txt."""
-    prompt_path = os.path.join(os.path.dirname(__file__), "polish_prompt.txt")
+def _load_prompt_file(filename: str) -> str:
+    """Load a prompt file from the same directory as this module."""
+    prompt_path = os.path.join(os.path.dirname(__file__), filename)
     with open(prompt_path) as f:
         return f.read()
 
 
-SYSTEM_PROMPT = _load_prompt()
+SYSTEM_PROMPT = _load_prompt_file("polish_prompt.txt")
+SYSTEM_PROMPT_MINIMAL = _load_prompt_file("polish_prompt_minimal.txt")
 
 
 # ---------------------------------------------------------------------------
@@ -320,9 +321,14 @@ def is_clean(text: str) -> bool:
 # Stage 3: LLM refinement
 # ---------------------------------------------------------------------------
 
-def _build_user_prompt(text: str, context: AppContext) -> str:
+def _build_user_prompt(
+    text: str, context: AppContext, language: Optional[str] = None
+) -> str:
     """Build the user prompt for the LLM polishing call."""
     parts = [f"Transcription:\n{text}"]
+
+    if language:
+        parts.append(f"Language: {language}")
 
     ctx_lines = []
     if context.app_name:
@@ -361,16 +367,28 @@ def _build_user_prompt(text: str, context: AppContext) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-async def polish_text(raw_text: str, context: AppContext) -> str:
+def _is_english(language: Optional[str]) -> bool:
+    """Check if a language code is English (or unset, defaulting to English)."""
+    if not language:
+        return True
+    return language.lower().startswith("en")
+
+
+async def polish_text(
+    raw_text: str,
+    context: AppContext,
+    language: Optional[str] = None,
+) -> str:
     """Refine a raw transcription into polished written text.
 
-    Runs the full three-stage pipeline:
-    1. Substitute dictated punctuation (regex, deterministic).
-       Protected symbols are wrapped in <keep> tags.
-    2. Skip LLM if the transcript is already clean.
-    3. Call the LLM for filler removal, list formatting, etc.
-       The LLM preserves <keep> tags and their content.
-    4. Strip <keep> tags and clean up whitespace.
+    For English (or when language is None), runs the full three-stage
+    pipeline: regex punctuation substitution, skip heuristic, and LLM
+    refinement with the detailed English prompt.
+
+    For non-English languages, skips the English-specific regex rules
+    and skip heuristic, and uses a minimal prompt that handles universal
+    cleanup (fillers, repetitions, corrections, punctuation, numbers)
+    without English formatting commands.
 
     Returns the raw text as fallback if the LLM call fails.
     """
@@ -378,21 +396,29 @@ async def polish_text(raw_text: str, context: AppContext) -> str:
     if not trimmed:
         return raw_text
 
+    if _is_english(language):
+        return await _polish_english(trimmed, context)
+    else:
+        return await _polish_minimal(trimmed, context, language)
+
+
+async def _polish_english(text: str, context: AppContext) -> str:
+    """Full English polish pipeline: regex + skip heuristic + LLM."""
     # Stage 1: deterministic punctuation substitution.
     # Protected symbols are wrapped in <keep>…</keep> tags.
-    trimmed = substitute_dictated_punctuation(trimmed)
+    text = substitute_dictated_punctuation(text)
 
     # Stage 2: skip heuristic.
     # Strip <keep> tags before checking so they don't interfere with
     # the clean-text heuristics (tags would fail starts-upper, etc.).
-    text_for_check = strip_keep_tags(trimmed)
+    text_for_check = strip_keep_tags(text)
     if is_clean(text_for_check):
         print("[polish] Skipping LLM (transcript is clean)")
         return text_for_check
 
     # Stage 3: LLM refinement.
     llm = Model(POLISH_MODEL)
-    user_prompt = _build_user_prompt(trimmed, context)
+    user_prompt = _build_user_prompt(text, context)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
@@ -407,4 +433,29 @@ async def polish_text(raw_text: str, context: AppContext) -> str:
     except Exception as e:
         print(f"[polish] LLM call failed, using raw transcription: {e}")
 
-    return normalize_formatting(strip_keep_tags(trimmed))
+    return normalize_formatting(strip_keep_tags(text))
+
+
+async def _polish_minimal(
+    text: str, context: AppContext, language: Optional[str]
+) -> str:
+    """Minimal polish for non-English: LLM cleanup only, no regex or skip."""
+    print(f"[polish] Non-English path (language={language})")
+
+    llm = Model(POLISH_MODEL)
+    user_prompt = _build_user_prompt(text, context, language=language)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT_MINIMAL},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        response = await llm.complete_chat(messages, stream=False)
+        if hasattr(response, "choices") and len(response.choices) > 0:
+            polished = response.choices[0].message.content.strip()
+            if polished:
+                return normalize_formatting(polished)
+    except Exception as e:
+        print(f"[polish] LLM call failed, using raw transcription: {e}")
+
+    return text

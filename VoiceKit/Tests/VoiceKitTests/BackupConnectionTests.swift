@@ -456,7 +456,7 @@ final class BackupConnectionTests: XCTestCase {
         // Call dictateViaBackup with fake PCM audio.
         let pcmAudio = Data(repeating: 0, count: 64_000)
         let result = try await provider.dictateViaBackup(
-            audio: pcmAudio, context: .empty)
+            audio: pcmAudio, context: .empty, language: nil)
 
         XCTAssertEqual(result, "Test transcript")
     }
@@ -476,12 +476,12 @@ final class BackupConnectionTests: XCTestCase {
         // First call succeeds and consumes the backup.
         let pcmAudio = Data(repeating: 0, count: 3200)
         _ = try await provider.dictateViaBackup(
-            audio: pcmAudio, context: .empty)
+            audio: pcmAudio, context: .empty, language: nil)
 
         // Second call should throw — no backup available.
         do {
             _ = try await provider.dictateViaBackup(
-                audio: pcmAudio, context: .empty)
+                audio: pcmAudio, context: .empty, language: nil)
             XCTFail("Expected error when no backup is available")
         } catch {
             // Expected: no backup connection available.
@@ -508,7 +508,7 @@ final class BackupConnectionTests: XCTestCase {
         // connection independently of the primary.
         let pcmAudio = Data(repeating: 0, count: 32_000)
         let result = try await provider.dictateViaBackup(
-            audio: pcmAudio, context: .empty)
+            audio: pcmAudio, context: .empty, language: nil)
 
         XCTAssertEqual(result, "Test transcript")
     }
@@ -522,7 +522,7 @@ final class BackupConnectionTests: XCTestCase {
         let pcmAudio = Data(repeating: 0, count: 3200)
         do {
             _ = try await provider.dictateViaBackup(
-                audio: pcmAudio, context: .empty)
+                audio: pcmAudio, context: .empty, language: nil)
             XCTFail("Expected error when no backup exists")
         } catch {
             // Expected.

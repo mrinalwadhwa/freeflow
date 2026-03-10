@@ -67,10 +67,12 @@ public protocol StreamingDictationProviding: Sendable {
     /// - Parameters:
     ///   - audio: Raw PCM audio data (16-bit signed LE, 16 kHz, mono).
     ///   - context: Application context at the time of dictation.
+    ///   - language: Optional ISO-639-1 language hint (e.g. "en", "fr").
     /// - Returns: The polished transcript, or an empty string if no
     ///   speech was detected.
     /// - Throws: If no backup is available or the session fails.
-    func dictateViaBackup(audio: Data, context: AppContext) async throws -> String
+    func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
+        -> String
 }
 
 /// Default implementations so conforming types only need to implement
@@ -78,7 +80,9 @@ public protocol StreamingDictationProviding: Sendable {
 /// default, signaling that the provider does not have a backup connection.
 extension StreamingDictationProviding {
 
-    public func dictateViaBackup(audio: Data, context: AppContext) async throws -> String {
+    public func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
+        -> String
+    {
         throw DictationError.networkError("Backup dictation not supported")
     }
 }

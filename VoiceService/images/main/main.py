@@ -123,7 +123,7 @@ async def dictate(
         return {"text": "", "raw": ""}
 
     app_context = context.parse_json(ctx)
-    polished = await polish.polish_text(raw_text, app_context)
+    polished = await polish.polish_text(raw_text, app_context, language=language)
 
     t2 = time.monotonic()
     audio_kb = len(audio_bytes) / 1024
@@ -145,6 +145,7 @@ class PolishRequest(BaseModel):
     """Request body for the /polish endpoint."""
     text: str
     context: Optional[dict] = None
+    language: Optional[str] = None
 
 
 @app.post("/polish")
@@ -164,7 +165,7 @@ async def polish_endpoint(
         return {"text": ""}
 
     app_context = context.parse_dict(request.context)
-    polished = await polish.polish_text(request.text, app_context)
+    polished = await polish.polish_text(request.text, app_context, language=request.language)
 
     t1 = time.monotonic()
     print(

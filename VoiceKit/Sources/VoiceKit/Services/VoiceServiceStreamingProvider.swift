@@ -927,7 +927,9 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
     ///
     /// Audio is sent as base64-encoded PCM chunks (~32 KB each) to match
     /// the format the primary uses during recording.
-    public func dictateViaBackup(audio: Data, context: AppContext) async throws -> String {
+    public func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
+        -> String
+    {
         // Grab the backup WebSocket task. Throw if no backup is available.
         stopBackupKeepalive()
         let (task, session): (URLSessionWebSocketTask?, URLSession?) = lock.withLock {
@@ -953,7 +955,7 @@ public final class VoiceServiceStreamingProvider: StreamingDictationProviding, @
 
         do {
             // 1. Send start message with context.
-            let startMessage = buildStartMessage(context: context, language: nil)
+            let startMessage = buildStartMessage(context: context, language: language)
             try await send(json: startMessage, on: task)
 
             // 2. Send audio as base64 PCM chunks (~32 KB each).

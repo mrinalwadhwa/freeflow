@@ -373,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPipeline() {
         audioProvider.setAudioDeviceProvider(audioDeviceProvider)
         audioProvider.setSoundFeedbackProvider(soundFeedbackProvider)
-        pipeline = DictationPipeline(
+        let newPipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
             dictationProvider: VoiceServiceDictationProvider(),
@@ -387,6 +387,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         )
+        pipeline = newPipeline
+
+        // Apply the persisted language setting.
+        Task {
+            await newPipeline.setLanguage(LanguageSetting.current.languageCode)
+        }
     }
 
     /// Handle a 401 auth error from a dictation request mid-session.
@@ -434,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start(
             statusItem: statusItem,
             coordinator: coordinator,
+            pipeline: pipeline,
             transcriptBuffer: transcriptBuffer,
             textInjector: textInjector,
             audioDeviceProvider: audioDeviceProvider,

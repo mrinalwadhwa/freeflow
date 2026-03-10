@@ -180,17 +180,28 @@ make clean      # Clean build artifacts + DerivedData
 
 ### Launching the app
 
-The app requires `VOICE_SERVICE_URL` and `VOICE_API_KEY` environment variables. Redirect
-stderr to a log file because `Log.debug()` writes to stderr:
+The app requires `VOICE_SERVICE_URL` and `VOICE_API_KEY` environment variables. The API key
+is in `VoiceService/secrets.yaml` (gitignored). The service URL is the deployed zone URL
+(check the `Server` section in the tracking docs or `autonomy zone list` output).
+
+Launch in the background and capture all output to a log file:
 
 ```bash
 pkill -9 -f "Voice.app/Contents/MacOS/Voice" 2>/dev/null
 sleep 1
 rm -f /tmp/voice.log
 APP=$(find ~/Library/Developer/Xcode/DerivedData/Voice-*/Build/Products/Debug -name Voice.app -maxdepth 1)
-VOICE_SERVICE_URL="..." \
+VOICE_SERVICE_URL="<zone-url>" \
 VOICE_API_KEY="$(grep API_KEY VoiceService/secrets.yaml | cut -d' ' -f2)" \
-"$APP/Contents/MacOS/Voice" 2>/tmp/voice.log &
+"$APP/Contents/MacOS/Voice" > /tmp/voice.log 2>&1 &
+echo "Launched PID $!"
+```
+
+Then tail or grep the log to follow activity:
+
+```bash
+tail -f /tmp/voice.log
+grep -E "Pipeline|AudioCapture|Streaming|polish" /tmp/voice.log
 ```
 
 ### Logging

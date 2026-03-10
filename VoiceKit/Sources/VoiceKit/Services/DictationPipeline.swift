@@ -99,6 +99,16 @@ public actor DictationPipeline: PipelineProviding {
     /// Whether the current recording session is using streaming mode.
     private var isStreamingSession: Bool = false
 
+    /// ISO-639-1 language hint for transcription (e.g. "en", "fr", "ja").
+    /// Set from the menu bar language picker or auto-detected from macOS
+    /// locale. When nil, the server defaults to auto-detection.
+    private(set) var language: String?
+
+    /// Update the language hint from outside the actor.
+    public func setLanguage(_ code: String?) {
+        language = code
+    }
+
     public init(
         audioProvider: AudioProviding,
         contextProvider: AppContextProviding,
@@ -320,6 +330,7 @@ public actor DictationPipeline: PipelineProviding {
 
             let t5 = CFAbsoluteTimeGetCurrent()
             let micProximity = audioProvider.micProximity
+            let language = self.language
 
             // Timeout the streaming setup to avoid blocking complete()
             // indefinitely. ensureConnected()/sendPing can hang when the
@@ -330,14 +341,17 @@ public actor DictationPipeline: PipelineProviding {
             // timeout. This avoids zombie detached tasks that pile up
             // when the timeout fires but startStreaming() keeps retrying
             // ensureConnected() in the background.
-            Log.debug("[Pipeline] Starting streaming setup with 5s timeout")
+            Log.debug(
+                "[Pipeline] Starting streaming setup with 5s timeout (language=\(language ?? "nil"))"
+            )
             let streamingStarted: Bool = await Task.detached {
                 await withTaskGroup(of: Bool.self) { group in
                     group.addTask {
                         do {
                             Log.debug("[Pipeline] streaming.startStreaming() entering")
                             try await streaming.startStreaming(
-                                context: context, language: nil, micProximity: micProximity)
+                                context: context, language: language,
+                                micProximity: micProximity)
                             Log.debug("[Pipeline] streaming.startStreaming() returned OK")
                             return true
                         } catch {
@@ -650,7 +664,8 @@ public actor DictationPipeline: PipelineProviding {
                     context: context,
                     dictationProvider: dictationProvider,
                     minimumAudioDuration: minimumAudioDuration,
-                    silenceThreshold: postRecordThreshold
+                    silenceThreshold: postRecordThreshold,
+                    language: self.language
                 )
 
                 guard let text = streamingResult else {
@@ -824,7 +839,8 @@ public actor DictationPipeline: PipelineProviding {
         context: AppContext,
         dictationProvider: DictationProviding,
         minimumAudioDuration: TimeInterval,
-        silenceThreshold: Float
+        silenceThreshold: Float,
+        language: String? = nil
     ) async -> String? {
         // Check audio validity before starting either path.
         guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
@@ -963,7 +979,7 @@ public actor DictationPipeline: PipelineProviding {
                 // full session on the standby connection (~0.3–0.9s).
                 do {
                     let result = try await streaming.dictateViaBackup(
-                        audio: pcmData, context: context)
+                        audio: pcmData, context: context, language: language)
                     Log.debug("[Pipeline] Backup dictation completed")
                     lock.withLock {
                         fallbackResult = result

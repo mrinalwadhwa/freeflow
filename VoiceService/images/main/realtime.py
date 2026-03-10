@@ -742,7 +742,7 @@ async def _run_dictation_session(
                     "raw": "",
                 })
         else:
-            polished = await polish_text(raw_text, app_context)
+            polished = await polish_text(raw_text, app_context, language=language)
 
             t_polish = time.monotonic()
             print(

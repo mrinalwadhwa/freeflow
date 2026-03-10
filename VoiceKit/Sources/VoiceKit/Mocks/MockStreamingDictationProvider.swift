@@ -156,7 +156,9 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
         }
     }
 
-    public func dictateViaBackup(audio: Data, context: AppContext) async throws -> String {
+    public func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
+        -> String
+    {
         lock.withLock {
             _backupCallCount += 1
             _receivedBackupAudio.append(audio)

@@ -17,7 +17,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Dependencies
 
-    private var coordinator: RecordingCoordinator?
+    private weak var coordinator: RecordingCoordinator?
+    private weak var pipeline: DictationPipeline?
     private var transcriptBuffer: TranscriptBuffer?
     private var textInjector: (any TextInjecting)?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
@@ -39,6 +40,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private var pasteItem: NSMenuItem?
     private var micSubmenuItem: NSMenuItem?
+    private var languageSubmenuItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
     private var statusMenuItem: NSMenuItem?
 
@@ -62,6 +64,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func start(
         statusItem: NSStatusItem,
         coordinator: RecordingCoordinator,
+        pipeline: DictationPipeline? = nil,
         transcriptBuffer: TranscriptBuffer? = nil,
         textInjector: (any TextInjecting)? = nil,
         audioDeviceProvider: (any AudioDeviceProviding)? = nil,
@@ -71,6 +74,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     ) {
         self.statusItem = statusItem
         self.coordinator = coordinator
+        self.pipeline = pipeline
         self.transcriptBuffer = transcriptBuffer
         self.textInjector = textInjector
         self.audioDeviceProvider = audioDeviceProvider
@@ -126,6 +130,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         hint.isEnabled = false
+        hint.image = NSImage(systemSymbolName: "link", accessibilityDescription: nil)
         menu.addItem(hint)
 
         menu.addItem(.separator())
@@ -136,6 +141,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         openSetup.target = self
+        openSetup.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         menu.addItem(openSetup)
 
         menu.addItem(.separator())
@@ -145,6 +151,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
+        quit.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
         menu.addItem(quit)
 
         statusItem.menu = menu
@@ -165,6 +172,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         paste.keyEquivalentModifierMask = [.control, .option]
         paste.target = self
         paste.isEnabled = false
+        paste.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
         menu.addItem(paste)
         pasteItem = paste
 
@@ -179,8 +187,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         micItem.submenu = micSubmenu
+        micItem.image = NSImage(systemSymbolName: "mic", accessibilityDescription: nil)
         menu.addItem(micItem)
         micSubmenuItem = micItem
+
+        // --- Language ---
+
+        let langSubmenu = NSMenu()
+        let langItem = NSMenuItem(
+            title: "Language",
+            action: nil,
+            keyEquivalent: ""
+        )
+        langItem.submenu = langSubmenu
+        langItem.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        menu.addItem(langItem)
+        languageSubmenuItem = langItem
 
         menu.addItem(.separator())
 
@@ -192,6 +214,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         status.isEnabled = false
+        status.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
         menu.addItem(status)
         statusMenuItem = status
 
@@ -206,6 +229,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         checkForUpdates.target = self
         checkForUpdates.isEnabled = updaterService?.canCheckForUpdates ?? false
+        checkForUpdates.image = NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
         menu.addItem(checkForUpdates)
         checkForUpdatesItem = checkForUpdates
 
@@ -219,6 +244,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         about.target = self
+        about.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
         menu.addItem(about)
 
         menu.addItem(.separator())
@@ -228,6 +254,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
+        quit.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
         menu.addItem(quit)
 
         statusItem.menu = menu
@@ -239,6 +266,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshPasteItem()
         refreshMicSubmenu()
+        refreshLanguageSubmenu()
         refreshCheckForUpdatesItem()
         refreshStatusItem()
     }
@@ -294,6 +322,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 item.state = (device.id == current?.id) ? .on : .off
                 submenu.addItem(item)
             }
+        }
+    }
+
+    private func refreshLanguageSubmenu() {
+        guard let languageSubmenuItem else { return }
+        let submenu = languageSubmenuItem.submenu ?? NSMenu()
+        languageSubmenuItem.submenu = submenu
+        submenu.removeAllItems()
+
+        let current = LanguageSetting.current
+
+        for setting in LanguageSetting.allCases {
+            let item = NSMenuItem(
+                title: setting.displayName,
+                action: #selector(selectLanguage(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = setting.rawValue
+            item.state = (setting == current) ? .on : .off
+            submenu.addItem(item)
         }
     }
 
@@ -355,6 +404,23 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 await coordinator.reset()
             }
         }
+    }
+
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+            let setting = LanguageSetting(rawValue: rawValue)
+        else { return }
+
+        LanguageSetting.current = setting
+
+        // Apply the language to the pipeline immediately.
+        if let pipeline {
+            Task {
+                await pipeline.setLanguage(setting.languageCode)
+            }
+        }
+
+        debugPrint("[MenuBar] Selected language: \(setting.displayName) (\(setting.rawValue))")
     }
 
     @objc private func selectMicrophone(_ sender: NSMenuItem) {
