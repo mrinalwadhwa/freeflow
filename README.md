@@ -1,6 +1,6 @@
-# Voice
+# FreeFlow
 
-A macOS voice app built on Autonomy.
+A macOS app built on Autonomy.
 
 ## Requirements
 

@@ -7,8 +7,7 @@ development tracks, or any other purpose.
 
 ## App Name
 
-"Voice" is a working name. The app will be renamed at some point. Keep naming centralized and
-easy to change.
+The app is called "FreeFlow".
 
 ## File Formatting
 
@@ -48,28 +47,28 @@ make test-all
 ```
 
 **Environment variable gates:**
-- `VOICE_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests,
+- `FREEFLOW_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests,
   ServiceConfigLayeredTests, DictationProviderKeychainTests). These trigger macOS login Keychain
   password prompts.
-- `VOICE_TEST_SLOW=1` — enables timeout and backup connection tests (PipelineTimeoutTests ~75s,
+- `FREEFLOW_TEST_SLOW=1` — enables timeout and backup connection tests (PipelineTimeoutTests ~75s,
   BackupConnectionTests ~7s). These use real timeouts and waits.
 
 Both are set automatically by `make test-all`.
 
-Test output is written to `/tmp/voice-test.log` (not to the terminal). Only the summary line
+Test output is written to `/tmp/freeflow-test.log` (not to the terminal). Only the summary line
 is printed. On failure, the first 20 matching error lines are shown. Inspect the full log for
 details:
 
 ```bash
-cat /tmp/voice-test.log                          # full output
-grep -E '✘|FAIL|failed|error:' /tmp/voice-test.log  # just failures
+cat /tmp/freeflow-test.log                          # full output
+grep -E '✘|FAIL|failed|error:' /tmp/freeflow-test.log  # just failures
 ```
 
 **Run new tests first.** When adding or modifying tests, run only the affected tests before
 running the full suite. This catches failures fast without waiting ~1.5 minutes:
 
 ```bash
-cd VoiceKit
+cd FreeFlowKit
 swift test --filter "testNameA|testNameB" 2>&1 | tail -20
 ```
 
@@ -180,28 +179,28 @@ make clean      # Clean build artifacts + DerivedData
 
 ### Launching the app
 
-The app requires `VOICE_SERVICE_URL` and `VOICE_API_KEY` environment variables. The API key
-is in `VoiceService/secrets.yaml` (gitignored). The service URL is the deployed zone URL
+The app requires `FREEFLOW_SERVICE_URL` and `FREEFLOW_API_KEY` environment variables. The API
+key is in `FreeFlowService/secrets.yaml` (gitignored). The service URL is the deployed zone URL
 (check the `Server` section in the tracking docs or `autonomy zone list` output).
 
 Launch in the background and capture all output to a log file:
 
 ```bash
-pkill -9 -f "Voice.app/Contents/MacOS/Voice" 2>/dev/null
+pkill -9 -f "FreeFlow.app/Contents/MacOS/FreeFlow" 2>/dev/null
 sleep 1
-rm -f /tmp/voice.log
-APP=$(find ~/Library/Developer/Xcode/DerivedData/Voice-*/Build/Products/Debug -name Voice.app -maxdepth 1)
-VOICE_SERVICE_URL="<zone-url>" \
-VOICE_API_KEY="$(grep API_KEY VoiceService/secrets.yaml | cut -d' ' -f2)" \
-"$APP/Contents/MacOS/Voice" > /tmp/voice.log 2>&1 &
+rm -f /tmp/freeflow.log
+APP=$(find ~/Library/Developer/Xcode/DerivedData/FreeFlow-*/Build/Products/Debug -name FreeFlow.app -maxdepth 1)
+FREEFLOW_SERVICE_URL="<zone-url>" \
+FREEFLOW_API_KEY="$(grep API_KEY FreeFlowService/secrets.yaml | cut -d' ' -f2)" \
+"$APP/Contents/MacOS/FreeFlow" > /tmp/freeflow.log 2>&1 &
 echo "Launched PID $!"
 ```
 
 Then tail or grep the log to follow activity:
 
 ```bash
-tail -f /tmp/voice.log
-grep -E "Pipeline|AudioCapture|Streaming|polish" /tmp/voice.log
+tail -f /tmp/freeflow.log
+grep -E "Pipeline|AudioCapture|Streaming|polish" /tmp/freeflow.log
 ```
 
 ### Logging

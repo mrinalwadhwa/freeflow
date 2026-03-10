@@ -1,0 +1,50 @@
+{% extends "base.html" %} {% block title %}{{ app_name }}{% endblock %} {% block content %} {% if admin_user %} {# ----
+Admin dashboard view ---- #}
+<div class="mb-4">
+    <h1>Welcome back</h1>
+    <p>Your {{ app_name }} service is running.</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ user_count }}</div>
+        <div class="stat-label">{{ "user" if user_count == 1 else "users" }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ invite_count }}</div>
+        <div class="stat-label">active {{ "invite" if invite_count == 1 else "invites" }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Quick actions</h3>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem">
+        <a href="/admin/invites" class="btn btn-primary">Create invite</a>
+        <a href="/admin/users" class="btn btn-secondary">View users</a>
+        <a href="/admin/settings" class="btn btn-secondary">Settings</a>
+    </div>
+</div>
+
+{% else %} {# ---- Public visitor view ---- #}
+<div class="hero">
+    <h1>{{ app_name }}</h1>
+    <p>Hold a key, speak, release. Polished text appears at your cursor.</p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center">
+        <a href="#download" class="btn btn-primary">Download</a>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Have an invite?</h3>
+    <p class="mb-0">Click the invite link you received to set up {{ app_name }} on your Mac.</p>
+</div>
+
+<div class="card" id="download">
+    <h3>Download {{ app_name }}</h3>
+    <p>Download the app first, then click your invite link to connect.</p>
+    <a href="https://autonomy.computer/freeflow/FreeFlow.zip" class="btn btn-secondary">Download for macOS</a>
+    <p class="text-small mt-2" style="color: var(--color-light)">Requires macOS 14 or later.</p>
+</div>
+{% endif %} {% endblock %}

@@ -2,22 +2,22 @@
 
 # XcodeGen must be installed: brew install xcodegen
 XCODEGEN := $(shell command -v xcodegen 2>/dev/null)
-PROJECT  := Voice.xcodeproj
-SCHEME   := VoiceApp
+PROJECT  := FreeFlow.xcodeproj
+SCHEME   := FreeFlowApp
 CONFIG   := Debug
 
 # Release settings
 TEAM_ID          := 3A56YKKGA5
 SIGN_IDENTITY    := Developer ID Application: Ockam Inc. ($(TEAM_ID))
-NOTARIZE_PROFILE := voice-notarize
-ARCHIVE_PATH     := build/Voice.xcarchive
-APP_PATH         := build/Voice.app
+NOTARIZE_PROFILE := freeflow-notarize
+ARCHIVE_PATH     := build/FreeFlow.xcarchive
+APP_PATH         := build/FreeFlow.app
 RELEASE_DIR      := releases
-DMG_NAME         := Voice.dmg
+DMG_NAME         := FreeFlow.dmg
 DMG_PATH         := $(RELEASE_DIR)/$(DMG_NAME)
 DMG_STAGING      := build/dmg_contents
-DOWNLOAD_URL     := https://autonomy.computer/voice/
-SPARKLE_BIN      := $(shell find ~/Library/Developer/Xcode/DerivedData/Voice-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)
+DOWNLOAD_URL     := https://autonomy.computer/freeflow/
+SPARKLE_BIN      := $(shell find ~/Library/Developer/Xcode/DerivedData/FreeFlow-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)
 
 # Generate the Xcode project from project.yml
 generate:
@@ -32,20 +32,20 @@ build: $(PROJECT)
 
 # Build and launch
 run: build
-	@open "$$(xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) -showBuildSettings 2>/dev/null | grep -m1 ' BUILT_PRODUCTS_DIR' | awk '{print $$3}')/Voice.app"
+	@open "$$(xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) -showBuildSettings 2>/dev/null | grep -m1 ' BUILT_PRODUCTS_DIR' | awk '{print $$3}')/FreeFlow.app"
 
-# Run all VoiceKit tests via Swift Package Manager (no Xcode project needed).
+# Run all FreeFlowKit tests via Swift Package Manager (no Xcode project needed).
 # swift test runs both XCTest-based and Swift Testing suites in one invocation,
 # but the final summary line only counts Swift Testing tests. This target parses
 # the full output to report a combined total from both frameworks.
 #
-# Output is written to /tmp/voice-test.log to avoid flooding the terminal.
+# Output is written to /tmp/freeflow-test.log to avoid flooding the terminal.
 # Only the summary line is printed. Inspect the log for details on failures.
-TEST_LOG := /tmp/voice-test.log
+TEST_LOG := /tmp/freeflow-test.log
 
 test:
 	@echo "Running fast tests… output → $(TEST_LOG)"
-	@cd VoiceKit && swift test > $(TEST_LOG) 2>&1; \
+	@cd FreeFlowKit && swift test > $(TEST_LOG) 2>&1; \
 	exit_code=$$?; \
 	xc_pass=`grep -c '^Test Case.*passed' $(TEST_LOG) || true`; \
 	xc_fail=`grep -c '^Test Case.*failed' $(TEST_LOG) || true`; \
@@ -69,7 +69,7 @@ test:
 # Run all tests including Keychain-dependent suites (requires macOS login Keychain access).
 test-all:
 	@echo "Running all tests (including Keychain + slow)… output → $(TEST_LOG)"
-	@cd VoiceKit && VOICE_TEST_KEYCHAIN=1 VOICE_TEST_SLOW=1 swift test > $(TEST_LOG) 2>&1; \
+	@cd FreeFlowKit && FREEFLOW_TEST_KEYCHAIN=1 FREEFLOW_TEST_SLOW=1 swift test > $(TEST_LOG) 2>&1; \
 	exit_code=$$?; \
 	xc_pass=`grep -c '^Test Case.*passed' $(TEST_LOG) || true`; \
 	xc_fail=`grep -c '^Test Case.*failed' $(TEST_LOG) || true`; \
@@ -93,7 +93,7 @@ test-all:
 # Clean build artifacts
 clean:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) clean 2>/dev/null || true
-	cd VoiceKit && swift package clean
+	cd FreeFlowKit && swift package clean
 	rm -rf DerivedData build
 
 # Open in Xcode (generates project first if missing)
@@ -128,7 +128,7 @@ archive: $(PROJECT)
 		archive
 	@echo "── Extracting app from archive ──"
 	@rm -rf $(APP_PATH)
-	@cp -R "$(ARCHIVE_PATH)/Products/Applications/Voice.app" $(APP_PATH)
+	@cp -R "$(ARCHIVE_PATH)/Products/Applications/FreeFlow.app" $(APP_PATH)
 
 # Sign the app bundle with hardened runtime and entitlements.
 # Sparkle embeds XPC services and a nested Updater.app that must be
@@ -160,7 +160,7 @@ sign:
 	@echo "── Signing app bundle ──"
 	codesign --force --options runtime \
 		--sign "$(SIGN_IDENTITY)" \
-		--entitlements VoiceApp/Voice.entitlements \
+		--entitlements FreeFlowApp/FreeFlow.entitlements \
 		--timestamp \
 		$(APP_PATH)
 	@echo "── Verifying signature ──"
@@ -177,7 +177,7 @@ dmg:
 	@ln -s /Applications $(DMG_STAGING)/Applications
 	@mkdir -p $(RELEASE_DIR)
 	@rm -f $(DMG_PATH)
-	hdiutil create -volname "Voice" -srcfolder $(DMG_STAGING) -ov -format UDZO $(DMG_PATH)
+	hdiutil create -volname "FreeFlow" -srcfolder $(DMG_STAGING) -ov -format UDZO $(DMG_PATH)
 	@rm -rf $(DMG_STAGING)
 	@echo "  $(DMG_PATH) ($$(du -h $(DMG_PATH) | cut -f1))"
 
@@ -193,8 +193,8 @@ notarize:
 	@echo "── Verifying Gatekeeper approval ──"
 	@# DMGs are notarized but not code-signed. Verify the app inside.
 	hdiutil attach $(DMG_PATH) -nobrowse -quiet
-	spctl --assess --type execute --verbose=2 /Volumes/Voice/Voice.app
-	hdiutil detach /Volumes/Voice -quiet
+	spctl --assess --type execute --verbose=2 /Volumes/FreeFlow/FreeFlow.app
+	hdiutil detach /Volumes/FreeFlow -quiet
 
 # Generate or update appcast.xml from the release DMG
 appcast:

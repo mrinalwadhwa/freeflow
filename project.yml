@@ -1,4 +1,4 @@
-name: Voice
+name: FreeFlow
 options:
   bundleIdPrefix: computer.autonomy
   deploymentTarget:
@@ -24,33 +24,33 @@ settings:
       OTHER_CODE_SIGN_FLAGS: "--timestamp"
 
 packages:
-  VoiceKit:
-    path: VoiceKit
+  FreeFlowKit:
+    path: FreeFlowKit
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.9.0
 
 targets:
-  VoiceApp:
+  FreeFlowApp:
     type: application
     platform: macOS
     sources:
-      - path: VoiceApp/Sources
+      - path: FreeFlowApp/Sources
     settings:
       base:
-        PRODUCT_NAME: Voice
-        PRODUCT_BUNDLE_IDENTIFIER: computer.autonomy.voice
-        INFOPLIST_FILE: VoiceApp/Info.plist
-        CODE_SIGN_ENTITLEMENTS: VoiceApp/Voice.entitlements
+        PRODUCT_NAME: FreeFlow
+        PRODUCT_BUNDLE_IDENTIFIER: computer.autonomy.freeflow
+        INFOPLIST_FILE: FreeFlowApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: FreeFlowApp/FreeFlow.entitlements
         ENABLE_APP_SANDBOX: false
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
         COMBINE_HIDPI_IMAGES: true
     dependencies:
-      - package: VoiceKit
+      - package: FreeFlowKit
       - package: Sparkle
     entitlements:
-      path: VoiceApp/Voice.entitlements
+      path: FreeFlowApp/FreeFlow.entitlements
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.device.audio-input: true
