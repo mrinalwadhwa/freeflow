@@ -40,6 +40,24 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     private var _micProximity: MicProximity = .nearField
     private var pcmChunks: [Data] = []
 
+    /// Software gain factor applied to outbound PCM audio for far-field
+    /// (built-in) mics. Lifts quiet speech and whispers into a range
+    /// where the server's transcription model works reliably. Computed
+    /// once after ambient calibration completes. Near-field mics always
+    /// use 1.0 (no gain). Raw peak/ambient RMS values are unaffected
+    /// so the silence gate logic is unchanged.
+    private var _gainFactor: Float = 1.0
+
+    /// Target RMS level for gained audio. Quiet speech on a near-field
+    /// mic produces RMS ~0.02; lifting far-field audio to this level
+    /// gives the transcription model a strong signal without clipping.
+    private static let targetGainRMS: Float = 0.02
+
+    /// Maximum gain multiplier. Caps amplification to prevent noise
+    /// from being amplified into distortion. At 16x, a sample of
+    /// ±2048 (RMS ~0.06, loud speech) reaches ±32768 (Int16 boundary).
+    private static let maxGainFactor: Float = 16.0
+
     /// Optional sound feedback provider for start/stop audio cues.
     private var _soundFeedbackProvider: SoundFeedbackProvider?
 
@@ -166,6 +184,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 _ambientSampleCount = 0
                 _ambientSumOfSquares = 0
                 _ambientCalibrated = false
+                _gainFactor = 1.0
 
                 // Set up the PCM audio stream before starting capture.
                 let (pcmStream, pcmCont) = AsyncStream<Data>.makeStream()
@@ -408,8 +427,16 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     // Fall through to create a new engine.
                 } else {
                     // Engine exists for the correct device. Reuse it
-                    // for low latency. Make sure it is running (may
-                    // have been stopped by a config change notification).
+                    // for low latency. Re-query mic proximity in case
+                    // the system default device changed while the engine
+                    // was stopped (e.g. AirPods connected between
+                    // sessions). The engine follows the new default
+                    // automatically on restart, but _micProximity was
+                    // stale from the previous device.
+                    _micProximity =
+                        _audioDeviceProvider?.micProximityForDevice(
+                            _configuredDeviceID
+                        ) ?? .nearField
                     if !engine.isRunning {
                         engine.prepare()
                         let startException = ObjCTryCatch {
@@ -672,13 +699,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             }
             let rms = sqrtf(sumOfSquares / Float(frameLength))
 
-            // Raw RMS from speech is typically 0.002-0.02. Scale up
-            // aggressively and apply a sqrt curve so quiet speech still
-            // moves the bars while loud speech doesn't just pin at 1.0.
-            let scaled = min(sqrtf(rms * 25.0), 1.0)
-
             lock.withLock {
                 // Track the raw (unscaled) peak for silence detection.
+                // Raw values are used so the silence gate in
+                // DictationPipeline is unaffected by gain.
                 if rms > _peakRMS {
                     _peakRMS = rms
                 }
@@ -686,6 +710,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 // Accumulate ambient noise level during the calibration
                 // window (first ~0.5s of recording). After enough samples,
                 // compute the ambient RMS once and stop accumulating.
+                // Then compute the software gain factor for far-field mics.
                 if !_ambientCalibrated {
                     _ambientSumOfSquares += Double(sumOfSquares)
                     _ambientSampleCount += frameLength
@@ -695,9 +720,24 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                                 _ambientSumOfSquares / Double(_ambientSampleCount)
                             ))
                         _ambientCalibrated = true
+                        _gainFactor = Self.computeGainFactor(
+                            ambientRMS: _ambientRMS,
+                            micProximity: _micProximity
+                        )
+                        Log.debug(
+                            "[AudioCapture] Ambient calibrated: RMS=\(_ambientRMS), "
+                                + "proximity=\(_micProximity.rawValue), "
+                                + "gain=\(_gainFactor)"
+                        )
                     }
                 }
 
+                // Apply gain to the visualization so the HUD level bar
+                // reflects the amplified signal the server will receive.
+                // Without this, the bar barely moves for built-in mic
+                // whispers even though the server gets a strong signal.
+                let displayRMS = rms * _gainFactor
+                let scaled = min(sqrtf(displayRMS * 25.0), 1.0)
                 levelContinuation?.yield(scaled)
             }
         }
@@ -751,14 +791,18 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
             guard outputBuffer.frameLength > 0 else { return }
 
-            // Extract raw int16 PCM bytes from the output buffer.
-            let byteCount = Int(outputBuffer.frameLength) * (Self.targetBitsPerSample / 8)
+            // Extract raw int16 PCM bytes from the output buffer,
+            // applying software gain for far-field mics to lift quiet
+            // speech and whispers into a range the transcription model
+            // handles well.
+            let frameCount = Int(outputBuffer.frameLength)
+            let gain: Float = lock.withLock { _gainFactor }
             let data: Data
+
             if let int16Data = outputBuffer.int16ChannelData {
-                data = Data(
-                    bytes: int16Data[0],
-                    count: byteCount
-                )
+                let byteCount = frameCount * (Self.targetBitsPerSample / 8)
+                let raw = Data(bytes: int16Data[0], count: byteCount)
+                data = Self.applySoftwareGain(raw, gain: gain)
             } else {
                 return
             }
@@ -769,6 +813,45 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             }
         }
     #endif
+
+    // MARK: - Software gain helpers
+
+    /// Compute the gain factor for a far-field mic given the measured
+    /// ambient RMS. Returns 1.0 for near-field mics or when ambient
+    /// is zero. Clamps to `[1.0, maxGainFactor]`.
+    static func computeGainFactor(
+        ambientRMS: Float,
+        micProximity: MicProximity
+    ) -> Float {
+        guard micProximity == .farField, ambientRMS > 0 else {
+            return 1.0
+        }
+        let raw = targetGainRMS / ambientRMS
+        return min(max(raw, 1.0), maxGainFactor)
+    }
+
+    /// Apply a gain factor to raw Int16 PCM data, clamping each sample
+    /// to `Int16.min...Int16.max` to prevent overflow wrapping.
+    /// Returns the input unchanged when gain is <= 1.0.
+    static func applySoftwareGain(
+        _ pcmData: Data,
+        gain: Float
+    ) -> Data {
+        guard gain > 1.0 else { return pcmData }
+        let sampleCount = pcmData.count / 2
+        guard sampleCount > 0 else { return pcmData }
+
+        var output = Data(capacity: pcmData.count)
+        pcmData.withUnsafeBytes { rawBuffer in
+            let samples = rawBuffer.bindMemory(to: Int16.self)
+            for i in 0..<sampleCount {
+                let amplified = Int32(Float(samples[i]) * gain)
+                let clamped = Int16(clamping: amplified)
+                withUnsafeBytes(of: clamped) { output.append(contentsOf: $0) }
+            }
+        }
+        return output
+    }
 }
 
 // MARK: - Errors
