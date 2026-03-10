@@ -36,19 +36,17 @@
 {% else %}
 <div class="invite-page">
     <h1>You're invited to {{ app_name }}</h1>
-    <p>Hold a key, speak, release. Polished text appears at your cursor.</p>
+    <p style="color: var(--color-light)">Hold a key, speak, release. Polished text appears at your cursor.</p>
 
-    <div class="mb-4">
-        <a id="open-app" href="{{ voice_url }}" class="btn btn-primary">Open in {{ app_name }}</a>
-    </div>
-
-    <div id="install-instructions" class="card hidden" style="text-align: left">
-        <h3>Don't have {{ app_name }} yet?</h3>
+    <div class="card" style="text-align: left; margin-top: 1.5rem; padding-top: 3rem">
         <div class="invite-steps">
             <div class="invite-step">
                 <div class="invite-step-number">1</div>
                 <div class="invite-step-text">
-                    <a href="https://autonomy.computer/voice/Voice.zip" class="btn btn-secondary btn-small"
+                    <a
+                        href="https://autonomy.computer/voice/Voice.dmg"
+                        class="btn btn-primary btn-small"
+                        id="download-btn"
                         >Download for macOS</a
                     >
                     <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
@@ -58,28 +56,37 @@
             </div>
             <div class="invite-step">
                 <div class="invite-step-number">2</div>
-                <div class="invite-step-text">Open the downloaded app</div>
+                <div class="invite-step-text">
+                    Open the downloaded <strong>Voice.dmg</strong> and drag <strong>Voice</strong> to
+                    <strong>Applications</strong>
+                </div>
             </div>
             <div class="invite-step">
                 <div class="invite-step-number">3</div>
                 <div class="invite-step-text">
-                    <a href="{{ voice_url }}" class="btn btn-secondary btn-small">Click here to connect</a>
+                    <a href="{{ voice_url }}" class="btn btn-primary btn-small" id="connect-btn"
+                        >Connect {{ app_name }}</a
+                    >
+                    <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
+                        >Opens the app and links your invite</span
+                    >
                 </div>
             </div>
         </div>
     </div>
 
-    <p class="text-small" style="color: var(--color-light)" id="show-install-link">
-        Don't have the app? <a href="#" id="show-install">Install {{ app_name }} first</a>
-    </p>
+    <div id="view-opened" class="hidden" style="text-align: center; margin-top: 1.5rem">
+        <p style="color: var(--color-light)">Check the {{ app_name }} window to continue setup.</p>
+        <p style="margin-top: 0.75rem">
+            <a href="{{ voice_url }}" class="text-small">Click here if {{ app_name }} didn't open</a>
+        </p>
+    </div>
 </div>
 {% endif %} {% endblock %} {% block scripts %} {% if token_valid and is_admin_token and not admin_user %}
 <script>
     (function () {
         var form = document.getElementById("admin-redeem-form");
         var btn = document.getElementById("admin-redeem-btn");
-        var errorDiv = document.getElementById("admin-redeem-error");
-        var errorMsg = document.getElementById("admin-redeem-error-message");
 
         form.addEventListener("submit", function () {
             btn.disabled = true;
@@ -90,35 +97,18 @@
 {% elif token_valid and not is_admin_token %}
 <script>
     (function () {
-        var openBtn = document.getElementById("open-app");
-        var instructions = document.getElementById("install-instructions");
-        var showLink = document.getElementById("show-install-link");
-        var showInstall = document.getElementById("show-install");
+        var connectBtn = document.getElementById("connect-btn");
+        var viewOpened = document.getElementById("view-opened");
 
-        // Try to open the app via URL scheme. If the page is still visible
-        // after a short delay, the app is probably not installed.
-        var appOpened = false;
-
-        function onBlur() {
-            appOpened = true;
+        if (connectBtn) {
+            connectBtn.addEventListener("click", function () {
+                // After clicking, show a hint that the app should be opening.
+                // Use a short delay so the browser has time to hand off to the app.
+                setTimeout(function () {
+                    viewOpened.classList.remove("hidden");
+                }, 1000);
+            });
         }
-        window.addEventListener("blur", onBlur);
-
-        openBtn.addEventListener("click", function () {
-            setTimeout(function () {
-                window.removeEventListener("blur", onBlur);
-                if (!appOpened) {
-                    instructions.classList.remove("hidden");
-                    showLink.classList.add("hidden");
-                }
-            }, 1500);
-        });
-
-        showInstall.addEventListener("click", function (e) {
-            e.preventDefault();
-            instructions.classList.remove("hidden");
-            showLink.classList.add("hidden");
-        });
     })();
 </script>
 {% endif %} {% endblock %}
