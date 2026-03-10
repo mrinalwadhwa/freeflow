@@ -20,8 +20,13 @@ enum HUDVisualState: Equatable {
     /// Hands-free listening. Waveform dots with ✕ (cancel) and ■ (stop) buttons.
     case listeningHandsFree
 
-    /// STT in flight, fast path. Animated indicator, no cancel affordance.
-    case processing
+    /// STT in flight, fast path. The pill optimistically collapses toward
+    /// minimized dimensions over ~0.6s, anticipating a quick result. No
+    /// content inside the pill; the shrinking itself is the visual signal.
+    /// If the result arrives during the collapse, the snap to minimized is
+    /// nearly imperceptible. If 1s passes without a result, transitions to
+    /// `.processingSlow`.
+    case processingCollapsing
 
     /// STT in flight, slow path (threshold exceeded). Shows reassurance message
     /// and ✕ cancel affordance.
@@ -43,7 +48,7 @@ enum HUDVisualState: Equatable {
         case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired:
             return true
-        case .listeningHeld, .processing:
+        case .listeningHeld, .processingCollapsing:
             return false
         }
     }
@@ -55,9 +60,9 @@ enum HUDVisualState: Equatable {
     /// (waveform, buttons, or messages).
     var isExpanded: Bool {
         switch self {
-        case .minimized, .ready:
+        case .minimized, .ready, .processingCollapsing:
             return false
-        case .listeningHeld, .listeningHandsFree, .processing, .processingSlow, .noTarget,
+        case .listeningHeld, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired:
             return true
         }
@@ -76,7 +81,7 @@ enum HUDVisualState: Equatable {
     /// Whether the processing animation should be visible.
     var showsProcessingIndicator: Bool {
         switch self {
-        case .processing, .processingSlow:
+        case .processingSlow:
             return true
         default:
             return false

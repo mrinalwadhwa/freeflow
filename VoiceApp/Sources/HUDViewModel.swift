@@ -74,9 +74,6 @@ final class HUDViewModel: ObservableObject {
 
     // MARK: - Timers
 
-    /// Duration before the slow-processing message appears.
-    private let slowProcessingThreshold: TimeInterval
-
     /// Duration the mic callout stays visible before auto-dismissing.
     private let micCalloutDuration: TimeInterval
 
@@ -99,11 +96,9 @@ final class HUDViewModel: ObservableObject {
 
     init(
         shortcuts: ShortcutConfiguration = .default,
-        slowProcessingThreshold: TimeInterval = 7.0,
         micCalloutDuration: TimeInterval = 3.0
     ) {
         self.shortcuts = shortcuts
-        self.slowProcessingThreshold = slowProcessingThreshold
         self.micCalloutDuration = micCalloutDuration
     }
 
@@ -197,6 +192,7 @@ final class HUDViewModel: ObservableObject {
             slowProcessingTask?.cancel()
             slowProcessingTask = nil
             slowProcessingFired = false
+            processingCollapsing = false
         }
 
         switch state {
@@ -218,6 +214,7 @@ final class HUDViewModel: ObservableObject {
 
         case .processing:
             stopAudioLevelObservation()
+            processingCollapsing = true
             startSlowProcessingTimer()
             recalculate()
 
@@ -239,16 +236,25 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Slow processing timer
+    // MARK: - Processing timers
 
+    /// Whether the pill is in the optimistic collapsing phase.
+    /// Set to `true` on `.processing` entry, cleared when the result
+    /// arrives or the slow-processing timer fires.
+    private var processingCollapsing = false
+
+    /// Start a 1s timer. If the result hasn't arrived by then, switch
+    /// from the optimistic collapse to the `.processingSlow` expanded
+    /// pill with a "Still working…" message and cancel affordance.
     private func startSlowProcessingTimer() {
         slowProcessingTask?.cancel()
         slowProcessingFired = false
-        slowProcessingTask = Task { [weak self, slowProcessingThreshold] in
-            try? await Task.sleep(
-                nanoseconds: UInt64(slowProcessingThreshold * 1_000_000_000)
-            )
+        slowProcessingTask = Task { [weak self] in
+            // 1s — if the result hasn't arrived, the optimistic collapse
+            // was wrong. Re-expand to processingSlow.
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
+            self?.processingCollapsing = false
             self?.slowProcessingFired = true
             self?.recalculate()
         }
@@ -279,7 +285,10 @@ final class HUDViewModel: ObservableObject {
             if slowProcessingFired {
                 return .processingSlow
             }
-            return .processing
+            if processingCollapsing {
+                return .processingCollapsing
+            }
+            return .processingSlow
 
         case .injectionFailed:
             return .noTarget

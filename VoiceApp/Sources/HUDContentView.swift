@@ -29,8 +29,8 @@ struct HUDContentView: View {
             return 80
         case .listeningHandsFree:
             return 140
-        case .processing:
-            return 80
+        case .processingCollapsing:
+            return 46
         case .processingSlow:
             return 180
         case .noTarget:
@@ -46,7 +46,9 @@ struct HUDContentView: View {
             return 8
         case .ready:
             return 10
-        case .listeningHeld, .listeningHandsFree, .processing,
+        case .processingCollapsing:
+            return 8
+        case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
             return 32
         }
@@ -54,9 +56,9 @@ struct HUDContentView: View {
 
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
-        case .minimized:
+        case .minimized, .processingCollapsing:
             return 0.3
-        case .ready, .listeningHeld, .listeningHandsFree, .processing,
+        case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
             return 0.5
         }
@@ -64,9 +66,9 @@ struct HUDContentView: View {
 
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
-        case .minimized:
+        case .minimized, .processingCollapsing:
             return 0.45
-        case .ready, .listeningHeld, .listeningHandsFree, .processing,
+        case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
             return 0.7
         }
@@ -79,9 +81,9 @@ struct HUDContentView: View {
     /// Whether the pill is in a full active state (not minimized/ready).
     private var isActive: Bool {
         switch viewModel.visualState {
-        case .minimized, .ready:
+        case .minimized, .ready, .processingCollapsing:
             return false
-        case .listeningHeld, .listeningHandsFree, .processing,
+        case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
             return true
         }
@@ -114,6 +116,7 @@ struct HUDContentView: View {
             }
             .animation(
                 viewModel.visualState == .minimized
+                    || viewModel.visualState == .processingCollapsing
                     ? .easeOut(duration: 0.15)
                     : .spring(response: 0.18, dampingFraction: 0.82, blendDuration: 0),
                 value: viewModel.visualState
@@ -153,16 +156,13 @@ struct HUDContentView: View {
     @ViewBuilder
     private var activeContent: some View {
         switch viewModel.visualState {
-        case .minimized, .ready:
+        case .minimized, .ready, .processingCollapsing:
             EmptyView()
         case .listeningHeld:
             listeningHeldContent
                 .transition(.opacity)
         case .listeningHandsFree:
             listeningHandsFreeContent
-                .transition(.opacity)
-        case .processing:
-            processingContent
                 .transition(.opacity)
         case .processingSlow:
             processingSlowContent
@@ -239,14 +239,6 @@ struct HUDContentView: View {
             .accessibilityLabel("Stop recording")
         }
         .padding(.horizontal, 12)
-    }
-
-    // MARK: - Processing (fast path)
-
-    /// STT in flight. Animated indicator, no cancel affordance.
-    private var processingContent: some View {
-        BreathingBarView()
-            .padding(.horizontal, 16)
     }
 
     // MARK: - Processing (slow path)

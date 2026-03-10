@@ -31,12 +31,10 @@ final class HUDController {
     // MARK: - Init
 
     init(
-        shortcuts: ShortcutConfiguration = .default,
-        slowProcessingThreshold: TimeInterval = 5.0
+        shortcuts: ShortcutConfiguration = .default
     ) {
         self.viewModel = HUDViewModel(
-            shortcuts: shortcuts,
-            slowProcessingThreshold: slowProcessingThreshold
+            shortcuts: shortcuts
         )
         setupViewModelActions()
     }
@@ -384,7 +382,7 @@ final class HUDController {
         case .sessionExpired:
             dismissNoTarget()
             return true
-        case .minimized, .ready, .listeningHeld, .processing:
+        case .minimized, .ready, .listeningHeld, .processingCollapsing:
             return false
         }
     }

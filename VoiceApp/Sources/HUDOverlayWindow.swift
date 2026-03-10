@@ -100,7 +100,9 @@ final class HUDOverlayWindow: NSPanel {
         // loop and global click monitor. In active expanded states
         // with buttons (listening, processing), the window accepts
         // mouse events directly.
-        if state == .minimized || state == .ready || state == .noTarget {
+        if state == .minimized || state == .ready || state == .noTarget
+            || state == .processingCollapsing
+        {
             ignoresMouseEvents = true
         } else {
             ignoresMouseEvents = !state.acceptsMouseEvents
@@ -162,7 +164,11 @@ final class HUDOverlayWindow: NSPanel {
             pillWidth = Self.minimizedCapsuleWidth
             pillHeight = Self.minimizedCapsuleHeight
             padding = 10
-        case .listeningHeld, .processing:
+        case .processingCollapsing:
+            pillWidth = Self.minimizedCapsuleWidth
+            pillHeight = Self.minimizedCapsuleHeight
+            padding = 10
+        case .listeningHeld:
             pillWidth = 80
             pillHeight = 32
             padding = 4
