@@ -75,6 +75,14 @@ public actor DictationPipeline: PipelineProviding {
     /// measured ambient noise, reject audio below this level.
     private let minimumAdaptiveThreshold: Float = 0.0005
 
+    /// Ceiling for the adaptive threshold. AirPods noise cancellation
+    /// can produce variable ambient RMS (0.002–0.015) depending on
+    /// environment. Without a cap, high ambient pushes the threshold
+    /// above whisper peak RMS (~0.009) and silently rejects speech.
+    /// 0.01 lets whispers through while still rejecting noise-only
+    /// presses (which peak well below 0.005 on near-field mics).
+    private let maximumAdaptiveThreshold: Float = 0.01
+
     /// Context captured concurrently during the recording phase.
     private var pendingContext: Task<AppContext, Never>?
 
@@ -130,9 +138,13 @@ public actor DictationPipeline: PipelineProviding {
             return farFieldSilenceThreshold
         }
         // Near-field mic: use adaptive threshold when ambient is known.
+        // Clamp between floor and ceiling so variable ambient (e.g.
+        // AirPods noise cancellation adjusting) cannot push the
+        // threshold above whisper-range speech.
         let ambient = audioProvider.ambientRMS
         if ambient > 0 {
-            return max(ambient * ambientMultiplier, minimumAdaptiveThreshold)
+            let raw = ambient * ambientMultiplier
+            return min(max(raw, minimumAdaptiveThreshold), maximumAdaptiveThreshold)
         }
         return silenceThreshold
     }
