@@ -221,6 +221,10 @@ ROUTES = {
         "account/sign-in.html",
         {},
     ),
+    "/settings/": (
+        "settings/index.html",
+        {},
+    ),
 }
 
 

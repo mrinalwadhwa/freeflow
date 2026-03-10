@@ -25,6 +25,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var updaterService: UpdaterService?
     private var shortcuts: ShortcutConfiguration = .default
 
+    /// Callback invoked when Settings menu item is clicked.
+    var onOpenSettings: (() -> Void)?
+
     // MARK: - Onboarding mode
 
     /// When true, the menu shows a minimal onboarding hint instead of
@@ -238,6 +241,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         // --- App ---
 
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settings.target = self
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        menu.addItem(settings)
+
         let about = NSMenuItem(
             title: "About Voice",
             action: #selector(showAbout),
@@ -438,6 +450,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func checkForUpdatesAction() {
         updaterService?.checkForUpdates()
+    }
+
+    @objc private func openSettings() {
+        onOpenSettings?()
     }
 
     @objc private func showAbout() {

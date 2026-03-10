@@ -151,8 +151,9 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     /// Call once during setup. The provider uses its own dedicated
     /// playback engine; this reference lets `startRecording()` and
     /// `stopRecording()` trigger sounds at the exact moments the
-    /// capture state changes.
-    public func setSoundFeedbackProvider(_ provider: SoundFeedbackProvider) {
+    /// capture state changes. Pass `nil` to mute sound cues (e.g.
+    /// during mic preview in the settings window).
+    public func setSoundFeedbackProvider(_ provider: SoundFeedbackProvider?) {
         lock.withLock { _soundFeedbackProvider = provider }
     }
 

@@ -24,8 +24,12 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
 
     private let lock = NSLock()
 
-    /// Whether sound feedback is enabled. Can be toggled at runtime.
+    /// Whether sound feedback is enabled. Syncs with Settings on init
+    /// and can be toggled at runtime.
     private var _enabled: Bool = true
+
+    /// Observer for settings changes.
+    private var settingsObserver: NSObjectProtocol?
 
     #if canImport(AVFoundation)
         // Pre-loaded sound buffers.
@@ -55,6 +59,21 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
     // MARK: - Init
 
     public init() {
+        // Sync with persisted setting.
+        _enabled = Settings.shared.soundFeedbackEnabled
+
+        // Observe settings changes to keep in sync.
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .settingsDidChange,
+            object: Settings.shared,
+            queue: .main
+        ) { [weak self] notification in
+            guard let key = notification.userInfo?["key"] as? String,
+                key == "soundFeedbackEnabled"
+            else { return }
+            self?.syncWithSettings()
+        }
+
         #if canImport(AVFoundation)
             // Pre-load sound files into PCM buffers. If loading fails,
             // the corresponding buffer stays nil and that cue is silently
@@ -77,11 +96,20 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
     }
 
     deinit {
+        if let observer = settingsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         #if canImport(AVFoundation)
             lock.withLock {
                 tearDownEngineLocked()
             }
         #endif
+    }
+
+    /// Sync the enabled state with the current Settings value.
+    private func syncWithSettings() {
+        let newValue = Settings.shared.soundFeedbackEnabled
+        lock.withLock { _enabled = newValue }
     }
 
     // MARK: - Playback

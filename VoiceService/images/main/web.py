@@ -132,6 +132,18 @@ async def account_sign_in(request: Request):
     return await _render("account/sign-in.html")
 
 
+@public_router.get("/settings/", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    """Settings page for the macOS app WKWebView.
+
+    Displays sound, hotkey, language, and microphone settings. All state
+    is local to the app (read/written via the native bridge), so no
+    server-side auth or data is needed. The page is a UI shell that
+    delegates all reads and writes to the native side.
+    """
+    return await _render("settings/index.html")
+
+
 @public_router.get("/onboarding/", response_class=HTMLResponse)
 async def onboarding(request: Request):
     """Single-page onboarding flow for the macOS app WKWebView.

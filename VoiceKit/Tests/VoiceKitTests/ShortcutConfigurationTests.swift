@@ -10,7 +10,9 @@ struct ShortcutConfigurationTests {
     func defaultValues() {
         let config = ShortcutConfiguration.default
 
-        #expect(config.holdToRecordKeyName == "⌥ Right Option")
+        // holdToRecordKeyName is now dynamic, read from HotkeySetting.current.
+        // With default settings it should reflect Right Option.
+        #expect(config.holdToRecordKeyName == HotkeySetting.current.displayName)
         #expect(config.pasteShortcutName == "⌃⌥V")
         #expect(config.dismissKeyName == "Escape")
     }
@@ -21,29 +23,22 @@ struct ShortcutConfigurationTests {
         #expect(config == .default)
     }
 
-    @Test("Custom configuration preserves all values")
+    @Test("Custom configuration preserves paste and dismiss values")
     func customValues() {
         let config = ShortcutConfiguration(
-            holdToRecordKeyName: "fn",
             pasteShortcutName: "⌘⇧V",
             dismissKeyName: "Esc"
         )
 
-        #expect(config.holdToRecordKeyName == "fn")
         #expect(config.pasteShortcutName == "⌘⇧V")
         #expect(config.dismissKeyName == "Esc")
     }
 
-    @Test("Hold-to-record hint includes key name")
+    @Test("Hold-to-record hint includes key name from HotkeySetting")
     func holdToRecordHint() {
         let config = ShortcutConfiguration.default
-        #expect(config.holdToRecordHint == "Hold ⌥ Right Option to dictate")
-    }
-
-    @Test("Hold-to-record hint reflects custom key name")
-    func holdToRecordHintCustom() {
-        let config = ShortcutConfiguration(holdToRecordKeyName: "fn")
-        #expect(config.holdToRecordHint == "Hold fn to dictate")
+        let expected = "Hold \(HotkeySetting.current.displayName) to dictate"
+        #expect(config.holdToRecordHint == expected)
     }
 
     @Test("No-target hint includes paste shortcut")
@@ -58,10 +53,10 @@ struct ShortcutConfigurationTests {
         #expect(config.noTargetHint == "Select a text field, then ⌘⇧V to paste")
     }
 
-    @Test("Equatable distinguishes different configurations")
+    @Test("Equatable compares paste and dismiss fields")
     func equatable() {
         let a = ShortcutConfiguration.default
-        let b = ShortcutConfiguration(holdToRecordKeyName: "fn")
+        let b = ShortcutConfiguration(pasteShortcutName: "⌘⇧V")
         #expect(a != b)
     }
 }

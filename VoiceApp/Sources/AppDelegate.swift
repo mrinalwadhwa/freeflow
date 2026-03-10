@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import VoiceKit
 
 @MainActor
@@ -29,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController?
     private var permissionController: PermissionController?
     private var onboardingController: OnboardingController?
+    private var settingsController: SettingsController?
 
     /// URLs received before applicationDidFinishLaunching completes.
     private var pendingURLs: [URL] = []
@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPipeline()
         setupHUD()
         setupUpdater()
+        setupSettings()
         setupMenuBarState()
 
         // Process any voice:// URLs received before launch finished.
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioProvider.shutdown()
         soundFeedbackProvider.shutdown()
         onboardingController?.dismissWindow()
+        settingsController?.closeWindow()
     }
 
     // MARK: - URL Scheme
@@ -448,6 +450,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcuts: .default
         )
         menuBarController = controller
+
+        // Wire settings action.
+        controller.onOpenSettings = { [weak self] in
+            self?.showSettings()
+        }
+    }
+
+    // MARK: - Settings
+
+    private func setupSettings() {
+        let controller = SettingsController()
+        controller.audioDeviceProvider = audioDeviceProvider
+        controller.audioPreviewProvider = audioProvider
+        controller.soundFeedbackProvider = soundFeedbackProvider
+        controller.pipeline = pipeline
+        controller.onHotkeyChanged = { [weak self] in
+            self?.reRegisterHotkey()
+        }
+        settingsController = controller
+    }
+
+    /// Show the settings window.
+    private func showSettings() {
+        settingsController?.showWindow()
+    }
+
+    /// Re-register the hotkey after settings change.
+    private func reRegisterHotkey() {
+        hotkeyProvider.unregister()
+        registerHotkey()
     }
 
     // MARK: - Permissions

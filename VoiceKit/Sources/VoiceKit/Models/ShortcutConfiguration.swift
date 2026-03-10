@@ -3,12 +3,9 @@ import Foundation
 /// Key bindings for hotkeys and shortcut hints displayed in the HUD and menu bar.
 ///
 /// All UI components read from this struct to render shortcut hints dynamically.
-/// Defaults are hardcoded but centralized here for easy change. A settings UI
-/// to customize these comes in a future track.
+/// The hold-to-record key name is read from `HotkeySetting.current` so it updates
+/// automatically when the user changes their hotkey in Settings.
 public struct ShortcutConfiguration: Sendable, Equatable {
-
-    /// Display name of the hold-to-record key (e.g. "⌥ Right Option").
-    public let holdToRecordKeyName: String
 
     /// Display name of the paste-last-transcript shortcut (e.g. "⌃⌥V").
     public let pasteShortcutName: String
@@ -17,11 +14,9 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     public let dismissKeyName: String
 
     public init(
-        holdToRecordKeyName: String = "⌥ Right Option",
         pasteShortcutName: String = "⌃⌥V",
         dismissKeyName: String = "Escape"
     ) {
-        self.holdToRecordKeyName = holdToRecordKeyName
         self.pasteShortcutName = pasteShortcutName
         self.dismissKeyName = dismissKeyName
     }
@@ -29,9 +24,17 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     /// Default configuration with standard key bindings.
     public static let `default` = ShortcutConfiguration()
 
+    /// Display name of the hold-to-record key, read dynamically from settings.
+    ///
+    /// This is a computed property so it always reflects the current hotkey
+    /// configuration, even after the user changes it in Settings.
+    public var holdToRecordKeyName: String {
+        HotkeySetting.current.displayName
+    }
+
     /// The instructional hint shown in the Ready state when the user hovers the HUD.
     ///
-    /// Example: "Hold **⌥ Right Option** to dictate"
+    /// Example: "Hold **Right Option ⌥** to dictate"
     public var holdToRecordHint: String {
         "Hold \(holdToRecordKeyName) to dictate"
     }
