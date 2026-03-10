@@ -44,17 +44,32 @@ public actor DictationPipeline: PipelineProviding {
 
     /// Fixed RMS silence threshold, used as a fallback when ambient
     /// calibration has not completed (recording shorter than 0.5s).
-    /// When ambient RMS is available, the pipeline computes an adaptive
-    /// threshold instead: `max(ambientRMS * 3.0, 0.0005)`.
+    /// When ambient RMS is available and the mic is near-field, the
+    /// pipeline computes an adaptive threshold instead:
+    /// `max(ambientRMS * 1.2, 0.0005)`. For far-field (built-in) mics,
+    /// the adaptive threshold is skipped because speech and ambient RMS
+    /// are virtually indistinguishable (ratio as low as 1.0–1.2x); the
+    /// server's `input_audio_noise_reduction: far_field` handles signal
+    /// quality instead.
     private let silenceThreshold: Float
+
+    /// Fixed threshold for far-field (built-in) mics. Much lower than
+    /// the default `silenceThreshold` because built-in mic speech peaks
+    /// at only 0.002–0.005 RMS. Set just above the absolute noise floor
+    /// to reject truly silent presses without blocking quiet speech.
+    private let farFieldSilenceThreshold: Float = 0.001
 
     /// Multiplier applied to the measured ambient RMS to produce an
     /// adaptive silence threshold. Speech must exceed ambient × this
-    /// factor to be considered non-silent. 2.0 is calibrated from
-    /// real-world testing: built-in mic speech/ambient ratio is
-    /// 2.4–3.1x, so 2.0x lets all speech through; AirPods ambient
-    /// (~0.002) → threshold 0.004, still blocks hallucination noise.
-    private let ambientMultiplier: Float = 2.0
+    /// factor to be considered non-silent. 1.2 is calibrated from
+    /// real-world testing: built-in mic speech/ambient ratio can be
+    /// as low as 1.2x in quiet rooms (previous multipliers of 2.0
+    /// and 1.5 both rejected real speech on the built-in mic). The
+    /// silence gate only needs to reject truly silent presses; the
+    /// server's far-field noise reduction handles signal quality.
+    /// AirPods ambient (~0.002) → threshold 0.0024, still well
+    /// below AirPods speech RMS (~0.08).
+    private let ambientMultiplier: Float = 1.2
 
     /// Absolute floor for the adaptive threshold. Even with zero
     /// measured ambient noise, reject audio below this level.
@@ -100,14 +115,21 @@ public actor DictationPipeline: PipelineProviding {
 
     /// Compute the effective silence threshold for the current session.
     ///
-    /// When the audio provider has completed ambient calibration (first
-    /// ~0.5s of recording), use an adaptive threshold based on observed
-    /// ambient noise. Otherwise fall back to the fixed `silenceThreshold`.
+    /// For far-field (built-in) mics, returns a low fixed threshold
+    /// because speech and ambient RMS are virtually indistinguishable
+    /// (ratio 1.0–1.2x). The server's far-field noise reduction handles
+    /// signal quality, so the silence gate only needs to reject truly
+    /// silent presses.
     ///
-    /// The adaptive threshold adapts to the environment (quiet room vs
-    /// coffee shop) and to the mic type (built-in laptop mic has a lower
-    /// noise floor than AirPods), without needing per-device thresholds.
+    /// For near-field mics (AirPods, USB, etc.), uses an adaptive
+    /// threshold based on ambient noise when calibration has completed.
+    /// Otherwise falls back to the fixed `silenceThreshold`.
     private func effectiveSilenceThreshold() -> Float {
+        // Built-in mic: skip adaptive threshold entirely.
+        if audioProvider.micProximity == .farField {
+            return farFieldSilenceThreshold
+        }
+        // Near-field mic: use adaptive threshold when ambient is known.
         let ambient = audioProvider.ambientRMS
         if ambient > 0 {
             return max(ambient * ambientMultiplier, minimumAdaptiveThreshold)
@@ -169,13 +191,81 @@ public actor DictationPipeline: PipelineProviding {
             await ctxProvider.readContext()
         }
 
-        // Start audio capture. This can take 500-900ms due to AVAudioEngine setup.
-        // The UI is already showing "listening" state since activate() returned.
+        // Start audio capture. This can take 500-900ms due to AVAudioEngine
+        // setup. The UI is already showing "listening" state since
+        // activate() returned.
+        //
+        // IMPORTANT: audioProvider.startRecording() runs engine.start()
+        // inside a synchronous lock. When the default input device is a
+        // Bluetooth device (AirPods), engine.start() can block for
+        // seconds while macOS negotiates the SCO audio channel. Because
+        // performAudioSetup() is an actor-isolated method, a blocking
+        // call here monopolises the pipeline actor's executor — no other
+        // actor method (complete(), cancel()) can run until it returns,
+        // which freezes the hotkey entirely.
+        //
+        // Fix: run startRecording() in a detached task so it blocks a
+        // cooperative-pool thread instead of the actor. The actor awaits
+        // the result via withCheckedContinuation, which suspends (not
+        // blocks) the actor. A 3s timeout catches hangs during BT
+        // negotiation and lets the pipeline fall back to batch mode.
         let t3 = CFAbsoluteTimeGetCurrent()
-        do {
-            try await audioProvider.startRecording()
-        } catch {
+        let audioProviderRef = audioProvider
+        enum StartRecordingTimeout: Error { case timedOut }
+        let startResult: Result<Void, Error> = await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
+
+            // Worker: run startRecording() off the actor.
+            Task.detached {
+                do {
+                    try await audioProviderRef.startRecording()
+                    let alreadyResumed = lock.withLock {
+                        let was = resumed
+                        resumed = true
+                        return was
+                    }
+                    if !alreadyResumed {
+                        continuation.resume(returning: .success(()))
+                    }
+                } catch {
+                    let alreadyResumed = lock.withLock {
+                        let was = resumed
+                        resumed = true
+                        return was
+                    }
+                    if !alreadyResumed {
+                        continuation.resume(returning: .failure(error))
+                    }
+                }
+            }
+
+            // Timeout: 3s ceiling for BT SCO negotiation.
+            Task.detached {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                let alreadyResumed = lock.withLock {
+                    let was = resumed
+                    resumed = true
+                    return was
+                }
+                if !alreadyResumed {
+                    Log.debug(
+                        "[Pipeline] startRecording() timed out (3s), likely BT negotiation hang"
+                    )
+                    continuation.resume(returning: .failure(StartRecordingTimeout.timedOut))
+                }
+            }
+        }
+
+        switch startResult {
+        case .success:
+            break
+        case .failure(let error):
             Log.debug("[Pipeline] Failed to start recording: \(error)")
+            // If startRecording() is still running in the background
+            // (timeout case), it may finish later. The next session's
+            // ensureEngine() will tear down and rebuild, so leaving it
+            // dangling is safe.
             pendingContext?.cancel()
             pendingContext = nil
             await coordinator.reset()
@@ -458,21 +548,15 @@ public actor DictationPipeline: PipelineProviding {
             // calls. This avoids the 5-7s delay users see when they
             // tap the hotkey without speaking.
             // Recompute the threshold now that ambient calibration may
-            // have finished during recording. Use the adaptive value
-            // when available, otherwise fall back to the threshold
-            // captured at the start of complete().
-            let ambient = audioProvider.ambientRMS
-            let postRecordThreshold: Float
-            if ambient > 0 {
-                postRecordThreshold = max(ambient * 2.0, 0.0005)
-            } else {
-                postRecordThreshold = earlyThreshold
-            }
+            // have finished during recording. Use effectiveSilenceThreshold()
+            // which respects far-field mic proximity (built-in mics use
+            // a low fixed threshold instead of the adaptive calculation).
+            let postRecordThreshold = effectiveSilenceThreshold()
 
             let peakLevel = audioProvider.peakRMS
             if peakLevel <= postRecordThreshold {
                 Log.debug(
-                    "[Pipeline] Early silence gate: peak RMS \(peakLevel) <= \(postRecordThreshold) (ambient: \(ambient)), skipping"
+                    "[Pipeline] Early silence gate: peak RMS \(peakLevel) <= \(postRecordThreshold) (ambient: \(audioProvider.ambientRMS)), skipping"
                 )
                 forwardingTask?.cancel()
                 if useStreaming, let streaming = streamingProvider {

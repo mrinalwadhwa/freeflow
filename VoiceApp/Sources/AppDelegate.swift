@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let transcriptBuffer = TranscriptBuffer()
     private let textInjector = AppTextInjector()
     private let audioDeviceProvider = CoreAudioDeviceProvider()
+    private let soundFeedbackProvider = SoundFeedbackProvider()
     private var pipeline: DictationPipeline?
 
     private let keychain = KeychainService()
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.stop()
         permissionController?.stop()
         audioProvider.shutdown()
+        soundFeedbackProvider.shutdown()
         onboardingController?.dismissWindow()
     }
 
@@ -370,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupPipeline() {
         audioProvider.setAudioDeviceProvider(audioDeviceProvider)
+        audioProvider.setSoundFeedbackProvider(soundFeedbackProvider)
         pipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),

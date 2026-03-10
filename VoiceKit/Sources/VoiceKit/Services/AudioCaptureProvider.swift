@@ -40,6 +40,9 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     private var _micProximity: MicProximity = .nearField
     private var pcmChunks: [Data] = []
 
+    /// Optional sound feedback provider for start/stop audio cues.
+    private var _soundFeedbackProvider: SoundFeedbackProvider?
+
     /// Optional device provider for mic selection. When set, the engine
     /// is configured to capture from the selected device instead of the
     /// system default.
@@ -125,6 +128,16 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         lock.withLock { _audioDeviceProvider = provider }
     }
 
+    /// Set the sound feedback provider for start/stop audio cues.
+    ///
+    /// Call once during setup. The provider uses its own dedicated
+    /// playback engine; this reference lets `startRecording()` and
+    /// `stopRecording()` trigger sounds at the exact moments the
+    /// capture state changes.
+    public func setSoundFeedbackProvider(_ provider: SoundFeedbackProvider) {
+        lock.withLock { _soundFeedbackProvider = provider }
+    }
+
     deinit {
         #if canImport(AVFoundation)
             if let observer = configChangeObserver {
@@ -142,7 +155,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
     public func startRecording() async throws {
         #if canImport(AVFoundation)
-            try lock.withLock {
+            let soundProvider: SoundFeedbackProvider? = try lock.withLock {
                 guard !_isRecording else {
                     throw AudioCaptureError.alreadyRecording
                 }
@@ -232,7 +245,16 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 let _ = try ensureConverter()
 
                 _isRecording = true
+                return _soundFeedbackProvider
             }
+
+            // Play the start sound after the lock is released. The
+            // capture engine is fully running and the tap is installed,
+            // so the dedicated playback engine is not contending with
+            // engine setup. Calling outside the lock eliminates the
+            // intermittent misses caused by lock contention between
+            // the capture and playback engines.
+            soundProvider?.playStartSound()
         #else
             throw AudioCaptureError.noInputDevice
         #endif
@@ -246,11 +268,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             // finish, and the tap callback acquires this same lock to
             // append PCM chunks — calling removeTap while holding the
             // lock deadlocks when a callback is in progress.
-            let engineToStop: AVAudioEngine? = lock.withLock {
-                guard _isRecording else { return nil }
-                _isRecording = false
-                return engine
-            }
+            let (engineToStop, soundFeedbackProvider): (AVAudioEngine?, SoundFeedbackProvider?) =
+                lock.withLock {
+                    guard _isRecording else { return (nil, nil) }
+                    _isRecording = false
+                    return (engine, _soundFeedbackProvider)
+                }
 
             guard let engineToStop else {
                 return .empty
@@ -268,6 +291,14 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             // ensureEngine() calls engine.start() which re-acquires the
             // hardware without the full ~800ms creation cost.
             engineToStop.stop()
+
+            // Play the stop sound after the capture engine is stopped.
+            // The dedicated playback engine handles output independently.
+            // Playing after engine.stop() ensures the mic is released,
+            // so the sound is not captured by the next recording session's
+            // ambient calibration window (which would inflate the silence
+            // threshold and reject real speech).
+            soundFeedbackProvider?.playStopSound()
 
             // Collect accumulated data and tear down streams under the
             // lock. No tap callbacks can race here because removeTap

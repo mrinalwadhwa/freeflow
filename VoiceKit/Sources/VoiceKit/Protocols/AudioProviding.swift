@@ -50,7 +50,7 @@ public protocol AudioProviding: Sendable {
     /// on each `startRecording()`.
     ///
     /// The pipeline uses this to compute an adaptive silence threshold:
-    /// `max(ambientRMS * 3.0, 0.0005)`. This adapts to the environment
+    /// `max(ambientRMS * 1.2, 0.0005)`. This adapts to the environment
     /// (quiet room vs coffee shop) and to the mic type (built-in laptop
     /// mic has a lower noise floor than AirPods with noise cancellation).
     ///

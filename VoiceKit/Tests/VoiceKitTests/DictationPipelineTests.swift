@@ -708,9 +708,9 @@ final class DictationPipelineTests: XCTestCase {
     // MARK: - Adaptive silence threshold
 
     func testAdaptiveThresholdAllowsQuietBuiltInMicSpeech() async {
-        // Built-in MacBook mic: ambient ~0.001, quiet speech peaks at
-        // 0.004. The fixed threshold (0.005) would reject this, but the
-        // adaptive threshold (0.001 * 2.0 = 0.002) lets it through.
+        // Near-field mic with low ambient: ambient ~0.001, quiet speech
+        // peaks at 0.004. The fixed threshold (0.005) would reject this,
+        // but the adaptive threshold (0.001 * 1.2 = 0.0012) lets it through.
         var pcmData = Data(capacity: 3200)
         for i in 0..<1600 {
             let sample: Int16 = i % 2 == 0 ? 130 : -130
@@ -727,7 +727,7 @@ final class DictationPipelineTests: XCTestCase {
         )
 
         let audio = MockAudioProvider(stubbedBuffer: quietBuffer)
-        // peakRMS 0.004 is above adaptive threshold 0.002 but below
+        // peakRMS 0.004 is above adaptive threshold 0.0012 but below
         // fixed threshold 0.005.
         audio.stubbedPeakRMS = 0.004
         audio.stubbedAmbientRMS = 0.001
@@ -749,13 +749,13 @@ final class DictationPipelineTests: XCTestCase {
 
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
-        // The adaptive threshold (0.002) lets the audio through.
+        // The adaptive threshold (0.0012) lets the audio through.
         XCTAssertEqual(dictation.dictateCallCount, 1)
     }
 
     func testAdaptiveThresholdRejectsAirPodsAmbientNoise() async {
-        // AirPods: ambient ~0.002, noise floor peaks at 0.003.
-        // Adaptive threshold = 0.002 * 2.0 = 0.004, rejects the noise.
+        // AirPods (near-field): ambient ~0.0025, noise floor peaks at 0.003.
+        // Adaptive threshold = 0.0025 * 1.2 = 0.003, rejects the noise.
         var pcmData = Data(capacity: 3200)
         for i in 0..<1600 {
             let sample: Int16 = i % 2 == 0 ? 130 : -130
@@ -773,7 +773,7 @@ final class DictationPipelineTests: XCTestCase {
 
         let audio = MockAudioProvider(stubbedBuffer: noiseBuffer)
         audio.stubbedPeakRMS = 0.003
-        audio.stubbedAmbientRMS = 0.002
+        audio.stubbedAmbientRMS = 0.0025
 
         let dictation = MockDictationProvider()
         let coordinator = RecordingCoordinator()
@@ -792,7 +792,7 @@ final class DictationPipelineTests: XCTestCase {
 
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
-        // Adaptive threshold (0.004) rejects the 0.003 peak.
+        // Adaptive threshold (0.0025 * 1.2 = 0.003) rejects the 0.003 peak (<=).
         XCTAssertEqual(dictation.dictateCallCount, 0)
     }
 
@@ -858,7 +858,7 @@ final class DictationPipelineTests: XCTestCase {
         )
 
         let audio = MockAudioProvider(stubbedBuffer: nearSilentBuffer)
-        // Ambient 0.0001 * 2.0 = 0.0002, below the floor of 0.0005.
+        // Ambient 0.0001 * 1.2 = 0.00012, below the floor of 0.0005.
         // Effective threshold should be 0.0005, rejecting peakRMS 0.0003.
         audio.stubbedPeakRMS = 0.0003
         audio.stubbedAmbientRMS = 0.0001
@@ -885,8 +885,9 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testAdaptiveThresholdLetsSpeechThroughWithHighAmbient() async {
-        // Coffee shop: ambient ~0.003, speech peaks at 0.015.
-        // Adaptive threshold = 0.003 * 2.0 = 0.006, speech clears it.
+        // Coffee shop with near-field mic: ambient ~0.003, speech peaks
+        // at 0.015. Adaptive threshold = 0.003 * 1.2 = 0.0036, speech
+        // clears it easily.
         let audio = MockAudioProvider()
         audio.stubbedPeakRMS = 0.015
         audio.stubbedAmbientRMS = 0.003
@@ -909,6 +910,238 @@ final class DictationPipelineTests: XCTestCase {
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
         XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
+
+    // MARK: - Far-field (built-in mic) silence threshold
+
+    func testFarFieldMicAllowsQuietSpeech() async {
+        // Built-in MacBook mic: speech peaks at 0.003, well above the
+        // far-field fixed threshold of 0.001. The adaptive path is
+        // bypassed entirely for far-field mics because speech and
+        // ambient RMS are virtually indistinguishable (ratio 1.0-1.2x).
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .farField
+        audio.stubbedPeakRMS = 0.003
+        audio.stubbedAmbientRMS = 0.002
+
+        let dictation = MockDictationProvider(stubbedText: "quiet built-in mic speech")
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Far-field threshold is 0.001; peakRMS 0.003 clears it.
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
+
+    func testFarFieldMicRejectsSilentPress() async {
+        // Built-in mic silent press: peak RMS barely above the noise
+        // floor (0.0007). The far-field fixed threshold of 0.001
+        // rejects it. Without the far-field bypass, the adaptive
+        // threshold (0.0005 * 1.2 = 0.0006) would let it through.
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .farField
+        audio.stubbedPeakRMS = 0.0007
+        audio.stubbedAmbientRMS = 0.0005
+
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Silent press rejected: no dictation call.
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testFarFieldMicIgnoresAmbientCalibration() async {
+        // Far-field mic with high ambient noise (e.g. fan blowing
+        // directly on laptop). Even though ambient * 1.2 = 0.006
+        // would be above the peak speech level (0.004), far-field
+        // bypasses the adaptive path entirely and uses 0.001.
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .farField
+        audio.stubbedPeakRMS = 0.004
+        audio.stubbedAmbientRMS = 0.005  // high ambient from fan noise
+
+        let dictation = MockDictationProvider(stubbedText: "speech near fan")
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Far-field uses fixed 0.001, not ambient * 1.2 = 0.006.
+        // Peak 0.004 > 0.001, so speech goes through.
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
+
+    func testFarFieldMicAllowsSpeechAtBoundary() async {
+        // Built-in mic: speech that just barely clears the far-field
+        // threshold. Peak RMS of 0.0011 is just above 0.001.
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .farField
+        audio.stubbedPeakRMS = 0.0011
+        audio.stubbedAmbientRMS = 0.001
+
+        let dictation = MockDictationProvider(stubbedText: "whisper")
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+    }
+
+    func testFarFieldMicRejectsAtExactThreshold() async {
+        // Built-in mic: peak RMS exactly at the far-field threshold
+        // (0.001). The silence gate uses <=, so this is rejected.
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .farField
+        audio.stubbedPeakRMS = 0.001
+        audio.stubbedAmbientRMS = 0.0008
+
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Exactly at threshold: rejected (<=).
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testNearFieldMicStillUsesAdaptiveThreshold() async {
+        // Verify that near-field mics (AirPods, USB) are NOT affected
+        // by the far-field bypass. With ambient 0.003 and peak 0.005,
+        // the adaptive threshold = 0.003 * 1.2 = 0.0036. Peak 0.005
+        // clears it. But if the far-field path were accidentally used,
+        // the threshold would be 0.001 (also passes, so we use a case
+        // where the distinction matters).
+        //
+        // Near-field mic: ambient 0.004, peak 0.004. Adaptive threshold
+        // = 0.004 * 1.2 = 0.0048. Peak 0.004 < 0.0048, rejected.
+        // Far-field would use 0.001, which would let it through.
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .nearField
+        audio.stubbedPeakRMS = 0.004
+        audio.stubbedAmbientRMS = 0.004
+
+        let dictation = MockDictationProvider()
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // Near-field adaptive threshold 0.0048 rejects peak 0.004.
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+    }
+
+    func testFarFieldPostRecordThresholdRegression() async {
+        // Regression test for the postRecordThreshold bug (Session 13).
+        // Previously, complete() had a second hardcoded threshold:
+        //   postRecordThreshold = max(ambient * 2.0, 0.0005)
+        // which ignored effectiveSilenceThreshold(). For a far-field mic
+        // with ambient 0.002, the old code computed max(0.004, 0.0005)
+        // = 0.004, rejecting speech at peak 0.003. The fix routes
+        // postRecordThreshold through effectiveSilenceThreshold(), which
+        // returns the fixed 0.001 for far-field mics.
+        //
+        // Real-world values from manual testing (2026-03-08):
+        // built-in mic ambient 0.002-0.003, speech peak 0.002-0.004.
+        let audio = MockAudioProvider()
+        audio.stubbedMicProximity = .farField
+        audio.stubbedPeakRMS = 0.003
+        audio.stubbedAmbientRMS = 0.002
+
+        let dictation = MockDictationProvider(stubbedText: "hello world")
+        let coordinator = RecordingCoordinator()
+
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: dictation,
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            silenceThreshold: 0.005
+        )
+
+        await pipeline.activate()
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        // With the fix: far-field threshold 0.001, peak 0.003 passes.
+        // With the old bug: max(0.002 * 2.0, 0.0005) = 0.004, peak
+        // 0.003 would be rejected.
+        XCTAssertEqual(
+            dictation.dictateCallCount, 1,
+            "Far-field speech should not be rejected by old hardcoded ambient * 2.0 threshold")
     }
 
     // MARK: - Session expiry (401 handling)

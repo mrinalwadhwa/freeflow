@@ -25,6 +25,11 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     /// fallback. Set to a positive value to test adaptive thresholds.
     public var stubbedAmbientRMS: Float = 0
 
+    /// Mic proximity reported by `micProximity`. Defaults to `.nearField`
+    /// so existing tests use the adaptive threshold path. Set to
+    /// `.farField` to test the built-in mic fixed threshold bypass.
+    public var stubbedMicProximity: MicProximity = .nearField
+
     /// When true, `startRecording()` creates a `pcmAudioStream` that
     /// emits each chunk passed to `emitPCMChunk(_:)`. Defaults to false
     /// so existing tests are unaffected.
@@ -126,6 +131,10 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
 
     public var ambientRMS: Float {
         lock.withLock { stubbedAmbientRMS }
+    }
+
+    public var micProximity: MicProximity {
+        lock.withLock { stubbedMicProximity }
     }
 
     public func stopRecording() async throws -> AudioBuffer {
