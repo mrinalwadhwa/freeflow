@@ -111,7 +111,9 @@ final class ProvisioningController {
             do {
                 // Step 1: Autonomy Account login
                 bridge?.pushAuthStarted()
-                Log.debug("[Provisioning] Starting Autonomy Account login")
+                #if DEBUG
+                    Log.debug("[Provisioning] Starting Autonomy Account login")
+                #endif
                 let token = try await authController.login()
                 self.autonomyToken = token
 
@@ -120,7 +122,9 @@ final class ProvisioningController {
 
                 // Step 2: Trigger provisioning
                 bridge?.pushAuthComplete()
-                Log.debug("[Provisioning] Auth complete, triggering provisioning")
+                #if DEBUG
+                    Log.debug("[Provisioning] Auth complete, triggering provisioning")
+                #endif
                 let client = AutonomyClient(token: token)
                 self.autonomyClient = client
 
@@ -133,16 +137,22 @@ final class ProvisioningController {
 
                 // Step 3: Poll until ready
                 bridge?.pushProvisioningProgress(message: "Creating your server…")
-                Log.debug("[Provisioning] Polling for readiness")
+                #if DEBUG
+                    Log.debug("[Provisioning] Polling for readiness")
+                #endif
                 let result = try await pollUntilReady(client: client)
                 try await completeProvisioning(status: result)
 
             } catch let error as AuthControllerError where error == .userCancelled {
-                Log.debug("[Provisioning] User cancelled login")
+                #if DEBUG
+                    Log.debug("[Provisioning] User cancelled login")
+                #endif
                 bridge?.pushAuthError(message: "Login was cancelled. Tap Get Started to try again.")
 
             } catch {
-                Log.debug("[Provisioning] Error: \(error.localizedDescription)")
+                #if DEBUG
+                    Log.debug("[Provisioning] Error: \(error.localizedDescription)")
+                #endif
                 bridge?.pushProvisioningError(message: error.localizedDescription)
                 onError?(error)
             }
@@ -207,11 +217,12 @@ final class ProvisioningController {
 
         // Step 4: Store zone URL in Keychain.
         bridge?.pushProvisioningProgress(message: "Almost ready…")
-        Log.debug("[Provisioning] Storing zone URL: \(zoneUrl)")
         keychain.saveServiceURL(zoneUrl)
 
         // Step 5: Redeem admin token on the zone to get a zone session.
-        Log.debug("[Provisioning] Redeeming admin token on zone")
+        #if DEBUG
+            Log.debug("[Provisioning] Redeeming admin token on zone")
+        #endif
         let redeemResult: AuthClient.RedeemResult
         do {
             redeemResult = try await authClient.redeemInvite(
@@ -219,14 +230,18 @@ final class ProvisioningController {
                 token: adminToken
             )
         } catch {
-            Log.debug("[Provisioning] Redeem failed: \(error) — \(String(describing: error))")
+            #if DEBUG
+                Log.debug("[Provisioning] Redeem failed: \(error)")
+            #endif
             throw error
         }
         keychain.saveSessionToken(redeemResult.sessionToken)
 
         // Step 6: Notify the UI and hand off.
         bridge?.pushProvisioningReady()
-        Log.debug("[Provisioning] Zone ready, handing off to onboarding")
+        #if DEBUG
+            Log.debug("[Provisioning] Zone ready, handing off to onboarding")
+        #endif
 
         // Brief delay so the user sees the success screen.
         try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
@@ -248,7 +263,9 @@ final class ProvisioningController {
             return
         }
 
-        Log.debug("[Provisioning] Resuming interrupted provisioning")
+        #if DEBUG
+            Log.debug("[Provisioning] Resuming interrupted provisioning")
+        #endif
         self.autonomyToken = token
         self.autonomyClient = AutonomyClient(token: token)
         isRunning = true
@@ -262,7 +279,9 @@ final class ProvisioningController {
                 let result = try await pollUntilReady(client: autonomyClient!)
                 try await completeProvisioning(status: result)
             } catch {
-                Log.debug("[Provisioning] Resume failed: \(error.localizedDescription)")
+                #if DEBUG
+                    Log.debug("[Provisioning] Resume failed: \(error.localizedDescription)")
+                #endif
                 bridge?.pushProvisioningError(message: error.localizedDescription)
                 onError?(error)
             }
@@ -279,7 +298,9 @@ final class ProvisioningController {
                 withExtension: "html"
             )
         else {
-            Log.debug("[Provisioning] provisioning.html not found in bundle")
+            #if DEBUG
+                Log.debug("[Provisioning] provisioning.html not found in bundle")
+            #endif
             return
         }
 

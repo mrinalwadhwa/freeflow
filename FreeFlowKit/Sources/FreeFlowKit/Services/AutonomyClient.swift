@@ -91,9 +91,11 @@ public final class AutonomyClient: Sendable {
             throw AutonomyError.invalidResponse
         }
 
-        Log.debug(
-            "[AutonomyClient] \(request.httpMethod ?? "?") \(request.url?.path ?? "?") → \(httpResponse.statusCode)"
-        )
+        #if DEBUG
+            Log.debug(
+                "[AutonomyClient] \(request.httpMethod ?? "?") \(request.url?.path ?? "?") → \(httpResponse.statusCode)"
+            )
+        #endif
 
         switch httpResponse.statusCode {
         case 200:

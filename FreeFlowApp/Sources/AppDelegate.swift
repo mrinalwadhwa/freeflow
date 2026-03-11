@@ -356,12 +356,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let coord = coordinator
         let buffer = transcriptBuffer
         onboardingDictationTask = Task { [weak self] in
-            Log.debug("[OnboardingObserver] Started")
+            #if DEBUG
+                Log.debug("[OnboardingObserver] Started")
+            #endif
             var previousState: RecordingState = .idle
             for await state in await coord.stateStream {
                 if Task.isCancelled { break }
 
-                Log.debug("[OnboardingObserver] State: \(previousState) → \(state)")
+                #if DEBUG
+                    Log.debug("[OnboardingObserver] State: \(previousState) → \(state)")
+                #endif
 
                 // Trigger on any exit from .injecting: the transcript
                 // buffer was written before the injecting transition,
@@ -371,30 +375,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     && (state == .idle || state == .injectionFailed)
                 {
                     let text = await buffer.lastTranscript
-                    Log.debug("[OnboardingObserver] Buffer text: \(text ?? "<nil>")")
+                    #if DEBUG
+                        Log.debug("[OnboardingObserver] Buffer text: \(text ?? "<nil>")")
+                    #endif
                     if let text, !text.isEmpty {
                         let hasCallback = await MainActor.run {
                             self?.onboardingController?.onDictationResult != nil
                         }
-                        Log.debug(
-                            "[OnboardingObserver] onDictationResult callback present: \(hasCallback)"
-                        )
+                        #if DEBUG
+                            Log.debug(
+                                "[OnboardingObserver] onDictationResult callback present: \(hasCallback)"
+                            )
+                        #endif
                         await MainActor.run {
                             self?.onboardingController?.onDictationResult?(text)
                         }
-                        Log.debug("[OnboardingObserver] Pushed dictation result to bridge")
+                        #if DEBUG
+                            Log.debug("[OnboardingObserver] Pushed dictation result to bridge")
+                        #endif
                     }
                     // During onboarding the system injection target is
                     // the app itself, so .injectionFailed is expected.
                     // Reset to idle to dismiss the no-target HUD hint.
                     if state == .injectionFailed {
-                        Log.debug("[OnboardingObserver] Resetting injectionFailed → idle")
+                        #if DEBUG
+                            Log.debug("[OnboardingObserver] Resetting injectionFailed → idle")
+                        #endif
                         await coord.finishInjecting()
                     }
                 }
                 previousState = state
             }
-            Log.debug("[OnboardingObserver] Stopped")
+            #if DEBUG
+                Log.debug("[OnboardingObserver] Stopped")
+            #endif
         }
     }
 
