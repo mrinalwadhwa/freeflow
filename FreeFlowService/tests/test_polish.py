@@ -7,8 +7,8 @@ each result against structural validators. Each test case runs N times
 
 Usage:
     # From FreeFlowService/:
-    export FREEFLOW_API_KEY="$(grep API_KEY secrets.yaml | cut -d' ' -f2)"
-    export FREEFLOW_SERVICE_URL="https://a9eb812238f753132652ae09963a05e9-freeflow.cluster.autonomy.computer"
+    export FREEFLOW_SERVICE_URL="https://YOUR-CLUSTER-ID-freeflow.cluster.autonomy.computer"
+    export FREEFLOW_SESSION_TOKEN="$(./scripts/dev-token.sh)"
     python3 tests/test_polish.py
 
     # Run a single category:
@@ -44,11 +44,8 @@ except ImportError:
 # Configuration
 # ---------------------------------------------------------------------------
 
-BASE_URL = os.environ.get(
-    "FREEFLOW_SERVICE_URL",
-    "https://a9eb812238f753132652ae09963a05e9-freeflow.cluster.autonomy.computer",
-)
-API_KEY = os.environ.get("FREEFLOW_API_KEY", "")
+BASE_URL = os.environ.get("FREEFLOW_SERVICE_URL", "")
+SESSION_TOKEN = os.environ.get("FREEFLOW_SESSION_TOKEN", "")
 
 
 # ---------------------------------------------------------------------------
@@ -58,13 +55,16 @@ API_KEY = os.environ.get("FREEFLOW_API_KEY", "")
 
 def call_polish(text: str, context: Optional[dict] = None) -> str:
     """Call the /polish endpoint and return the polished text."""
-    if not API_KEY:
-        print("ERROR: FREEFLOW_API_KEY not set.")
+    if not BASE_URL:
+        print("ERROR: FREEFLOW_SERVICE_URL not set.")
+        sys.exit(1)
+    if not SESSION_TOKEN:
+        print("ERROR: FREEFLOW_SESSION_TOKEN not set.")
         sys.exit(1)
 
     url = f"{BASE_URL.rstrip('/')}/polish"
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {SESSION_TOKEN}",
         "Content-Type": "application/json",
     }
     body = {"text": text}
@@ -1127,9 +1127,9 @@ def main():
         print(f"\nTotal: {len(TESTS)} test cases")
         return
 
-    if not API_KEY:
-        print("ERROR: FREEFLOW_API_KEY not set.")
-        print('  export FREEFLOW_API_KEY="$(grep API_KEY secrets.yaml | cut -d\' \' -f2)"')
+    if not SESSION_TOKEN:
+        print("ERROR: FREEFLOW_SESSION_TOKEN not set.")
+        print('  export FREEFLOW_SESSION_TOKEN="$(./dev-token.sh)"')
         sys.exit(1)
 
     # Filter tests

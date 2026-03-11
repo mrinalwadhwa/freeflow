@@ -10,8 +10,8 @@ Connects to the /stream endpoint once and exercises:
 
 Usage:
     cd apps/freeflow/main/FreeFlowService
-    export FREEFLOW_API_KEY="$(grep API_KEY secrets.yaml | cut -d' ' -f2)"
-    export FREEFLOW_SERVICE_URL="https://a9eb812238f753132652ae09963a05e9-freeflow.cluster.autonomy.computer"
+    export FREEFLOW_SERVICE_URL="https://YOUR-CLUSTER-ID-freeflow.cluster.autonomy.computer"
+    export FREEFLOW_SESSION_TOKEN="$(./scripts/dev-token.sh)"
     python3 tests/test_persistent_stream.py
     python3 tests/test_persistent_stream.py -v          # verbose logging
     python3 tests/test_persistent_stream.py --ping-only # just test keepalive
@@ -31,24 +31,24 @@ import time
 def get_config():
     """Read configuration from environment variables."""
     base_url = os.environ.get("FREEFLOW_SERVICE_URL", "")
-    api_key = os.environ.get("FREEFLOW_API_KEY", "")
+    token = os.environ.get("FREEFLOW_SESSION_TOKEN", "")
     if not base_url:
         print("ERROR: FREEFLOW_SERVICE_URL not set")
         sys.exit(1)
-    if not api_key:
-        print("ERROR: FREEFLOW_API_KEY not set")
+    if not token:
+        print("ERROR: FREEFLOW_SESSION_TOKEN not set")
         sys.exit(1)
-    return base_url, api_key
+    return base_url, token
 
 
-def build_ws_url(base_url: str, api_key: str) -> str:
+def build_ws_url(base_url: str, token: str) -> str:
     """Convert HTTP(S) URL to WS(S) and append auth token."""
     ws_url = base_url.rstrip("/")
     if ws_url.startswith("https://"):
         ws_url = "wss://" + ws_url[len("https://"):]
     elif ws_url.startswith("http://"):
         ws_url = "ws://" + ws_url[len("http://"):]
-    return f"{ws_url}/stream?token={api_key}"
+    return f"{ws_url}/stream?token={token}"
 
 
 def generate_sine_pcm(
@@ -307,8 +307,8 @@ async def main():
     )
     args = parser.parse_args()
 
-    base_url, api_key = get_config()
-    ws_url = build_ws_url(base_url, api_key)
+    base_url, token = get_config()
+    ws_url = build_ws_url(base_url, token)
 
     test = PersistentStreamTest(ws_url, verbose=args.verbose)
 
