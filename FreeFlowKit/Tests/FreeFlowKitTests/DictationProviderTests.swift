@@ -184,8 +184,6 @@ struct DictationProviderKeychainTests {
         // Actual values depend on env vars, so just test non-crash.
         let url = ServiceConfig.baseURL
         #expect(!url.isEmpty)
-        // apiKey may be empty if env var not set, which is fine.
-        _ = ServiceConfig.apiKey
     }
 
     private func makeKeychain() -> KeychainService {

@@ -6,8 +6,6 @@ files (CSS, JS) are served from static/.
 
 Admin pages require an authenticated admin session. The homepage shows
 a public view for visitors and a dashboard view for signed-in admins.
-The invite landing page detects ADMIN_TOKEN redemption and offers
-browser-based setup that sets a session cookie.
 """
 
 import os
@@ -22,7 +20,7 @@ import auth
 import db
 import invite
 
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -229,29 +227,18 @@ async def invite_landing(request: Request, token: str):
 
     Show a page that attempts to open the app via URL scheme. If the
     app is not installed, show download instructions.
-
-    When the token is the ADMIN_TOKEN, show a browser-based redemption
-    flow that creates the admin user, sets a session cookie, and
-    redirects to the dashboard.
     """
     base_url = _zone_base_url(request)
     connect_url = f"freeflow://connect?url={base_url}&token={token}"
 
-    # Detect whether this is the ADMIN_TOKEN for browser-based admin
-    # setup. The admin redeems in the browser to get a session cookie
-    # for the dashboard.
-    is_admin_token = bool(ADMIN_TOKEN) and token == ADMIN_TOKEN
-
     # Check if the token is valid (show error if expired/revoked).
-    # ADMIN_TOKEN is not stored in the database, so skip validation.
     token_valid = True
     token_error = None
-    if not is_admin_token:
-        try:
-            await invite._validate_token(token)
-        except ValueError as e:
-            token_valid = False
-            token_error = str(e)
+    try:
+        await invite._validate_token(token)
+    except ValueError as e:
+        token_valid = False
+        token_error = str(e)
 
     # Check if the visitor is already a signed-in admin.
     user = await _get_session_user(request)
@@ -265,54 +252,7 @@ async def invite_landing(request: Request, token: str):
         connect_url=connect_url,
         base_url=base_url,
         admin_user=is_admin_user,
-        is_admin_token=is_admin_token,
     )
-
-
-@public_router.post("/invite/{token}/redeem")
-async def invite_redeem_browser(request: Request, token: str):
-    """Redeem an invite token in the browser and set a session cookie.
-
-    Called by the invite landing page JS when the admin clicks "Set up
-    in browser". Redeem the token via the same invite.redeem() path,
-    then set the session token as an auth_token cookie and redirect
-    to the homepage (which shows the admin dashboard).
-    """
-    try:
-        result = await invite.redeem(token)
-    except ValueError as e:
-        return await _render(
-            "invite.html",
-            token=token,
-            token_valid=False,
-            token_error=str(e),
-            connect_url="",
-            base_url=_zone_base_url(request),
-            admin_user=False,
-            is_admin_token=False,
-        )
-    except RuntimeError as e:
-        return await _render(
-            "invite.html",
-            token=token,
-            token_valid=False,
-            token_error=f"Setup failed: {e}",
-            connect_url="",
-            base_url=_zone_base_url(request),
-            admin_user=False,
-            is_admin_token=False,
-        )
-
-    response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie(
-        key="auth_token",
-        value=result.session_token,
-        httponly=True,
-        secure=request.url.scheme == "https",
-        samesite="lax",
-        max_age=60 * 60 * 24 * 30,  # 30 days
-    )
-    return response
 
 
 # ------------------------------------------------------------------

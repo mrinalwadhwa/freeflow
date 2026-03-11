@@ -104,21 +104,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Decide what to show on launch based on stored config.
     ///
     /// Decision tree:
-    /// 1. If env vars are set and no Keychain data: dev mode, skip onboarding.
-    /// 2. If onboarding completed and Keychain has a session token: validate
+    /// 1. If onboarding completed and Keychain has a session token: validate
     ///    session, then check permissions and register hotkey.
-    /// 3. If an Autonomy token exists but no zone URL: resume provisioning.
-    /// 4. Otherwise: show provisioning flow for fresh install.
+    /// 2. If an Autonomy token exists but no zone URL: resume provisioning.
+    /// 3. Otherwise: show provisioning flow for fresh install.
     private func determineLaunchFlow() {
         let config = ServiceConfig.shared
-
-        // Dev mode: env vars set, no Keychain token. Preserve existing
-        // behavior for development without onboarding.
-        if !config.isOnboarded && !config.apiKey.isEmpty {
-            Log.debug("[AppDelegate] Dev mode (env vars), skipping onboarding")
-            checkPermissions()
-            return
-        }
 
         // Onboarded: validate the session.
         if config.isOnboarded && UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {

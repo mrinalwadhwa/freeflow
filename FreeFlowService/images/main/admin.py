@@ -1,8 +1,8 @@
 """Admin detection and authorization.
 
-Track which users are admins. The first user to redeem the ADMIN_TOKEN
-is automatically marked as admin. Provide a FastAPI dependency that
-checks admin status for the current session user.
+Track which users are admins. The first user to redeem the
+BOOTSTRAP_TOKEN is automatically marked as admin. Provide a FastAPI
+dependency that checks admin status for the current session user.
 
 Admin status is stored in a Python-managed table (admin_users) rather
 than in better-auth's user table, keeping the two systems decoupled.
@@ -58,11 +58,8 @@ async def require_admin(
     """FastAPI dependency that requires the current user to be an admin.
 
     Chain with require_auth: first authenticate, then check admin
-    status. API_KEY users are treated as admin (dev workflow).
+    status.
     """
-    if user.is_api_key:
-        return user
-
     if not await is_admin(user.user_id):
         raise HTTPException(status_code=403, detail="Admin access required")
 

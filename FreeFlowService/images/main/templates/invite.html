@@ -6,33 +6,6 @@
     <a href="/" class="btn btn-secondary">Go to homepage</a>
 </div>
 
-{% elif is_admin_token and admin_user %}
-<div class="invite-page">
-    <h1>Already set up</h1>
-    <p>You are already signed in as an admin.</p>
-    <a href="/" class="btn btn-primary">Go to dashboard</a>
-</div>
-
-{% elif is_admin_token %}
-<div class="invite-page">
-    <h1>Set up {{ app_name }}</h1>
-    <p>This link creates your admin account and opens the dashboard.</p>
-
-    <div class="mb-4">
-        <form id="admin-redeem-form" method="POST" action="/invite/{{ token }}/redeem">
-            <button type="submit" class="btn btn-primary" id="admin-redeem-btn">Set up as admin</button>
-        </form>
-    </div>
-
-    <div id="admin-redeem-error" class="hidden">
-        <div class="alert alert-error" id="admin-redeem-error-message"></div>
-    </div>
-
-    <p class="text-small" style="color: var(--color-light)">
-        You can also <a href="{{ connect_url }}">open in {{ app_name }}</a> if you have the app installed.
-    </p>
-</div>
-
 {% else %}
 <div class="invite-page">
     <h1>You're invited to {{ app_name }}</h1>
@@ -82,19 +55,7 @@
         </p>
     </div>
 </div>
-{% endif %} {% endblock %} {% block scripts %} {% if token_valid and is_admin_token and not admin_user %}
-<script>
-    (function () {
-        var form = document.getElementById("admin-redeem-form");
-        var btn = document.getElementById("admin-redeem-btn");
-
-        form.addEventListener("submit", function () {
-            btn.disabled = true;
-            btn.textContent = "Setting up…";
-        });
-    })();
-</script>
-{% elif token_valid and not is_admin_token %}
+{% endif %} {% endblock %} {% block scripts %} {% if token_valid %}
 <script>
     (function () {
         var connectBtn = document.getElementById("connect-btn");

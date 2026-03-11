@@ -1,8 +1,7 @@
-"""Request authentication via better-auth session tokens or API keys.
+"""Request authentication via better-auth session tokens.
 
 Session tokens are validated by calling the Node.js better-auth
-process internally. The API_KEY fallback preserves the existing dev
-workflow.
+process internally.
 """
 
 import os
@@ -14,7 +13,6 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 AUTH_SESSION_URL = "http://localhost:3456/api/auth/get-session"
-API_KEY = os.environ.get("API_KEY", "")
 
 _security = HTTPBearer(auto_error=False)
 
@@ -36,11 +34,6 @@ class AuthUser:
     """Authenticated user context attached to each request."""
 
     user_id: str
-    is_api_key: bool = False
-
-
-# Synthetic user returned for API_KEY auth (dev/test workflow).
-_API_KEY_USER = AuthUser(user_id="api_key", is_api_key=True)
 
 
 async def _validate_session_token(token: str) -> Optional[AuthUser]:
@@ -83,16 +76,14 @@ async def require_auth(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),
 ) -> AuthUser:
-    """FastAPI dependency that authenticates via session token or API_KEY.
+    """FastAPI dependency that authenticates via session token.
 
     Check order:
-    1. If a Bearer token is present and matches API_KEY, return a
-       synthetic dev user.
-    2. If a Bearer token is present, validate as a better-auth session
+    1. If a Bearer token is present, validate as a better-auth session
        token.
-    3. If no Bearer token, check for an auth_token cookie (web
+    2. If no Bearer token, check for an auth_token cookie (web
        dashboard sessions).
-    4. If all fail, raise 401.
+    3. If all fail, raise 401.
     """
     token = None
     if credentials is not None:
@@ -103,10 +94,6 @@ async def require_auth(
 
     if not token:
         raise HTTPException(status_code=401, detail="Missing authentication")
-
-    # API_KEY fallback for dev workflow.
-    if API_KEY and token == API_KEY:
-        return _API_KEY_USER
 
     # Session token validation via better-auth.
     user = await _validate_session_token(token)
@@ -131,10 +118,6 @@ async def verify_ws_auth(authorization: Optional[str]) -> Optional[AuthUser]:
     parts = authorization.split(" ", 1)
     if len(parts) == 2 and parts[0].lower() == "bearer":
         token = parts[1]
-
-    # API_KEY fallback.
-    if API_KEY and token == API_KEY:
-        return _API_KEY_USER
 
     # Session token validation.
     return await _validate_session_token(token)

@@ -8,6 +8,7 @@ recipient via the configured email provider.
 """
 
 import hashlib
+import hmac
 import os
 import secrets
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ import db
 import email_config
 
 AUTH_BASE_URL = "http://localhost:3456"
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+BOOTSTRAP_TOKEN = os.environ.get("BOOTSTRAP_TOKEN", "")
 
 
 def _hash_token(token: str) -> str:
@@ -195,20 +196,24 @@ async def _create_user_via_auth(
 async def redeem(token: str) -> RedeemResult:
     """Redeem an invite token: validate, create user, return session.
 
-    The ADMIN_TOKEN is a special invite that marks the first redeemer
-    as admin. Regular tokens create normal users.
+    The BOOTSTRAP_TOKEN is a special one-time token that marks the
+    first redeemer as admin. Regular tokens create normal users.
     """
-    is_admin_token = ADMIN_TOKEN and token == ADMIN_TOKEN
+    is_bootstrap = bool(BOOTSTRAP_TOKEN) and hmac.compare_digest(token, BOOTSTRAP_TOKEN)
 
-    if is_admin_token:
-        # Admin token is not stored in the database. Validate that it
-        # has not already been used by checking for an existing admin.
-        pass
+    if is_bootstrap:
+        # Bootstrap token is single-use: reject if any admin already exists.
+        pool = db.get_pool()
+        async with pool.connection() as conn:
+            result = await conn.execute("SELECT 1 FROM admin_users LIMIT 1")
+            row = await result.fetchone()
+        if row is not None:
+            raise ValueError("Admin has already been set up")
     else:
         invite = await _validate_token(token)
 
     # Determine email for the new user.
-    if not is_admin_token and invite.email:
+    if not is_bootstrap and invite.email:
         email = invite.email
         has_email = True
         label = invite.label or "Invited user"
@@ -218,14 +223,14 @@ async def redeem(token: str) -> RedeemResult:
         placeholder_id = secrets.token_hex(8)
         email = f"{placeholder_id}@placeholder.freeflow.local"
         has_email = False
-        label = "Admin" if is_admin_token else (invite.label or "Invited user")
+        label = "Admin" if is_bootstrap else (invite.label or "Invited user")
 
     user_id, session_token = await _create_user_via_auth(email, label)
 
-    if is_admin_token:
+    if is_bootstrap:
         await admin.mark_admin(user_id)
 
-    if not is_admin_token:
+    if not is_bootstrap:
         # Increment use count.
         pool = db.get_pool()
         async with pool.connection() as conn:

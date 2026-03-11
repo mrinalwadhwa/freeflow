@@ -105,8 +105,11 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             // Preserve cookies so returning users stay logged in.
             // Override with FREEFLOW_EPHEMERAL_AUTH=1 to force a fresh
             // login screen every time (useful for testing).
-            let ephemeral = ProcessInfo.processInfo.environment["FREEFLOW_EPHEMERAL_AUTH"] == "1"
-            session.prefersEphemeralWebBrowserSession = ephemeral
+            #if DEBUG
+                let ephemeral =
+                    ProcessInfo.processInfo.environment["FREEFLOW_EPHEMERAL_AUTH"] == "1"
+                session.prefersEphemeralWebBrowserSession = ephemeral
+            #endif
 
             self.authSession = session
 

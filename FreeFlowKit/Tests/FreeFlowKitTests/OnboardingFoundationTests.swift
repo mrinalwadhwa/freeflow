@@ -229,13 +229,13 @@ struct ServiceConfigLayeredTests {
         #expect(config.authToken == "raw_token")
     }
 
-    @Test("authToken returns API key when no session token")
+    @Test("authToken returns empty string when no session token")
     func authTokenFallback() {
         let keychain = makeKeychain()
         let config = ServiceConfig(keychain: keychain)
 
-        // Without Keychain data, authToken is the apiKey (from env or empty).
-        #expect(config.authToken == config.apiKey)
+        // Without Keychain data, authToken is empty.
+        #expect(config.authToken == "")
     }
 
     @Test("isConfigured is true with session token")
@@ -282,7 +282,6 @@ struct ServiceConfigLayeredTests {
         // We can't fully control the shared instance's Keychain in tests,
         // but we can verify the accessors are callable.
         let _ = ServiceConfig.baseURL
-        let _ = ServiceConfig.apiKey
     }
 }
 
