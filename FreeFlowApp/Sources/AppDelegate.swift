@@ -327,6 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.permissionProvider = permissionProvider
         controller.audioDeviceProvider = audioDeviceProvider
         controller.audioPreviewProvider = audioProvider
+        controller.soundFeedbackProvider = soundFeedbackProvider
 
         controller.onRegisterHotkey = { [weak self] in
             self?.registerHotkey()

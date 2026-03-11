@@ -53,6 +53,10 @@ final class OnboardingController {
     /// The audio capture provider for mic preview, set by AppDelegate.
     var audioPreviewProvider: AudioPreviewProviding?
 
+    /// The sound feedback provider, set by AppDelegate. Used to mute
+    /// start/stop cues during mic preview so onboarding is silent.
+    var soundFeedbackProvider: SoundFeedbackProvider?
+
     /// Polling timer for accessibility permission checks.
     private var accessibilityPollTimer: Timer?
 
@@ -348,6 +352,12 @@ final class OnboardingController {
         await stopMicPreviewAsync()
 
         do {
+            // Mute sound feedback during preview so the mic selection
+            // step does not play the start/stop cues.
+            if let capture = audioPreviewProvider as? AudioCaptureProvider {
+                capture.setSoundFeedbackProvider(nil)
+            }
+
             NSLog("[OnboardingController] Starting mic preview")
             try await audioPreviewProvider.startRecording()
             NSLog("[OnboardingController] Mic preview started, setting up level stream")
@@ -387,6 +397,12 @@ final class OnboardingController {
         guard let audioPreviewProvider else { return }
         NSLog("[OnboardingController] Stopping mic preview")
         _ = try? await audioPreviewProvider.stopRecording()
+        // Restore sound feedback after preview stops.
+        if let soundFeedbackProvider,
+            let capture = audioPreviewProvider as? AudioCaptureProvider
+        {
+            capture.setSoundFeedbackProvider(soundFeedbackProvider)
+        }
         NSLog("[OnboardingController] Mic preview stopped")
     }
 
