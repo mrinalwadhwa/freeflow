@@ -65,6 +65,9 @@ final class SettingsController {
 
         let win = SettingsWindow(bridge: bridge)
         bridge.webView = win.webView
+        win.onClose = { [weak self] in
+            self?.stopMicPreviewSync()
+        }
         window = win
 
         win.navigate(baseURL: config.baseURL)

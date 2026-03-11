@@ -103,10 +103,16 @@ final class SettingsWindow: NSWindow, WKNavigationDelegate {
 
     // MARK: - Close override
 
+    /// Callback invoked when the window is closed via the title bar
+    /// close button. Set by `SettingsController` to stop mic preview.
+    var onClose: (() -> Void)?
+
     /// Override close to hide instead of destroy. The close button
     /// sends `close()`, which would deallocate the window. Using
-    /// `orderOut` keeps the window alive for reuse.
+    /// `orderOut` keeps the window alive for reuse. Calls `onClose`
+    /// first so the controller can stop mic preview.
     override func close() {
+        onClose?()
         orderOut(nil)
     }
 
