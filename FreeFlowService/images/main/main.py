@@ -46,6 +46,7 @@ import db
 import email_config
 import invite
 import polish
+import ratelimit
 import realtime
 import startup
 import web
@@ -198,7 +199,7 @@ class RedeemRequest(BaseModel):
     token: str
 
 
-@app.post("/api/auth/redeem-invite")
+@app.post("/api/auth/redeem-invite", dependencies=[Depends(ratelimit.require_redeem_limit)])
 async def redeem_invite(request: RedeemRequest):
     """Redeem an invite token to create a user and session.
 
@@ -576,6 +577,7 @@ _AUTH_PROXY_BASE = "http://localhost:3456"
 @app.api_route(
     "/api/auth/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    dependencies=[Depends(ratelimit.require_auth_limit)],
 )
 async def auth_proxy(request: Request, path: str):
     """Forward unmatched /api/auth/* requests to the Node.js auth service.
