@@ -164,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     && !session.email.hasSuffix("@placeholder.freeflow.local")
                 if hasRealEmail {
                     UserDefaults.standard.set(true, forKey: "hasEmailOnFile")
-                    UserDefaults.standard.set(session.email, forKey: "userEmail")
+                    keychain.saveUserEmail(session.email)
                 }
 
                 // Proceed to permissions and hotkey.
@@ -195,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keychain.deleteSessionToken()
 
         let hasEmail = UserDefaults.standard.bool(forKey: "hasEmailOnFile")
-        let email = UserDefaults.standard.string(forKey: "userEmail")
+        let email = keychain.userEmail()
 
         if hasEmail, let email, !email.isEmpty {
             // User has email: show sign-in page for OTP recovery.

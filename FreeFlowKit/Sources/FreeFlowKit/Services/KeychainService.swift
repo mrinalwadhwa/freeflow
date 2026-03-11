@@ -15,6 +15,7 @@ public final class KeychainService: @unchecked Sendable {
         static let sessionToken = "session-token"
         static let serviceURL = "service-url"
         static let autonomyToken = "autonomy-token"
+        static let userEmail = "user-email"
     }
 
     public init(service: String = "computer.autonomy.freeflow") {
@@ -85,13 +86,36 @@ public final class KeychainService: @unchecked Sendable {
         delete(account: Account.autonomyToken)
     }
 
+    // MARK: - User email
+
+    /// Save the user's email to the Keychain.
+    ///
+    /// Email is PII and belongs in the Keychain rather than
+    /// UserDefaults. Used for session recovery via OTP sign-in.
+    @discardableResult
+    public func saveUserEmail(_ email: String) -> Bool {
+        save(value: email, account: Account.userEmail)
+    }
+
+    /// Retrieve the stored user email, or nil if none exists.
+    public func userEmail() -> String? {
+        load(account: Account.userEmail)
+    }
+
+    /// Delete the stored user email.
+    @discardableResult
+    public func deleteUserEmail() -> Bool {
+        delete(account: Account.userEmail)
+    }
+
     // MARK: - Bulk operations
 
-    /// Delete all stored credentials (tokens and URL).
+    /// Delete all stored credentials (tokens, URL, and email).
     public func deleteAll() {
         deleteSessionToken()
         deleteServiceURL()
         deleteAutonomyToken()
+        deleteUserEmail()
     }
 
     // MARK: - Private helpers

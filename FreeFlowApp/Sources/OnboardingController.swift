@@ -283,7 +283,7 @@ final class OnboardingController {
 
     private func handleEmailAdded(email: String) {
         UserDefaults.standard.set(true, forKey: "hasEmailOnFile")
-        UserDefaults.standard.set(email, forKey: "userEmail")
+        keychain.saveUserEmail(email)
     }
 
     // MARK: - Action: listMicrophones

@@ -100,16 +100,44 @@ struct KeychainServiceTests {
         #expect(deleted)
     }
 
-    @Test("deleteAll clears both token and URL")
+    @Test("saveAndRetrieveEmail")
+    func saveAndRetrieveEmail() {
+        let keychain = makeKeychain()
+        defer { keychain.deleteAll() }
+
+        #expect(keychain.userEmail() == nil)
+
+        let saved = keychain.saveUserEmail("user@example.com")
+        #expect(saved)
+
+        #expect(keychain.userEmail() == "user@example.com")
+    }
+
+    @Test("deleteEmail")
+    func deleteEmail() {
+        let keychain = makeKeychain()
+        defer { keychain.deleteAll() }
+
+        keychain.saveUserEmail("user@example.com")
+        #expect(keychain.userEmail() != nil)
+
+        let deleted = keychain.deleteUserEmail()
+        #expect(deleted)
+        #expect(keychain.userEmail() == nil)
+    }
+
+    @Test("deleteAll clears token, URL, and email")
     func deleteAll() {
         let keychain = makeKeychain()
 
         keychain.saveSessionToken("tok")
         keychain.saveServiceURL("https://url")
+        keychain.saveUserEmail("user@example.com")
         keychain.deleteAll()
 
         #expect(keychain.sessionToken() == nil)
         #expect(keychain.serviceURL() == nil)
+        #expect(keychain.userEmail() == nil)
     }
 
     @Test("Token and URL are independent items")

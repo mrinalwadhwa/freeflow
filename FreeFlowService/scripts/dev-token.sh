@@ -282,6 +282,7 @@ if [[ "$write_keychain" == true ]]; then
     security delete-generic-password -s "$BUNDLE_ID" -a "service-url" 2>/dev/null || true
     security delete-generic-password -s "$BUNDLE_ID" -a "session-token" 2>/dev/null || true
     security delete-generic-password -s "$BUNDLE_ID" -a "autonomy-token" 2>/dev/null || true
+    security delete-generic-password -s "$BUNDLE_ID" -a "user-email" 2>/dev/null || true
 
     # Write new entries.
     security add-generic-password -s "$BUNDLE_ID" -a "service-url" -w "$BASE_URL" -U
