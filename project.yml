@@ -36,6 +36,8 @@ targets:
     platform: macOS
     sources:
       - path: FreeFlowApp/Sources
+      - path: FreeFlowApp/Resources
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: FreeFlow
@@ -49,6 +51,8 @@ targets:
     dependencies:
       - package: FreeFlowKit
       - package: Sparkle
+      - framework: AuthenticationServices.framework
+        embed: false
     entitlements:
       path: FreeFlowApp/FreeFlow.entitlements
       properties:

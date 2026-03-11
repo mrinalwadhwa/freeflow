@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionController: PermissionController?
     private var onboardingController: OnboardingController?
     private var settingsController: SettingsController?
+    private var provisioningController: ProvisioningController?
 
     /// URLs received before applicationDidFinishLaunching completes.
     private var pendingURLs: [URL] = []
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionController?.stop()
         audioProvider.shutdown()
         soundFeedbackProvider.shutdown()
+        provisioningController?.dismissWindow()
         onboardingController?.dismissWindow()
         settingsController?.closeWindow()
     }
@@ -85,8 +87,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard url.scheme == "freeflow" else { return }
 
         Log.debug("[AppDelegate] Received URL: \(url)")
-        let controller = ensureOnboardingController()
-        controller.handleConnectURL(url)
+
+        // freeflow://auth/ready is handled by ASWebAuthenticationSession's
+        // completion handler in AuthController. It does not reach here.
+        // Route freeflow://connect to the existing invite flow.
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            components.host == "connect"
+        {
+            let controller = ensureOnboardingController()
+            controller.handleConnectURL(url)
+        }
     }
 
     // MARK: - Launch Flow
@@ -97,7 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 1. If env vars are set and no Keychain data: dev mode, skip onboarding.
     /// 2. If onboarding completed and Keychain has a session token: validate
     ///    session, then check permissions and register hotkey.
-    /// 3. Otherwise: show onboarding window.
+    /// 3. If an Autonomy token exists but no zone URL: resume provisioning.
+    /// 4. Otherwise: show provisioning flow for fresh install.
     private func determineLaunchFlow() {
         let config = ServiceConfig.shared
 
@@ -116,9 +127,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Not onboarded: show the onboarding window.
-        Log.debug("[AppDelegate] Not onboarded, showing onboarding window")
-        showOnboarding()
+        // Has a zone URL but onboarding not completed: resume onboarding
+        // (e.g. app quit after provisioning but before finishing setup).
+        if config.isOnboarded {
+            Log.debug("[AppDelegate] Has zone URL, resuming onboarding")
+            showOnboarding()
+            return
+        }
+
+        // Has an Autonomy token but no zone URL: provisioning was
+        // interrupted. Resume polling.
+        if keychain.autonomyToken() != nil && keychain.serviceURL() == nil {
+            Log.debug("[AppDelegate] Resuming interrupted provisioning")
+            showProvisioningFlow(resume: true)
+            return
+        }
+
+        // Fresh install: show the provisioning flow.
+        Log.debug("[AppDelegate] Fresh install, showing provisioning flow")
+        showProvisioningFlow()
     }
 
     // MARK: - Session Validation
@@ -245,6 +272,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.setOnboardingMode(true)
         let controller = ensureOnboardingController()
         controller.showWindow(path: "/onboarding/")
+    }
+
+    // MARK: - Provisioning Flow
+
+    /// Show the provisioning flow for fresh installs.
+    ///
+    /// Creates a ProvisioningController that handles Autonomy Account login, zone
+    /// provisioning, and the handoff to the existing onboarding flow
+    /// (accessibility → mic → try-it → done).
+    ///
+    /// - Parameter resume: If true, attempt to resume an interrupted
+    ///   provisioning session using a stored Autonomy token.
+    private func showProvisioningFlow(resume: Bool = false) {
+        let controller = ProvisioningController(
+            keychain: keychain,
+            authClient: authClient
+        )
+
+        controller.onComplete = { [weak self] zoneUrl, _ in
+            guard let self else { return }
+            Log.debug("[AppDelegate] Provisioning complete, transitioning to onboarding")
+            self.provisioningController?.dismissWindow()
+            self.provisioningController = nil
+            self.showOnboarding()
+        }
+
+        controller.onError = { error in
+            Log.debug("[AppDelegate] Provisioning error: \(error.localizedDescription)")
+            // The provisioning UI shows the error with a retry button.
+        }
+
+        provisioningController = controller
+        controller.showWindow()
+
+        if resume {
+            controller.resumeIfNeeded()
+        }
     }
 
     private func ensureOnboardingController() -> OnboardingController {

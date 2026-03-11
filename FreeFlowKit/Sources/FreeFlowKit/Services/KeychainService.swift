@@ -14,6 +14,7 @@ public final class KeychainService: @unchecked Sendable {
     private enum Account {
         static let sessionToken = "session-token"
         static let serviceURL = "service-url"
+        static let autonomyToken = "autonomy-token"
     }
 
     public init(service: String = "computer.autonomy.freeflow") {
@@ -61,12 +62,36 @@ public final class KeychainService: @unchecked Sendable {
         delete(account: Account.serviceURL)
     }
 
+    // MARK: - Autonomy token
+
+    /// Save the Autonomy session token to the Keychain.
+    ///
+    /// This token authenticates against the central Autonomy service
+    /// (my.autonomy.computer) for provisioning and trial status checks.
+    /// It is separate from the zone session token used for dictation.
+    @discardableResult
+    public func saveAutonomyToken(_ token: String) -> Bool {
+        save(value: token, account: Account.autonomyToken)
+    }
+
+    /// Retrieve the stored Autonomy session token, or nil if none exists.
+    public func autonomyToken() -> String? {
+        load(account: Account.autonomyToken)
+    }
+
+    /// Delete the stored Autonomy session token.
+    @discardableResult
+    public func deleteAutonomyToken() -> Bool {
+        delete(account: Account.autonomyToken)
+    }
+
     // MARK: - Bulk operations
 
-    /// Delete all stored credentials (token and URL).
+    /// Delete all stored credentials (tokens and URL).
     public func deleteAll() {
         deleteSessionToken()
         deleteServiceURL()
+        deleteAutonomyToken()
     }
 
     // MARK: - Private helpers

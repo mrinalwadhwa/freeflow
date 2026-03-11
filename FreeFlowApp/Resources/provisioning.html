@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --color-bg: #EEECEB;
+    --color-surface: #F9F9F9;
+    --color-text: #292929;
+    --color-muted: #7A7775;
+    --color-accent: #292929;
+    --color-accent-hover: #444;
+    --color-error: #C53030;
+    --color-success: #276749;
+    --color-border: #D8D5D2;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 2rem;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+
+  .screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    max-width: 360px;
+    width: 100%;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .screen.active {
+    display: flex;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .icon {
+    font-size: 2.5rem;
+    margin-bottom: 1.5rem;
+    line-height: 1;
+  }
+
+  h1 {
+    font-size: 1.375rem;
+    font-weight: 600;
+    margin-bottom: 0.625rem;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.55;
+    margin-bottom: 1.5rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 2rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #fff;
+    background: var(--color-accent);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+    -webkit-user-select: none;
+    min-width: 160px;
+  }
+
+  .btn:hover {
+    background: var(--color-accent-hover);
+  }
+
+  .btn:active {
+    transform: scale(0.97);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  /* Spinner */
+  .spinner-container {
+    margin-bottom: 1.5rem;
+    position: relative;
+    width: 48px;
+    height: 48px;
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Progress dots */
+  .progress-dots {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 1.5rem;
+  }
+
+  .progress-dots .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-border);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .progress-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+  .progress-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Status message with transition */
+  .status-message {
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    line-height: 1.55;
+    margin-bottom: 1.5rem;
+    min-height: 1.55em;
+    transition: opacity 0.2s ease;
+  }
+
+  .status-message.changing {
+    opacity: 0;
+  }
+
+  /* Success checkmark */
+  .checkmark {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--color-success);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    animation: scaleIn 0.3s ease-out;
+  }
+
+  .checkmark svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  @keyframes scaleIn {
+    from { transform: scale(0); }
+    to { transform: scale(1); }
+  }
+
+  /* Error */
+  .error-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #FED7D7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .error-icon span {
+    font-size: 1.5rem;
+    color: var(--color-error);
+    line-height: 1;
+  }
+
+  .error-message {
+    font-size: 0.875rem;
+    color: var(--color-error);
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: #FFF5F5;
+    border-radius: 8px;
+    border: 1px solid #FED7D7;
+    word-break: break-word;
+  }
+
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    width: 100%;
+    max-width: 240px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Screen 1: Welcome / Get Started -->
+  <div id="screen-welcome" class="screen active">
+    <div class="icon">✦</div>
+    <h1>Welcome to FreeFlow</h1>
+    <p>Dictate anywhere on your Mac with your own private AI server. Sign in to get started.</p>
+    <button class="btn" onclick="handleGetStarted()">Get Started</button>
+  </div>
+
+  <!-- Screen 2: Signing in -->
+  <div id="screen-signing-in" class="screen">
+    <div class="spinner-container">
+      <div class="spinner"></div>
+    </div>
+    <h1>Signing in…</h1>
+    <p>Complete sign-in in the browser window.</p>
+  </div>
+
+  <!-- Screen 3: Provisioning in progress -->
+  <div id="screen-provisioning" class="screen">
+    <div class="spinner-container">
+      <div class="spinner"></div>
+    </div>
+    <h1>Setting up your server</h1>
+    <div id="provisioning-status" class="status-message">Creating your server…</div>
+    <div class="progress-dots">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  </div>
+
+  <!-- Screen 4: Ready -->
+  <div id="screen-ready" class="screen">
+    <div class="checkmark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h1>Your server is ready!</h1>
+    <p>Let's set up a few things and you'll be dictating in no time.</p>
+  </div>
+
+  <!-- Screen 5: Error -->
+  <div id="screen-error" class="screen">
+    <div class="error-icon"><span>!</span></div>
+    <h1>Something went wrong</h1>
+    <div id="error-message" class="error-message"></div>
+    <div class="btn-group">
+      <button class="btn" onclick="handleRetry()">Try Again</button>
+    </div>
+  </div>
+
+<script>
+  // --- Bridge ---
+
+  function send(action, data) {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow) {
+      var payload = { action: action };
+      if (data) { payload.data = data; }
+      window.webkit.messageHandlers.freeflow.postMessage(payload);
+    }
+  }
+
+  // --- Screen management ---
+
+  var screens = ['welcome', 'signing-in', 'provisioning', 'ready', 'error'];
+
+  function showScreen(name) {
+    for (var i = 0; i < screens.length; i++) {
+      var el = document.getElementById('screen-' + screens[i]);
+      if (el) {
+        if (screens[i] === name) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      }
+    }
+  }
+
+  // --- Status message update with fade ---
+
+  function updateStatusMessage(text) {
+    var el = document.getElementById('provisioning-status');
+    if (!el) return;
+    if (el.textContent === text) return;
+    el.classList.add('changing');
+    setTimeout(function() {
+      el.textContent = text;
+      el.classList.remove('changing');
+    }, 200);
+  }
+
+  // --- Button handlers ---
+
+  function handleGetStarted() {
+    send('getStarted');
+  }
+
+  function handleRetry() {
+    send('retryProvisioning');
+  }
+
+  // --- Bridge event receiver ---
+
+  window.freeflowbridge = {
+    onEvent: function(data) {
+      if (!data || !data.event) return;
+
+      switch (data.event) {
+        case 'authStarted':
+          showScreen('signing-in');
+          break;
+
+        case 'authComplete':
+          showScreen('provisioning');
+          updateStatusMessage('Creating your server…');
+          break;
+
+        case 'authError':
+          var msg = (data.message) ? data.message : 'Sign-in failed. Please try again.';
+          document.getElementById('error-message').textContent = msg;
+          showScreen('error');
+          break;
+
+        case 'provisioningProgress':
+          showScreen('provisioning');
+          if (data.message) {
+            updateStatusMessage(data.message);
+          }
+          break;
+
+        case 'provisioningReady':
+          showScreen('ready');
+          break;
+
+        case 'provisioningError':
+          var errMsg = (data.message) ? data.message : 'Setup failed. Please try again.';
+          document.getElementById('error-message').textContent = errMsg;
+          showScreen('error');
+          break;
+
+        default:
+          break;
+      }
+    }
+  };
+</script>
+
+</body>
+</html>
