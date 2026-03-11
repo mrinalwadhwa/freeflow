@@ -158,7 +158,7 @@
         // ----------------------------------------------------------------
 
         function loadEmailConfig() {
-            fetch("/admin/api/settings/email", { credentials: "same-origin" })
+            fetch("/admin/api/settings/email", { headers: adminHeaders() })
                 .then(function (resp) {
                     if (!resp.ok) return null;
                     return resp.json();
@@ -187,7 +187,7 @@
         }
 
         function loadEmailStatus() {
-            fetch("/admin/api/users/email-status", { credentials: "same-origin" })
+            fetch("/admin/api/users/email-status", { headers: adminHeaders() })
                 .then(function (resp) {
                     if (!resp.ok) return null;
                     return resp.json();
@@ -331,8 +331,7 @@
 
             fetch("/admin/api/settings/email", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
+                headers: adminHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({
                     provider: provider,
                     api_key: apiKey,
@@ -390,8 +389,7 @@
 
             fetch("/admin/api/settings/email/test", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
+                headers: adminHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({ to: to }),
             })
                 .then(function (resp) {
@@ -443,8 +441,7 @@
 
             fetch("/admin/api/settings/require-email", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
+                headers: adminHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({
                     require: requireValue,
                     grace_period_days: graceDays,

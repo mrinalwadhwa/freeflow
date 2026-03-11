@@ -95,7 +95,7 @@
 
                 fetch("/admin/api/users/" + userId + "/revoke", {
                     method: "POST",
-                    credentials: "same-origin",
+                    headers: adminHeaders(),
                 })
                     .then(function (resp) {
                         if (!resp.ok) throw new Error("Failed to revoke user");

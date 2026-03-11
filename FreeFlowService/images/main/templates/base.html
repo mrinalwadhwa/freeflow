@@ -41,6 +41,20 @@
         {% endblock %}
     </footer>
 
+    <script>
+        // Read the auth_token cookie and return headers with a Bearer
+        // Authorization value. Admin pages use this instead of
+        // credentials: "same-origin" so that state-mutating API calls
+        // are not vulnerable to CSRF (browsers do not automatically
+        // attach Authorization headers on cross-site requests).
+        function adminHeaders(extra) {
+            var h = {};
+            if (extra) { for (var k in extra) h[k] = extra[k]; }
+            var m = document.cookie.match(/(?:^|;\s*)auth_token=([^;]*)/);
+            if (m) h["Authorization"] = "Bearer " + decodeURIComponent(m[1]);
+            return h;
+        }
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

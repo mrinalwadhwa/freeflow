@@ -598,10 +598,6 @@ async def auth_proxy(request: Request, path: str):
         forward_headers["content-type"] = request.headers["content-type"]
     if "authorization" in request.headers:
         forward_headers["authorization"] = request.headers["authorization"]
-    elif "auth_token" in request.cookies:
-        # Web pages store the session token in an auth_token cookie.
-        # better-auth's bearer plugin expects Authorization: Bearer.
-        forward_headers["authorization"] = f"Bearer {request.cookies['auth_token']}"
     if "cookie" in request.headers:
         forward_headers["cookie"] = request.headers["cookie"]
 

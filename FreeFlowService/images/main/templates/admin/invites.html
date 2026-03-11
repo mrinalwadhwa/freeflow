@@ -181,9 +181,8 @@
 
             fetch("/admin/api/invites", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin"
-            ,   body: JSON.stringify(body)
+                headers: adminHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify(body)
             })
             .then(function (resp) {
                 if (!resp.ok) throw new Error("Failed to create invite (" + resp.status + ")");
@@ -228,7 +227,7 @@
 
                 fetch("/admin/api/invites/" + inviteId, {
                     method: "DELETE",
-                    credentials: "same-origin"
+                    headers: adminHeaders()
                 })
                 .then(function (resp) {
                     if (!resp.ok) throw new Error("Failed to revoke invite");
