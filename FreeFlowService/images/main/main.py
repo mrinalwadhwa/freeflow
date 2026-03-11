@@ -356,6 +356,11 @@ async def admin_save_require_email(
 # ---------------------------------------------------------------------------
 
 
+# Default invite expiry: 7 days. Prevents forgotten tokens from being
+# redeemable indefinitely. Admins can override per-invite.
+DEFAULT_INVITE_EXPIRY_HOURS = 7 * 24
+
+
 class CreateInviteRequest(BaseModel):
     """Request body for creating an invite."""
     label: Optional[str] = None
@@ -376,12 +381,13 @@ async def admin_create_invite(
     When send_email is true and email is provided, send the invite link
     directly to the recipient via the configured email provider.
     """
+    expires = request.expires_in_hours if request.expires_in_hours is not None else DEFAULT_INVITE_EXPIRY_HOURS
     token, invite_id = await invite.create_invite(
         created_by=user.user_id,
         label=request.label,
         email=request.email,
         max_uses=request.max_uses,
-        expires_in_hours=request.expires_in_hours,
+        expires_in_hours=expires,
     )
 
     email_sent = False
