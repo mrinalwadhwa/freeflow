@@ -64,13 +64,19 @@
     // Wire up button click handlers.
     bindButtons();
 
-    // Determine starting step from the token query param.
-    goTo(0);
+    // Determine starting step.
+    var skip = getQueryParam("skip");
+    if (skip === "connect" && steps[0] === "connect") {
+      // Provisioning already authenticated — skip the connect step.
+      goTo(1);
+    } else {
+      goTo(0);
 
-    // If we have a token, start the connect flow immediately.
-    var token = getQueryParam("token");
-    if (token && steps[0] === "connect") {
-      startConnect(token);
+      // If we have a token, start the connect flow immediately.
+      var token = getQueryParam("token");
+      if (token && steps[0] === "connect") {
+        startConnect(token);
+      }
     }
   }
 

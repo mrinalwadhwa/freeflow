@@ -91,6 +91,11 @@ public final class AutonomyClient: Sendable {
             throw AutonomyError.invalidResponse
         }
 
+        let bodyString = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+        Log.debug(
+            "[AutonomyClient] \(request.httpMethod ?? "?") \(request.url?.path ?? "?") → \(httpResponse.statusCode) body=\(bodyString)"
+        )
+
         switch httpResponse.statusCode {
         case 200:
             let decoder = JSONDecoder()

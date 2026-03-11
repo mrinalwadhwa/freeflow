@@ -265,13 +265,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Onboarding
 
-    private func showOnboarding() {
+    private func showOnboarding(skipConnect: Bool = false) {
         menuBarController?.onReopenOnboarding = { [weak self] in
             self?.onboardingController?.showWindow(path: "/onboarding/")
         }
         menuBarController?.setOnboardingMode(true)
         let controller = ensureOnboardingController()
-        controller.showWindow(path: "/onboarding/")
+        let path = skipConnect ? "/onboarding/?skip=connect" : "/onboarding/"
+        controller.showWindow(path: path)
     }
 
     // MARK: - Provisioning Flow
@@ -295,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.debug("[AppDelegate] Provisioning complete, transitioning to onboarding")
             self.provisioningController?.dismissWindow()
             self.provisioningController = nil
-            self.showOnboarding()
+            self.showOnboarding(skipConnect: true)
         }
 
         controller.onError = { error in

@@ -211,11 +211,20 @@ final class ProvisioningController {
         keychain.saveServiceURL(zoneUrl)
 
         // Step 5: Redeem admin token on the zone to get a zone session.
-        Log.debug("[Provisioning] Redeeming admin token on zone")
-        let redeemResult = try await authClient.redeemInvite(
-            serviceURL: zoneUrl,
-            token: adminToken
+        Log.debug(
+            "[Provisioning] Redeeming admin token on zone URL=\(zoneUrl) tokenLength=\(adminToken.count)"
         )
+        Log.debug("[Provisioning] Constructed redeem URL: \(zoneUrl)/api/auth/redeem-invite")
+        let redeemResult: AuthClient.RedeemResult
+        do {
+            redeemResult = try await authClient.redeemInvite(
+                serviceURL: zoneUrl,
+                token: adminToken
+            )
+        } catch {
+            Log.debug("[Provisioning] Redeem failed: \(error) — \(String(describing: error))")
+            throw error
+        }
         keychain.saveSessionToken(redeemResult.sessionToken)
 
         // Step 6: Notify the UI and hand off.
