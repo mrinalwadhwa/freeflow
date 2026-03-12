@@ -35,7 +35,7 @@
                 align-items: center;
                 justify-content: center;
                 height: 100vh;
-                padding: 2rem;
+                padding: 1.25rem 2rem;
                 -webkit-user-select: none;
                 cursor: default;
             }
@@ -358,6 +358,17 @@
                 display: block;
             }
 
+            .name-row {
+                display: flex;
+                gap: 0.75rem;
+                width: 100%;
+            }
+
+            .name-row .form-group {
+                flex: 1;
+                min-width: 0;
+            }
+
             /* ---------------------------------------------------------- */
             /* Plan card                                                   */
             /* ---------------------------------------------------------- */
@@ -512,14 +523,19 @@
             /* ---------------------------------------------------------- */
 
             .screen-scrollable {
-                max-height: calc(100vh - 4rem - 2.5rem);
+                max-height: calc(100vh - 2.5rem - 2.5rem);
                 overflow-y: auto;
+                overflow-x: hidden;
                 width: 100%;
-                padding-bottom: 2.5rem;
+                padding-bottom: 1rem;
                 -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                -ms-overflow-style: none;
             }
 
             .screen-scrollable::-webkit-scrollbar {
+                width: 0;
+                height: 0;
                 display: none;
             }
 
@@ -561,7 +577,7 @@
                 align-items: center;
                 gap: 0.75rem;
                 width: 100%;
-                margin: 0.125rem 0;
+                margin: 0.5rem 0 1.5rem;
             }
 
             .divider-inline-line {
@@ -736,21 +752,35 @@
         <!-- Screen: Account (merged — info + two paths) -->
         <div id="screen-account" class="screen">
             <div class="screen-scrollable">
-                <h1 style="margin-bottom: 1.125rem">Set up your account</h1>
+                <h1 style="margin-bottom: 1.5rem">Set up your account</h1>
 
-                <div class="form-group">
-                    <label for="first-name">First name</label>
-                    <input type="text" id="first-name" autocomplete="given-name" autocorrect="off" spellcheck="false" />
-                    <div id="first-name-error" class="field-error">First name is required.</div>
+                <div class="name-row">
+                    <div class="form-group">
+                        <label for="first-name">First name</label>
+                        <input
+                            type="text"
+                            id="first-name"
+                            autocomplete="given-name"
+                            autocorrect="off"
+                            spellcheck="false"
+                        />
+                        <div id="first-name-error" class="field-error">First name is required.</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="last-name">Last name</label>
+                        <input
+                            type="text"
+                            id="last-name"
+                            autocomplete="family-name"
+                            autocorrect="off"
+                            spellcheck="false"
+                        />
+                        <div id="last-name-error" class="field-error">Last name is required.</div>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="last-name">Last name</label>
-                    <input type="text" id="last-name" autocomplete="family-name" autocorrect="off" spellcheck="false" />
-                    <div id="last-name-error" class="field-error">Last name is required.</div>
-                </div>
-
-                <div class="form-group" style="margin-bottom: 1rem">
+                <div class="form-group" style="margin-bottom: 1.5rem">
                     <label for="company"
                         >Company <span style="font-weight: 400; color: var(--color-border)">(optional)</span></label
                     >
@@ -758,9 +788,10 @@
                 </div>
 
                 <div class="plan-card">
-                    <div class="plan-card-title">Your plan</div>
-                    <div class="plan-card-main">14 days free · $50 credit</div>
-                    <div class="plan-card-sub">Then $75/month. Your own private server, unlimited dictation.</div>
+                    <div class="plan-card-main">14 days free, up to $50 in usage</div>
+                    <div class="plan-card-sub">
+                        Then $75/month + model usage. Your own private server, unlimited users, unlimited dictation.
+                    </div>
                     <a class="plan-card-link" onclick="openExternal('https://autonomy.computer/pricing')"
                         >Pricing details &#8594;</a
                     >
@@ -775,7 +806,7 @@
                     <button class="btn" id="btn-add-card" onclick="handleAddCardPath()">
                         Add card and start trial
                     </button>
-                    <div class="card-nudge">Unlocks team invites so you can share FreeFlow.</div>
+                    <div class="card-nudge">Adding a card unlocks invites for your team.</div>
 
                     <div class="divider-inline">
                         <div class="divider-inline-line"></div>
