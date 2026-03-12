@@ -50,6 +50,7 @@ import ratelimit
 import realtime
 import startup
 import web
+import zone_lifecycle
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +61,7 @@ import web
 async def lifespan(app):
     await startup.start_auth()
     await db.open_pool()
+    await zone_lifecycle.check_reprovisioning()
     await invite.ensure_table()
     await admin.ensure_table()
     await email_config.ensure_table()
