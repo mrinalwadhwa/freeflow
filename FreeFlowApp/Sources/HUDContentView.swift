@@ -175,8 +175,11 @@ struct HUDContentView: View {
                 ) {
                     breathingExpanded = true
                 }
-            } else {
-                breathingExpanded = false
+            } else if breathingExpanded {
+                // Explicit withAnimation cancels the repeatForever.
+                withAnimation(.easeOut(duration: 0.15)) {
+                    breathingExpanded = false
+                }
             }
         }
     }
