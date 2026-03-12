@@ -6,6 +6,10 @@ import Foundation
 /// an invite link or the bootstrap token. The Keychain stores the
 /// session token and service URL as separate items under the service
 /// name `computer.autonomy.freeflow`.
+///
+/// In debug builds, the environment variables `FREEFLOW_SERVICE_URL`
+/// and `FREEFLOW_SESSION_TOKEN` take priority over the Keychain. This
+/// avoids repeated Keychain password prompts during development.
 public final class ServiceConfig: @unchecked Sendable {
 
     /// Shared instance used by service providers when no explicit
@@ -25,6 +29,13 @@ public final class ServiceConfig: @unchecked Sendable {
     /// Checks Keychain first, then falls back to localhost for local
     /// development.
     public var baseURL: String {
+        #if DEBUG
+            if let url = ProcessInfo.processInfo.environment["FREEFLOW_SERVICE_URL"],
+                !url.isEmpty
+            {
+                return url
+            }
+        #endif
         if let url = keychain.serviceURL(), !url.isEmpty {
             return url
         }
@@ -34,8 +45,16 @@ public final class ServiceConfig: @unchecked Sendable {
     // MARK: - Auth
 
     /// Session token from the Keychain (set during onboarding).
+    /// In debug builds, `FREEFLOW_SESSION_TOKEN` overrides the Keychain.
     public var sessionToken: String? {
-        keychain.sessionToken()
+        #if DEBUG
+            if let token = ProcessInfo.processInfo.environment["FREEFLOW_SESSION_TOKEN"],
+                !token.isEmpty
+            {
+                return token
+            }
+        #endif
+        return keychain.sessionToken()
     }
 
     /// Authorization header value for HTTP requests.
