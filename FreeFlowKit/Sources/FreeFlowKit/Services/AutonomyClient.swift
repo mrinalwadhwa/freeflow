@@ -294,6 +294,10 @@ public struct ProvisioningStatus: Decodable, Sendable {
     /// Whether the user has a credit card on file.
     public let hasCreditCard: Bool?
 
+    /// The user's email on the Autonomy Account. Present when the
+    /// orchestrator includes it in the response (e.g. from Auth0).
+    public let email: String?
+
     /// Error message. Present when status is "error".
     public let message: String?
 
@@ -304,6 +308,7 @@ public struct ProvisioningStatus: Decodable, Sendable {
         case trial
         case trialDaysRemaining = "trial_days_remaining"
         case hasCreditCard = "has_credit_card"
+        case email
         case message
     }
 

@@ -16,6 +16,7 @@ public final class KeychainService: @unchecked Sendable {
         static let serviceURL = "service-url"
         static let autonomyToken = "autonomy-token"
         static let userEmail = "user-email"
+        static let autonomyEmail = "autonomy-email"
     }
 
     public init(service: String = "computer.autonomy.freeflow") {
@@ -108,6 +109,30 @@ public final class KeychainService: @unchecked Sendable {
         delete(account: Account.userEmail)
     }
 
+    // MARK: - Autonomy Account email
+
+    /// Save the Autonomy Account email to the Keychain.
+    ///
+    /// This is the email the user signed in with on my.autonomy.computer
+    /// (Auth0). It is separate from the zone user email stored by
+    /// `saveUserEmail`. Used to identify the signed-in account in the
+    /// menu bar.
+    @discardableResult
+    public func saveAutonomyEmail(_ email: String) -> Bool {
+        save(value: email, account: Account.autonomyEmail)
+    }
+
+    /// Retrieve the stored Autonomy Account email, or nil if none exists.
+    public func autonomyEmail() -> String? {
+        load(account: Account.autonomyEmail)
+    }
+
+    /// Delete the stored Autonomy Account email.
+    @discardableResult
+    public func deleteAutonomyEmail() -> Bool {
+        delete(account: Account.autonomyEmail)
+    }
+
     // MARK: - Bulk operations
 
     /// Delete all stored credentials (tokens, URL, and email).
@@ -116,6 +141,7 @@ public final class KeychainService: @unchecked Sendable {
         deleteServiceURL()
         deleteAutonomyToken()
         deleteUserEmail()
+        deleteAutonomyEmail()
     }
 
     // MARK: - Private helpers

@@ -180,6 +180,11 @@ final class ProvisioningController {
 
                 let provisioningTask = Task { [weak self] () -> ProvisioningStatus in
                     let initial = try await client.provision()
+                    // Save the Autonomy Account email as soon as the
+                    // orchestrator returns it (even before the zone is ready).
+                    if let email = initial.email, !email.isEmpty {
+                        self?.keychain.saveAutonomyEmail(email)
+                    }
                     if initial.isReady {
                         self?.provisioningResult = initial
                         self?.isPolling = false
@@ -426,9 +431,12 @@ final class ProvisioningController {
             throw AutonomyError.provisioningFailed("Missing zone URL or admin token")
         }
 
-        // Step 4: Store zone URL in Keychain.
+        // Step 4: Store zone URL and Autonomy email in Keychain.
         bridge?.pushProvisioningProgress(message: "Almost ready…")
         keychain.saveServiceURL(zoneUrl)
+        if let email = status.email, !email.isEmpty {
+            keychain.saveAutonomyEmail(email)
+        }
 
         // Step 5: Redeem admin token on the zone to get a zone session.
         #if DEBUG

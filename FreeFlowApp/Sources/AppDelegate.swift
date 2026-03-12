@@ -166,6 +166,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     keychain.saveUserEmail(session.email)
                 }
 
+                // Show the signed-in email in the menu bar. Prefer the
+                // Autonomy Account email (the one used to sign up) over
+                // the zone email (which may be a placeholder).
+                updateMenuBarEmail()
+
                 // Proceed to permissions and hotkey.
                 checkPermissions()
 
@@ -284,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onComplete = { [weak self] zoneUrl, _ in
             guard let self else { return }
             Log.debug("[AppDelegate] Provisioning complete, transitioning to onboarding")
+            self.updateMenuBarEmail()
             self.provisioningController?.dismissWindow()
             self.provisioningController = nil
             self.showOnboarding(skipConnect: true)
@@ -525,6 +531,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onOpenSettings = { [weak self] in
             self?.showSettings()
         }
+
+        // Wire sign-out action.
+        controller.onSignOut = { [weak self] in
+            self?.signOut()
+        }
+    }
+
+    /// Update the menu bar with the best available email for the
+    /// signed-in user. Prefers the Autonomy Account email (Auth0)
+    /// over the zone user email.
+    private func updateMenuBarEmail() {
+        let email = keychain.autonomyEmail() ?? keychain.userEmail()
+        menuBarController?.setSignedInEmail(email)
+    }
+
+    /// Sign out: clear all stored credentials and return to the
+    /// provisioning flow so the user can sign in with a different
+    /// account.
+    private func signOut() {
+        Log.debug("[AppDelegate] Sign out requested")
+
+        // Stop the hotkey and HUD.
+        hotkeyProvider.unregister()
+        menuBarController?.setHotkeyRegistered(false)
+        hudController?.stop()
+        hudController = nil
+
+        // Dismiss any open windows.
+        onboardingController?.dismissWindow()
+        onboardingController = nil
+        settingsController?.closeWindow()
+
+        // Clear all stored credentials and state.
+        keychain.deleteAll()
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.removeObject(forKey: "hasEmailOnFile")
+
+        // Clear the menu bar email.
+        menuBarController?.setSignedInEmail(nil)
+
+        // Return to the provisioning flow.
+        showProvisioningFlow()
     }
 
     // MARK: - Settings

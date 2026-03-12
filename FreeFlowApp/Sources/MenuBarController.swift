@@ -1,6 +1,6 @@
 import AppKit
-import Sparkle
 import FreeFlowKit
+import Sparkle
 
 /// Build and manage the menu bar status item, icon, and dropdown menu.
 ///
@@ -28,6 +28,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when Settings menu item is clicked.
     var onOpenSettings: (() -> Void)?
 
+    /// Callback invoked when the user clicks "Sign Out".
+    var onSignOut: (() -> Void)?
+
     // MARK: - Onboarding mode
 
     /// When true, the menu shows a minimal onboarding hint instead of
@@ -46,6 +49,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var languageSubmenuItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
     private var statusMenuItem: NSMenuItem?
+    private var accountMenuItem: NSMenuItem?
+    private var signOutItem: NSMenuItem?
+
+    /// The email address shown in the menu bar for the signed-in user.
+    private var signedInEmail: String?
 
     // MARK: - State tracking
 
@@ -108,6 +116,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Update whether the hotkey is registered. Refreshes the status line.
     func setHotkeyRegistered(_ registered: Bool) {
         hotkeyRegistered = registered
+    }
+
+    /// Update the signed-in email shown in the menu bar.
+    ///
+    /// Pass `nil` to hide the account section. The menu items update
+    /// in place without rebuilding the entire menu.
+    func setSignedInEmail(_ email: String?) {
+        signedInEmail = email
+        accountMenuItem?.title = email ?? ""
+        accountMenuItem?.isHidden = email == nil
+        signOutItem?.isHidden = email == nil
     }
 
     /// Switch to onboarding mode: show a minimal menu with a setup hint.
@@ -236,6 +255,34 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
         menu.addItem(checkForUpdates)
         checkForUpdatesItem = checkForUpdates
+
+        menu.addItem(.separator())
+
+        // --- Account ---
+
+        let account = NSMenuItem(
+            title: signedInEmail ?? "",
+            action: nil,
+            keyEquivalent: ""
+        )
+        account.isEnabled = false
+        account.image = NSImage(systemSymbolName: "person.circle", accessibilityDescription: nil)
+        account.isHidden = signedInEmail == nil
+        menu.addItem(account)
+        accountMenuItem = account
+
+        let signOut = NSMenuItem(
+            title: "Sign Out",
+            action: #selector(signOutAction),
+            keyEquivalent: ""
+        )
+        signOut.target = self
+        signOut.image = NSImage(
+            systemSymbolName: "rectangle.portrait.and.arrow.right",
+            accessibilityDescription: nil)
+        signOut.isHidden = signedInEmail == nil
+        menu.addItem(signOut)
+        signOutItem = signOut
 
         menu.addItem(.separator())
 
@@ -463,6 +510,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func reopenOnboarding() {
         onReopenOnboarding?()
+    }
+
+    @objc private func signOutAction() {
+        onSignOut?()
     }
 
     // MARK: - Icon mapping
