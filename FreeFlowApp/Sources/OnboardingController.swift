@@ -29,7 +29,7 @@ final class OnboardingController {
     private let config: ServiceConfig
 
     private let bridge: OnboardingBridge
-    private var window: OnboardingWindow?
+    private(set) var window: OnboardingWindow?
 
     /// Called when onboarding completes successfully. AppDelegate uses
     /// this to register the hotkey and transition to the active state.

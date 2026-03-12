@@ -157,6 +157,66 @@ async def _validate_token(token: str) -> Invite:
     return invite
 
 
+async def _create_session_for_user(user_id: str) -> str:
+    """Create a new better-auth session for an existing user.
+
+    Looks up the user's email in the auth_user table, then calls
+    better-auth's sign-in endpoint with the admin API to get a fresh
+    session token. Used when the bootstrap token is re-redeemed after
+    sign-out (admin already exists, just needs a new session).
+    """
+    pool = db.get_pool()
+    async with pool.connection() as conn:
+        result = await conn.execute(
+            "SELECT email FROM auth_user WHERE id = %s", (user_id,)
+        )
+        row = await result.fetchone()
+    if row is None:
+        raise RuntimeError(f"Admin user {user_id} not found in auth_user table")
+
+    email = row[0]
+
+    # Use better-auth's sign-up endpoint which is idempotent for
+    # existing emails when using the bearer/admin plugin — it returns
+    # the existing user with a new session. If sign-up rejects
+    # (duplicate), fall back to sign-in.
+    password = secrets.token_hex(32)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # Try sign-up first (returns existing user + session if email exists
+        # in some better-auth configs). If it fails, use sign-in.
+        resp = await client.post(
+            f"{AUTH_BASE_URL}/api/auth/sign-in/email",
+            json={"email": email, "password": password},
+        )
+        if resp.status_code != 200:
+            # Sign-in with random password won't work (password doesn't match).
+            # Create a new password for the user and sign in with it.
+            new_password = secrets.token_hex(32)
+            # Update password via direct DB (better-auth hashes with SHA-256
+            # per our custom config).
+            hashed = hashlib.sha256(new_password.encode()).hexdigest()
+            async with pool.connection() as conn:
+                await conn.execute(
+                    "UPDATE auth_account SET password = %s WHERE user_id = %s AND provider_id = 'credential'",
+                    (hashed, user_id),
+                )
+            resp = await client.post(
+                f"{AUTH_BASE_URL}/api/auth/sign-in/email",
+                json={"email": email, "password": new_password},
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"Failed to create session for admin user: {resp.status_code} {resp.text}"
+                )
+
+    data = resp.json()
+    session_token = data.get("token")
+    if not session_token:
+        raise RuntimeError(f"No session token in sign-in response: {data}")
+
+    return session_token
+
+
 async def _create_user_via_auth(
     email: str, name: str
 ) -> tuple[str, str]:
@@ -202,13 +262,26 @@ async def redeem(token: str) -> RedeemResult:
     is_bootstrap = bool(BOOTSTRAP_TOKEN) and hmac.compare_digest(token, BOOTSTRAP_TOKEN)
 
     if is_bootstrap:
-        # Bootstrap token is single-use: reject if any admin already exists.
+        # Check if an admin already exists.
         pool = db.get_pool()
         async with pool.connection() as conn:
-            result = await conn.execute("SELECT 1 FROM admin_users LIMIT 1")
+            result = await conn.execute(
+                "SELECT user_id FROM admin_users LIMIT 1"
+            )
             row = await result.fetchone()
         if row is not None:
-            raise ValueError("Admin has already been set up")
+            # Admin exists. Return a fresh session for the existing
+            # admin instead of rejecting. This handles sign-out →
+            # re-sign-in: the zone still has the admin from the
+            # previous session, and the bootstrap token hasn't changed,
+            # so zone_lifecycle didn't clear the data.
+            admin_user_id = row[0]
+            session_token = await _create_session_for_user(admin_user_id)
+            return RedeemResult(
+                session_token=session_token,
+                user_id=admin_user_id,
+                has_email=False,
+            )
     else:
         invite = await _validate_token(token)
 

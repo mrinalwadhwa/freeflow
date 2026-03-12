@@ -28,7 +28,7 @@ final class ProvisioningController {
 
     // MARK: - UI
 
-    private var window: OnboardingWindow?
+    private(set) var window: OnboardingWindow?
     private var bridge: ProvisioningBridge?
 
     // MARK: - Callbacks
@@ -172,24 +172,33 @@ final class ProvisioningController {
                 let client = AutonomyClient(token: token)
                 self.autonomyClient = client
 
-                // Step 2: Fire provisioning AND SetupIntent in parallel.
-                // Provisioning starts polling in the background; SetupIntent
-                // fetches the Stripe keys we'll need for Screen B.
+                // Step 2: Check current provisioning status. If the zone
+                // is already ready (e.g. sign-out → re-sign-in), skip the
+                // account and card screens entirely.
+                let initial = try await client.provision()
+                if let email = initial.email, !email.isEmpty {
+                    keychain.saveAutonomyEmail(email)
+                }
+
+                if initial.isReady {
+                    #if DEBUG
+                        Log.debug(
+                            "[Provisioning] Zone already ready, skipping account/card screens")
+                    #endif
+                    bridge?.pushProvisioningProgress(message: "Reconnecting…")
+                    showProvisioningScreen()
+                    try await completeProvisioning(status: initial)
+                    return
+                }
+
+                // Zone is not ready — run the full provisioning flow with
+                // account details and optional credit card.
                 self.provisioningResult = nil
                 self.isPolling = true
 
                 let provisioningTask = Task { [weak self] () -> ProvisioningStatus in
-                    let initial = try await client.provision()
-                    // Save the Autonomy Account email as soon as the
-                    // orchestrator returns it (even before the zone is ready).
-                    if let email = initial.email, !email.isEmpty {
-                        self?.keychain.saveAutonomyEmail(email)
-                    }
-                    if initial.isReady {
-                        self?.provisioningResult = initial
-                        self?.isPolling = false
-                        return initial
-                    }
+                    // The initial provision call already started provisioning
+                    // on the orchestrator. Just poll until ready.
                     let result =
                         try await self?.pollUntilReady(client: client)
                         ?? initial

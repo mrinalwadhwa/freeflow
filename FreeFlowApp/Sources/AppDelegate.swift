@@ -260,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Onboarding
 
-    private func showOnboarding(skipConnect: Bool = false) {
+    private func showOnboarding(skipConnect: Bool = false, windowFrame: NSRect? = nil) {
         menuBarController?.onReopenOnboarding = { [weak self] in
             self?.onboardingController?.showWindow(path: "/onboarding/")
         }
@@ -268,6 +268,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = ensureOnboardingController()
         let path = skipConnect ? "/onboarding/?skip=connect" : "/onboarding/"
         controller.showWindow(path: path)
+        // If transitioning from provisioning, place the onboarding
+        // window where the provisioning window was so it doesn't jump.
+        if let frame = windowFrame {
+            controller.window?.setFrameOrigin(frame.origin)
+        }
     }
 
     // MARK: - Provisioning Flow
@@ -290,9 +295,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             Log.debug("[AppDelegate] Provisioning complete, transitioning to onboarding")
             self.updateMenuBarEmail()
+            // Capture the window position before dismissing so the
+            // onboarding window can appear in the same spot.
+            let windowFrame = self.provisioningController?.window?.frame
             self.provisioningController?.dismissWindow()
             self.provisioningController = nil
-            self.showOnboarding(skipConnect: true)
+            self.showOnboarding(skipConnect: true, windowFrame: windowFrame)
         }
 
         controller.onError = { error in
