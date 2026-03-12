@@ -13,6 +13,10 @@ import WebKit
 /// Actions received from the provisioning page:
 ///   - getStarted: user clicked the "Get Started" button
 ///   - retryProvisioning: user clicked "Retry" after an error
+///   - accountDetails: { firstName, lastName, company } — Screen A done
+///   - submitPayment: { setupIntentId } — card confirmed by Stripe.js
+///   - skipPayment: user chose trial without card
+///   - openExternal: { url } — open URL in system browser
 ///
 /// Events pushed to the provisioning page:
 ///   - authStarted: Autonomy Account browser sheet is opening
@@ -21,6 +25,10 @@ import WebKit
 ///   - provisioningProgress: { message } — status update during setup
 ///   - provisioningReady: zone is up, transitioning to onboarding
 ///   - provisioningError: { message } — setup failed
+///   - accountSetup: show Screen A (account details + plan)
+///   - creditCard: { clientSecret, publishableKey } — show Screen B
+///   - paymentSuccess: card saved successfully
+///   - paymentError: { message } — card save failed
 @MainActor
 final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
 
@@ -32,6 +40,20 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
 
     /// Called when the user clicks "Retry" after an error.
     var onRetry: (() -> Void)?
+
+    /// Called when the user submits account details from Screen A.
+    /// Parameters: (firstName, lastName, company).
+    var onAccountDetails: ((String, String, String?) -> Void)?
+
+    /// Called when Stripe.js confirms a SetupIntent on Screen B.
+    /// Parameter: setupIntentId.
+    var onSubmitPayment: ((String) -> Void)?
+
+    /// Called when the user skips adding a card on Screen B.
+    var onSkipPayment: (() -> Void)?
+
+    /// Called when the page requests opening a URL in the system browser.
+    var onOpenExternal: ((URL) -> Void)?
 
     // MARK: - WKScriptMessageHandler
 
@@ -56,6 +78,29 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
             onGetStarted?()
         case "retryProvisioning":
             onRetry?()
+        case "accountDetails":
+            if let data = body["data"] as? [String: Any],
+                let firstName = data["firstName"] as? String,
+                let lastName = data["lastName"] as? String
+            {
+                let company = data["company"] as? String
+                onAccountDetails?(firstName, lastName, company)
+            }
+        case "submitPayment":
+            if let data = body["data"] as? [String: Any],
+                let setupIntentId = data["setupIntentId"] as? String
+            {
+                onSubmitPayment?(setupIntentId)
+            }
+        case "skipPayment":
+            onSkipPayment?()
+        case "openExternal":
+            if let data = body["data"] as? [String: Any],
+                let urlString = data["url"] as? String,
+                let url = URL(string: urlString)
+            {
+                onOpenExternal?(url)
+            }
         default:
             break
         }
@@ -119,5 +164,36 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
     /// Notify the page that provisioning failed.
     func pushProvisioningError(message: String) {
         pushEvent(name: "provisioningError", data: ["message": message])
+    }
+
+    // MARK: - Billing screen events
+
+    /// Show Screen A: account details + plan overview.
+    func pushAccountSetup() {
+        pushEvent(name: "accountSetup")
+    }
+
+    /// Show Screen B: credit card entry with Stripe Payment Element.
+    ///
+    /// - Parameters:
+    ///   - clientSecret: The Stripe SetupIntent client secret.
+    ///   - publishableKey: The Stripe publishable key.
+    func pushCreditCard(clientSecret: String, publishableKey: String) {
+        pushEvent(
+            name: "creditCard",
+            data: [
+                "clientSecret": clientSecret,
+                "publishableKey": publishableKey,
+            ])
+    }
+
+    /// Notify the page that the payment method was saved.
+    func pushPaymentSuccess() {
+        pushEvent(name: "paymentSuccess")
+    }
+
+    /// Notify the page that saving the payment method failed.
+    func pushPaymentError(message: String) {
+        pushEvent(name: "paymentError", data: ["message": message])
     }
 }

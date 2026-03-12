@@ -10,6 +10,12 @@ import FreeFlowKit
 /// The controller owns the provisioning window and bridge. It loads
 /// a bundled HTML page for the provisioning UI and communicates with
 /// it via `ProvisioningBridge`.
+///
+/// Session 34: provisioning and billing now run in parallel. After
+/// auth, the controller fires zone provisioning and a Stripe
+/// SetupIntent fetch concurrently, then walks the user through
+/// Screen A (account details) and Screen B (credit card or skip)
+/// while the zone provisions in the background.
 @MainActor
 final class ProvisioningController {
 
@@ -43,6 +49,22 @@ final class ProvisioningController {
 
     /// Whether a provisioning attempt is currently in progress.
     private var isRunning = false
+
+    /// Stripe SetupIntent info fetched in parallel with provisioning.
+    private var stripeSetupInfo: StripeSetupInfo?
+
+    /// Background provisioning result, set when polling completes.
+    private var provisioningResult: ProvisioningStatus?
+
+    /// Whether background provisioning polling is still running.
+    private var isPolling = false
+
+    /// Continuation for awaiting user action on Screen A.
+    private var accountContinuation: CheckedContinuation<(String, String, String?), Never>?
+
+    /// Continuation for awaiting user action on Screen B.
+    /// Returns the setupIntentId if the user added a card, or nil if skipped.
+    private var paymentContinuation: CheckedContinuation<String?, Never>?
 
     // MARK: - Init
 
@@ -78,6 +100,21 @@ final class ProvisioningController {
             provBridge.onRetry = { [weak self] in
                 self?.start()
             }
+            provBridge.onAccountDetails = { [weak self] firstName, lastName, company in
+                self?.accountContinuation?.resume(returning: (firstName, lastName, company))
+                self?.accountContinuation = nil
+            }
+            provBridge.onSubmitPayment = { [weak self] setupIntentId in
+                self?.paymentContinuation?.resume(returning: setupIntentId)
+                self?.paymentContinuation = nil
+            }
+            provBridge.onSkipPayment = { [weak self] in
+                self?.paymentContinuation?.resume(returning: nil)
+                self?.paymentContinuation = nil
+            }
+            provBridge.onOpenExternal = { url in
+                NSWorkspace.shared.open(url)
+            }
 
             bridge = provBridge
             window = win
@@ -100,7 +137,13 @@ final class ProvisioningController {
     /// Start (or restart) the full provisioning flow.
     ///
     /// Called when the user clicks "Get Started" or "Retry". Runs the
-    /// entire sequence: auth → provision → poll → redeem → complete.
+    /// full parallel sequence:
+    ///   1. Auth login
+    ///   2. Fire provisioning + SetupIntent fetch in parallel
+    ///   3. Screen A: collect account details while zone provisions
+    ///   4. Screen B: credit card or skip trial
+    ///   5. Wait for zone if still provisioning
+    ///   6. Redeem admin token → hand off to onboarding
     private func start() {
         guard !isRunning else { return }
         isRunning = true
@@ -120,27 +163,144 @@ final class ProvisioningController {
                 // Store the Autonomy token for future API calls (trial checks).
                 keychain.saveAutonomyToken(token)
 
-                // Step 2: Trigger provisioning
                 bridge?.pushAuthComplete()
                 #if DEBUG
-                    Log.debug("[Provisioning] Auth complete, triggering provisioning")
+                    Log.debug("[Provisioning] Auth complete, starting parallel work")
                 #endif
                 let client = AutonomyClient(token: token)
                 self.autonomyClient = client
 
-                let initial = try await client.provision()
-                if initial.isReady {
-                    // Zone already exists — skip polling.
-                    try await completeProvisioning(status: initial)
-                    return
+                // Step 2: Fire provisioning AND SetupIntent in parallel.
+                // Provisioning starts polling in the background; SetupIntent
+                // fetches the Stripe keys we'll need for Screen B.
+                self.provisioningResult = nil
+                self.isPolling = true
+
+                let provisioningTask = Task { [weak self] () -> ProvisioningStatus in
+                    let initial = try await client.provision()
+                    if initial.isReady {
+                        self?.provisioningResult = initial
+                        self?.isPolling = false
+                        return initial
+                    }
+                    let result =
+                        try await self?.pollUntilReady(client: client)
+                        ?? initial
+                    self?.provisioningResult = result
+                    self?.isPolling = false
+                    return result
                 }
 
-                // Step 3: Poll until ready
-                bridge?.pushProvisioningProgress(message: "Creating your server…")
+                let setupIntentTask = Task {
+                    try await client.createSetupIntent()
+                }
+
+                // Start pushing provisioning progress to the UI.
+                // The progress bar is visible at the bottom of Screens A and B.
+                let progressTask = Task {
+                    await self.pushProgressUpdates()
+                }
+
+                // Step 3: Show Screen A (account details + plan).
+                bridge?.pushAccountSetup()
                 #if DEBUG
-                    Log.debug("[Provisioning] Polling for readiness")
+                    Log.debug("[Provisioning] Showing Screen A (account details)")
                 #endif
-                let result = try await pollUntilReady(client: client)
+
+                let (firstName, lastName, company) = await waitForAccountDetails()
+
+                // Save account details to orchestrator.
+                #if DEBUG
+                    Log.debug("[Provisioning] Saving account details")
+                #endif
+                try await client.saveAccount(
+                    firstName: firstName,
+                    lastName: lastName,
+                    company: company
+                )
+
+                // Step 4: Show Screen B (credit card).
+                // Fetch the SetupIntent result. If it failed, log the
+                // error and skip straight to the card-skip path (user
+                // can still start their trial).
+                var setupInfo: StripeSetupInfo?
+                do {
+                    setupInfo = try await setupIntentTask.value
+                    self.stripeSetupInfo = setupInfo
+                } catch {
+                    #if DEBUG
+                        Log.debug(
+                            "[Provisioning] SetupIntent fetch failed: \(error.localizedDescription)"
+                        )
+                    #endif
+                    // Screen B will show without the Stripe form; user
+                    // can only skip. We still show the screen so the
+                    // flow isn't jarring.
+                }
+
+                if let info = setupInfo {
+                    bridge?.pushCreditCard(
+                        clientSecret: info.clientSecret,
+                        publishableKey: info.publishableKey
+                    )
+                } else {
+                    // No Stripe info available — show Screen B in
+                    // skip-only mode (no card form).
+                    bridge?.pushCreditCard(clientSecret: "", publishableKey: "")
+                }
+                #if DEBUG
+                    Log.debug("[Provisioning] Showing Screen B (credit card)")
+                #endif
+
+                let setupIntentId = await waitForPaymentAction()
+
+                // Handle user's payment decision. If they submit a card
+                // and confirmation fails, let them retry or skip.
+                var paymentAction = setupIntentId
+                while let intentId = paymentAction {
+                    #if DEBUG
+                        Log.debug("[Provisioning] Confirming payment with orchestrator")
+                    #endif
+                    do {
+                        try await client.confirmPayment(setupIntentId: intentId)
+                        bridge?.pushPaymentSuccess()
+                        break  // Success — exit the retry loop.
+                    } catch {
+                        #if DEBUG
+                            Log.debug(
+                                "[Provisioning] Payment confirmation failed: \(error.localizedDescription)"
+                            )
+                        #endif
+                        bridge?.pushPaymentError(message: error.localizedDescription)
+                        // Re-await: user can retry the card or skip.
+                        paymentAction = await waitForPaymentAction()
+                    }
+                }
+
+                if paymentAction == nil {
+                    #if DEBUG
+                        Log.debug("[Provisioning] User skipped adding a card")
+                    #endif
+                }
+
+                // Step 5: Wait for provisioning if still in progress.
+                progressTask.cancel()
+
+                let result: ProvisioningStatus
+                if let cached = self.provisioningResult {
+                    result = cached
+                } else {
+                    // Zone not ready yet — show the spinner screen while
+                    // we wait for the background provisioning task.
+                    bridge?.pushProvisioningProgress(message: "Finishing setup…")
+                    showProvisioningScreen()
+                    #if DEBUG
+                        Log.debug("[Provisioning] Waiting for zone to be ready")
+                    #endif
+                    result = try await provisioningTask.value
+                }
+
+                // Step 6: Redeem and hand off.
                 try await completeProvisioning(status: result)
 
             } catch let error as AuthControllerError where error == .userCancelled {
@@ -159,25 +319,78 @@ final class ProvisioningController {
         }
     }
 
+    // MARK: - User interaction continuations
+
+    /// Wait for the user to submit account details on Screen A.
+    ///
+    /// Returns (firstName, lastName, company) when the bridge receives
+    /// the `accountDetails` action from JavaScript.
+    private func waitForAccountDetails() async -> (String, String, String?) {
+        await withCheckedContinuation { continuation in
+            self.accountContinuation = continuation
+        }
+    }
+
+    /// Wait for the user to submit a card or skip on Screen B.
+    ///
+    /// Returns the setupIntentId if a card was submitted, or nil if
+    /// the user chose to skip.
+    private func waitForPaymentAction() async -> String? {
+        await withCheckedContinuation { continuation in
+            self.paymentContinuation = continuation
+        }
+    }
+
+    // MARK: - Background progress
+
+    /// Push provisioning progress messages to the UI while screens
+    /// are displayed. Runs until the provisioning task completes
+    /// (detected via `provisioningResult` being set) or this task
+    /// is cancelled.
+    private func pushProgressUpdates() async {
+        let messages = [
+            (delay: 5, message: "Creating your server…"),
+            (delay: 10, message: "Installing FreeFlow…"),
+            (delay: 20, message: "Configuring your server…"),
+            (delay: 30, message: "Almost ready…"),
+        ]
+
+        var elapsed = 0
+        var messageIndex = 0
+
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+            elapsed += 1
+
+            if messageIndex < messages.count && elapsed >= messages[messageIndex].delay {
+                bridge?.pushProvisioningProgress(message: messages[messageIndex].message)
+                messageIndex += 1
+            }
+
+            // The provisioning task sets provisioningResult when done.
+            if self.provisioningResult != nil {
+                bridge?.pushProvisioningProgress(message: "Server ready")
+                return
+            }
+        }
+    }
+
     // MARK: - Polling
 
     /// Poll `GET /api/freeflow/status` every 3 seconds until the zone
-    /// is ready or an error occurs. Shows progress messages at timed
-    /// milestones.
+    /// is ready or an error occurs.
+    ///
+    /// Progress messages are now handled by `pushProgressUpdates` so
+    /// the polling loop is decoupled from UI updates.
     ///
     /// - Parameter client: The Autonomy API client.
     /// - Returns: The final `ProvisioningStatus` with status "ready".
     /// - Throws: `AutonomyError.provisioningFailed` if the server
-    ///   reports an error, or if polling times out after 3 minutes.
+    ///   reports an error, or if polling times out after 5 minutes.
     private func pollUntilReady(client: AutonomyClient) async throws -> ProvisioningStatus {
-        let maxAttempts = 60  // 3 minutes at 3-second intervals
-        let milestones: [(attempt: Int, message: String)] = [
-            (5, "Installing FreeFlow…"),
-            (15, "Configuring your server…"),
-            (30, "Almost ready…"),
-        ]
+        let maxAttempts = 100  // 5 minutes at 3-second intervals
 
-        for attempt in 0..<maxAttempts {
+        for _ in 0..<maxAttempts {
             let result = try await client.status()
 
             if result.isReady {
@@ -188,11 +401,6 @@ final class ProvisioningController {
                 throw AutonomyError.provisioningFailed(
                     result.message ?? "Unknown error"
                 )
-            }
-
-            // Update progress message at milestones.
-            if let milestone = milestones.first(where: { $0.attempt == attempt }) {
-                bridge?.pushProvisioningProgress(message: milestone.message)
             }
 
             try await Task.sleep(nanoseconds: 3_000_000_000)  // 3 seconds
@@ -286,6 +494,19 @@ final class ProvisioningController {
                 onError?(error)
             }
         }
+    }
+
+    // MARK: - UI helpers
+
+    /// Switch the web view to the provisioning spinner screen.
+    ///
+    /// Used when the billing screens are done but the zone is still
+    /// provisioning. Evaluates JavaScript to call `showScreen('provisioning')`.
+    private func showProvisioningScreen() {
+        let script = """
+            if (typeof showScreen === 'function') { showScreen('provisioning'); }
+            """
+        window?.webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     // MARK: - HTML loading

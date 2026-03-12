@@ -1,381 +1,1170 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
 
-  :root {
-    --color-bg: #EEECEB;
-    --color-surface: #F9F9F9;
-    --color-text: #292929;
-    --color-muted: #7A7775;
-    --color-accent: #292929;
-    --color-accent-hover: #444;
-    --color-error: #C53030;
-    --color-success: #276749;
-    --color-border: #D8D5D2;
-  }
+            :root {
+                --color-bg: #eeeceb;
+                --color-surface: #f9f9f9;
+                --color-text: #292929;
+                --color-muted: #7a7775;
+                --color-accent: #292929;
+                --color-accent-hover: #444;
+                --color-error: #c53030;
+                --color-success: #276749;
+                --color-border: #d8d5d2;
+                --color-border-light: #e8e5e3;
+                --color-white: #ffffff;
+                --color-green: #276749;
+                --color-green-bg: #f0fff4;
+            }
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-    background: var(--color-bg);
-    color: var(--color-text);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    padding: 2rem;
-    -webkit-user-select: none;
-    cursor: default;
-  }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+                background: var(--color-bg);
+                color: var(--color-text);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                padding: 2rem;
+                -webkit-user-select: none;
+                cursor: default;
+            }
 
-  .screen {
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    max-width: 360px;
-    width: 100%;
-    animation: fadeIn 0.3s ease-out;
-  }
+            .screen {
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                max-width: 360px;
+                width: 100%;
+                animation: fadeIn 0.3s ease-out;
+            }
 
-  .screen.active {
-    display: flex;
-  }
+            .screen.active {
+                display: flex;
+            }
 
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(8px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
 
-  .icon {
-    font-size: 2.5rem;
-    margin-bottom: 1.5rem;
-    line-height: 1;
-  }
+            .icon {
+                font-size: 2.5rem;
+                margin-bottom: 1.5rem;
+                line-height: 1;
+            }
 
-  h1 {
-    font-size: 1.375rem;
-    font-weight: 600;
-    margin-bottom: 0.625rem;
-    letter-spacing: -0.01em;
-  }
+            h1 {
+                font-size: 1.375rem;
+                font-weight: 600;
+                margin-bottom: 0.625rem;
+                letter-spacing: -0.01em;
+            }
 
-  p {
-    font-size: 0.9375rem;
-    color: var(--color-muted);
-    line-height: 1.55;
-    margin-bottom: 1.5rem;
-  }
+            p {
+                font-size: 0.9375rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                margin-bottom: 1.5rem;
+            }
 
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.75rem 2rem;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: #fff;
-    background: var(--color-accent);
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background 0.15s ease, transform 0.1s ease;
-    -webkit-user-select: none;
-    min-width: 160px;
-  }
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0.75rem 2rem;
+                font-size: 0.9375rem;
+                font-weight: 500;
+                color: #fff;
+                background: var(--color-accent);
+                border: none;
+                border-radius: 10px;
+                cursor: pointer;
+                transition:
+                    background 0.15s ease,
+                    transform 0.1s ease;
+                -webkit-user-select: none;
+                min-width: 160px;
+            }
 
-  .btn:hover {
-    background: var(--color-accent-hover);
-  }
+            .btn:hover {
+                background: var(--color-accent-hover);
+            }
 
-  .btn:active {
-    transform: scale(0.97);
-  }
+            .btn:active {
+                transform: scale(0.97);
+            }
 
-  .btn-secondary {
-    background: transparent;
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
-  }
+            .btn:disabled {
+                opacity: 0.5;
+                cursor: default;
+                transform: none;
+            }
 
-  .btn-secondary:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
+            .btn:disabled:hover {
+                background: var(--color-accent);
+            }
 
-  /* Spinner */
-  .spinner-container {
-    margin-bottom: 1.5rem;
-    position: relative;
-    width: 48px;
-    height: 48px;
-  }
+            .btn-secondary {
+                background: transparent;
+                color: var(--color-text);
+                border: 1px solid var(--color-border);
+            }
 
-  .spinner {
-    width: 48px;
-    height: 48px;
-    border: 3px solid var(--color-border);
-    border-top-color: var(--color-accent);
-    border-radius: 50%;
-    animation: spin 0.9s linear infinite;
-  }
+            .btn-secondary:hover {
+                background: rgba(0, 0, 0, 0.04);
+            }
 
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
+            .btn-secondary:disabled {
+                opacity: 0.5;
+                cursor: default;
+            }
 
-  /* Progress dots */
-  .progress-dots {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 1.5rem;
-  }
+            .btn-secondary:disabled:hover {
+                background: transparent;
+            }
 
-  .progress-dots .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-border);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
+            /* Spinner */
+            .spinner-container {
+                margin-bottom: 1.5rem;
+                position: relative;
+                width: 48px;
+                height: 48px;
+            }
 
-  .progress-dots .dot:nth-child(2) { animation-delay: 0.2s; }
-  .progress-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+            .spinner {
+                width: 48px;
+                height: 48px;
+                border: 3px solid var(--color-border);
+                border-top-color: var(--color-accent);
+                border-radius: 50%;
+                animation: spin 0.9s linear infinite;
+            }
 
-  @keyframes pulse {
-    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-    40% { opacity: 1; transform: scale(1); }
-  }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
 
-  /* Status message with transition */
-  .status-message {
-    font-size: 0.9375rem;
-    color: var(--color-muted);
-    line-height: 1.55;
-    margin-bottom: 1.5rem;
-    min-height: 1.55em;
-    transition: opacity 0.2s ease;
-  }
+            /* Progress dots */
+            .progress-dots {
+                display: flex;
+                gap: 6px;
+                margin-bottom: 1.5rem;
+            }
 
-  .status-message.changing {
-    opacity: 0;
-  }
+            .progress-dots .dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--color-border);
+                animation: pulse 1.4s ease-in-out infinite;
+            }
 
-  /* Success checkmark */
-  .checkmark {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--color-success);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1.5rem;
-    animation: scaleIn 0.3s ease-out;
-  }
+            .progress-dots .dot:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            .progress-dots .dot:nth-child(3) {
+                animation-delay: 0.4s;
+            }
 
-  .checkmark svg {
-    width: 24px;
-    height: 24px;
-  }
+            @keyframes pulse {
+                0%,
+                80%,
+                100% {
+                    opacity: 0.3;
+                    transform: scale(0.8);
+                }
+                40% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+            }
 
-  @keyframes scaleIn {
-    from { transform: scale(0); }
-    to { transform: scale(1); }
-  }
+            /* Status message with transition */
+            .status-message {
+                font-size: 0.9375rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                margin-bottom: 1.5rem;
+                min-height: 1.55em;
+                transition: opacity 0.2s ease;
+            }
 
-  /* Error */
-  .error-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: #FED7D7;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1.5rem;
-  }
+            .status-message.changing {
+                opacity: 0;
+            }
 
-  .error-icon span {
-    font-size: 1.5rem;
-    color: var(--color-error);
-    line-height: 1;
-  }
+            /* Success checkmark */
+            .checkmark {
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                background: var(--color-success);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 1.5rem;
+                animation: scaleIn 0.3s ease-out;
+            }
 
-  .error-message {
-    font-size: 0.875rem;
-    color: var(--color-error);
-    line-height: 1.5;
-    margin-bottom: 1.5rem;
-    padding: 0.75rem 1rem;
-    background: #FFF5F5;
-    border-radius: 8px;
-    border: 1px solid #FED7D7;
-    word-break: break-word;
-  }
+            .checkmark svg {
+                width: 24px;
+                height: 24px;
+            }
 
-  .btn-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-    width: 100%;
-    max-width: 240px;
-  }
-</style>
-</head>
-<body>
+            @keyframes scaleIn {
+                from {
+                    transform: scale(0);
+                }
+                to {
+                    transform: scale(1);
+                }
+            }
 
-  <!-- Screen 1: Welcome / Get Started -->
-  <div id="screen-welcome" class="screen active">
-    <div class="icon">✦</div>
-    <h1>Welcome to FreeFlow</h1>
-    <p>Dictate anywhere on your Mac with your own private AI server. Sign in to get started.</p>
-    <button class="btn" onclick="handleGetStarted()">Get Started</button>
-  </div>
+            /* Error */
+            .error-icon {
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                background: #fed7d7;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 1.5rem;
+            }
 
-  <!-- Screen 2: Signing in -->
-  <div id="screen-signing-in" class="screen">
-    <div class="spinner-container">
-      <div class="spinner"></div>
-    </div>
-    <h1>Signing in…</h1>
-    <p>Complete sign-in in the browser window.</p>
-  </div>
+            .error-icon span {
+                font-size: 1.5rem;
+                color: var(--color-error);
+                line-height: 1;
+            }
 
-  <!-- Screen 3: Provisioning in progress -->
-  <div id="screen-provisioning" class="screen">
-    <div class="spinner-container">
-      <div class="spinner"></div>
-    </div>
-    <h1>Setting up your server</h1>
-    <div id="provisioning-status" class="status-message">Creating your server…</div>
-    <div class="progress-dots">
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-    </div>
-  </div>
+            .error-message {
+                font-size: 0.875rem;
+                color: var(--color-error);
+                line-height: 1.5;
+                margin-bottom: 1.5rem;
+                padding: 0.75rem 1rem;
+                background: #fff5f5;
+                border-radius: 8px;
+                border: 1px solid #fed7d7;
+                word-break: break-word;
+            }
 
-  <!-- Screen 4: Ready -->
-  <div id="screen-ready" class="screen">
-    <div class="checkmark">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-    </div>
-    <h1>Your server is ready!</h1>
-    <p>Let's set up a few things and you'll be dictating in no time.</p>
-  </div>
+            .btn-group {
+                display: flex;
+                flex-direction: column;
+                gap: 0.625rem;
+                width: 100%;
+                max-width: 240px;
+            }
 
-  <!-- Screen 5: Error -->
-  <div id="screen-error" class="screen">
-    <div class="error-icon"><span>!</span></div>
-    <h1>Something went wrong</h1>
-    <div id="error-message" class="error-message"></div>
-    <div class="btn-group">
-      <button class="btn" onclick="handleRetry()">Try Again</button>
-    </div>
-  </div>
+            /* ---------------------------------------------------------- */
+            /* Form fields (Screen A & B)                                  */
+            /* ---------------------------------------------------------- */
 
-<script>
-  // --- Bridge ---
+            .form-group {
+                width: 100%;
+                text-align: left;
+                margin-bottom: 1rem;
+            }
 
-  function send(action, data) {
-    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow) {
-      var payload = { action: action };
-      if (data) { payload.data = data; }
-      window.webkit.messageHandlers.freeflow.postMessage(payload);
-    }
-  }
+            .form-group label {
+                display: block;
+                font-size: 0.8125rem;
+                font-weight: 500;
+                color: var(--color-muted);
+                margin-bottom: 0.375rem;
+                -webkit-user-select: none;
+            }
 
-  // --- Screen management ---
+            .form-group input {
+                width: 100%;
+                padding: 0.625rem 0.75rem;
+                font-size: 0.9375rem;
+                font-family: inherit;
+                color: var(--color-text);
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 10px;
+                transition:
+                    border-color 0.15s ease,
+                    background 0.15s ease;
+                outline: none;
+                -webkit-user-select: text;
+                cursor: text;
+            }
 
-  var screens = ['welcome', 'signing-in', 'provisioning', 'ready', 'error'];
+            .form-group input:focus {
+                border-color: var(--color-accent);
+                background: var(--color-white);
+            }
 
-  function showScreen(name) {
-    for (var i = 0; i < screens.length; i++) {
-      var el = document.getElementById('screen-' + screens[i]);
-      if (el) {
-        if (screens[i] === name) {
-          el.classList.add('active');
-        } else {
-          el.classList.remove('active');
-        }
-      }
-    }
-  }
+            .form-group input.input-error {
+                border-color: var(--color-error);
+                background: #fff5f5;
+            }
 
-  // --- Status message update with fade ---
+            .form-group .field-error {
+                font-size: 0.75rem;
+                color: var(--color-error);
+                margin-top: 0.25rem;
+                display: none;
+            }
 
-  function updateStatusMessage(text) {
-    var el = document.getElementById('provisioning-status');
-    if (!el) return;
-    if (el.textContent === text) return;
-    el.classList.add('changing');
-    setTimeout(function() {
-      el.textContent = text;
-      el.classList.remove('changing');
-    }, 200);
-  }
+            .form-group .field-error.visible {
+                display: block;
+            }
 
-  // --- Button handlers ---
+            /* ---------------------------------------------------------- */
+            /* Plan card (Screen A)                                        */
+            /* ---------------------------------------------------------- */
 
-  function handleGetStarted() {
-    send('getStarted');
-  }
+            .plan-card {
+                width: 100%;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 1.25rem;
+                text-align: left;
+                margin-bottom: 1rem;
+            }
 
-  function handleRetry() {
-    send('retryProvisioning');
-  }
+            .plan-card-title {
+                font-size: 0.8125rem;
+                font-weight: 600;
+                color: var(--color-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 0.625rem;
+            }
 
-  // --- Bridge event receiver ---
+            .plan-card-main {
+                font-size: 1rem;
+                font-weight: 600;
+                color: var(--color-text);
+                line-height: 1.55;
+                margin-bottom: 0.375rem;
+            }
 
-  window.freeflowbridge = {
-    onEvent: function(data) {
-      if (!data || !data.event) return;
+            .plan-card-sub {
+                font-size: 0.875rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+            }
 
-      switch (data.event) {
-        case 'authStarted':
-          showScreen('signing-in');
-          break;
+            .plan-card-link {
+                display: inline-block;
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                margin-top: 0.5rem;
+                cursor: pointer;
+                text-decoration: underline;
+                text-decoration-color: var(--color-border);
+                text-underline-offset: 0.15em;
+                transition:
+                    color 0.15s,
+                    text-decoration-color 0.15s;
+                -webkit-user-select: none;
+            }
 
-        case 'authComplete':
-          showScreen('provisioning');
-          updateStatusMessage('Creating your server…');
-          break;
+            .plan-card-link:hover {
+                color: var(--color-text);
+                text-decoration-color: var(--color-text);
+            }
 
-        case 'authError':
-          var msg = (data.message) ? data.message : 'Sign-in failed. Please try again.';
-          document.getElementById('error-message').textContent = msg;
-          showScreen('error');
-          break;
+            /* ---------------------------------------------------------- */
+            /* TOS text (Screen A)                                         */
+            /* ---------------------------------------------------------- */
 
-        case 'provisioningProgress':
-          showScreen('provisioning');
-          if (data.message) {
-            updateStatusMessage(data.message);
-          }
-          break;
+            .tos-text {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                margin-bottom: 1.25rem;
+                text-align: center;
+            }
 
-        case 'provisioningReady':
-          showScreen('ready');
-          break;
+            .tos-text a {
+                color: var(--color-muted);
+                text-decoration: underline;
+                text-decoration-color: var(--color-border);
+                text-underline-offset: 0.15em;
+                cursor: pointer;
+                transition:
+                    color 0.15s,
+                    text-decoration-color 0.15s;
+            }
 
-        case 'provisioningError':
-          var errMsg = (data.message) ? data.message : 'Setup failed. Please try again.';
-          document.getElementById('error-message').textContent = errMsg;
-          showScreen('error');
-          break;
+            .tos-text a:hover {
+                color: var(--color-text);
+                text-decoration-color: var(--color-text);
+            }
 
-        default:
-          break;
-      }
-    }
-  };
-</script>
+            /* ---------------------------------------------------------- */
+            /* Background provisioning progress bar                        */
+            /* ---------------------------------------------------------- */
 
-</body>
+            .provisioning-bar {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.75rem 1.5rem;
+                background: var(--color-bg);
+                border-top: 1px solid var(--color-border-light);
+            }
+
+            .provisioning-bar-text {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                transition: opacity 0.2s ease;
+            }
+
+            .provisioning-bar-text.changing {
+                opacity: 0;
+            }
+
+            .provisioning-bar-dots {
+                display: flex;
+                gap: 4px;
+            }
+
+            .provisioning-bar-dots .bar-dot {
+                width: 4px;
+                height: 4px;
+                border-radius: 50%;
+                background: var(--color-border);
+                animation: pulse 1.4s ease-in-out infinite;
+            }
+
+            .provisioning-bar-dots .bar-dot:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            .provisioning-bar-dots .bar-dot:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+
+            .provisioning-bar.done .bar-dot {
+                animation: none;
+                background: var(--color-green);
+            }
+
+            .provisioning-bar.done .provisioning-bar-text {
+                color: var(--color-green);
+            }
+
+            .provisioning-bar.hidden {
+                display: none;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Screen A & B: scrollable content area                       */
+            /* ---------------------------------------------------------- */
+
+            .screen-scrollable {
+                max-height: calc(100vh - 4rem - 3rem);
+                overflow-y: auto;
+                width: 100%;
+                padding-bottom: 3rem;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .screen-scrollable::-webkit-scrollbar {
+                display: none;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Screen B: credit card                                       */
+            /* ---------------------------------------------------------- */
+
+            .card-description {
+                font-size: 0.9375rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                margin-bottom: 1.25rem;
+                text-align: center;
+            }
+
+            .card-incentive {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                margin-bottom: 1.5rem;
+                text-align: center;
+            }
+
+            .stripe-container {
+                width: 100%;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 1.25rem;
+                margin-bottom: 1.25rem;
+                min-height: 120px;
+            }
+
+            .stripe-container.stripe-loading {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--color-muted);
+                font-size: 0.875rem;
+            }
+
+            .stripe-container.stripe-loading #stripe-payment-element {
+                display: none;
+            }
+
+            .stripe-container.stripe-error {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--color-error);
+                font-size: 0.875rem;
+                background: #fff5f5;
+                border-color: #fed7d7;
+            }
+
+            .stripe-container.stripe-error #stripe-payment-element {
+                display: none;
+            }
+
+            #stripe-payment-element {
+                width: 100%;
+            }
+
+            .card-btn-group {
+                display: flex;
+                flex-direction: column;
+                gap: 0.625rem;
+                width: 100%;
+                align-items: center;
+                margin-bottom: 1rem;
+            }
+
+            .card-btn-group .btn {
+                width: 100%;
+                max-width: 280px;
+            }
+
+            .divider {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                width: 100%;
+                max-width: 280px;
+                margin: 0 auto 0.875rem;
+            }
+
+            .divider-line {
+                flex: 1;
+                height: 1px;
+                background: var(--color-border);
+            }
+
+            .divider-text {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                font-weight: 500;
+                flex-shrink: 0;
+            }
+
+            .skip-section {
+                text-align: center;
+                margin-bottom: 0.5rem;
+            }
+
+            .skip-section .btn-secondary {
+                margin-bottom: 0.625rem;
+                width: 100%;
+                max-width: 280px;
+            }
+
+            .skip-description {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                max-width: 300px;
+                margin: 0 auto;
+            }
+
+            .card-error-inline {
+                font-size: 0.8125rem;
+                color: var(--color-error);
+                text-align: center;
+                margin-bottom: 0.75rem;
+                min-height: 1.25em;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Screen 1: Welcome / Get Started -->
+        <div id="screen-welcome" class="screen active">
+            <div class="icon">&#10022;</div>
+            <h1>Welcome to FreeFlow</h1>
+            <p>Dictate anywhere on your Mac with your own private AI server. Sign in to get started.</p>
+            <button class="btn" onclick="handleGetStarted()">Get Started</button>
+        </div>
+
+        <!-- Screen 2: Signing in -->
+        <div id="screen-signing-in" class="screen">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <h1>Signing in&#8230;</h1>
+            <p>Complete sign-in in the browser window.</p>
+        </div>
+
+        <!-- Screen 3: Provisioning in progress (shown only if zone not ready after billing) -->
+        <div id="screen-provisioning" class="screen">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <h1>Setting up your server</h1>
+            <div id="provisioning-status" class="status-message">Creating your server&#8230;</div>
+            <div class="progress-dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+        </div>
+
+        <!-- Screen 4: Ready -->
+        <div id="screen-ready" class="screen">
+            <div class="checkmark">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            </div>
+            <h1>Your server is ready!</h1>
+            <p>Let's set up a few things and you'll be dictating in no time.</p>
+        </div>
+
+        <!-- Screen 5: Error -->
+        <div id="screen-error" class="screen">
+            <div class="error-icon"><span>!</span></div>
+            <h1>Something went wrong</h1>
+            <div id="error-message" class="error-message"></div>
+            <div class="btn-group">
+                <button class="btn" onclick="handleRetry()">Try Again</button>
+            </div>
+        </div>
+
+        <!-- Screen A: Account details + plan -->
+        <div id="screen-account" class="screen">
+            <div class="screen-scrollable">
+                <h1 style="margin-bottom: 1.25rem">Set up your account</h1>
+
+                <div class="form-group">
+                    <label for="first-name">First name</label>
+                    <input type="text" id="first-name" autocomplete="given-name" autocorrect="off" spellcheck="false" />
+                    <div id="first-name-error" class="field-error">First name is required.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="last-name">Last name</label>
+                    <input type="text" id="last-name" autocomplete="family-name" autocorrect="off" spellcheck="false" />
+                    <div id="last-name-error" class="field-error">Last name is required.</div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1.25rem">
+                    <label for="company"
+                        >Company <span style="font-weight: 400; color: var(--color-border)">(optional)</span></label
+                    >
+                    <input type="text" id="company" autocomplete="organization" autocorrect="off" spellcheck="false" />
+                </div>
+
+                <div class="plan-card">
+                    <div class="plan-card-title">Your plan</div>
+                    <div class="plan-card-main">14 days free &middot; $50 credit</div>
+                    <div class="plan-card-sub">Then $75/month. Your own private server, unlimited dictation.</div>
+                    <a class="plan-card-link" onclick="openExternal('https://autonomy.computer/pricing')"
+                        >Pricing details &#8594;</a
+                    >
+                </div>
+
+                <div class="tos-text">
+                    By continuing you agree to the
+                    <a onclick="openExternal('https://autonomy.computer/docs/terms')">Terms of Service</a>.
+                </div>
+
+                <button class="btn" id="btn-account-continue" onclick="handleAccountContinue()">Continue</button>
+            </div>
+        </div>
+
+        <!-- Screen B: Credit card -->
+        <div id="screen-credit-card" class="screen">
+            <div class="screen-scrollable">
+                <h1 style="margin-bottom: 0.5rem">Add a credit card</h1>
+
+                <div class="card-description">You won't be charged during your 14-day free trial.</div>
+
+                <div class="card-incentive">
+                    Adding a card unlocks team invites, so you can share FreeFlow with your team.
+                </div>
+
+                <div id="stripe-wrapper" class="stripe-container stripe-loading">
+                    <span id="stripe-loading-text">Loading payment form&#8230;</span>
+                    <div id="stripe-payment-element"></div>
+                </div>
+
+                <div id="card-error" class="card-error-inline"></div>
+
+                <div class="card-btn-group">
+                    <button class="btn" id="btn-add-card" onclick="handleAddCard()" disabled>
+                        Add card and continue
+                    </button>
+                </div>
+
+                <div class="divider">
+                    <div class="divider-line"></div>
+                    <div class="divider-text">or</div>
+                    <div class="divider-line"></div>
+                </div>
+
+                <div class="skip-section">
+                    <button class="btn btn-secondary" onclick="handleSkipPayment()">Start free trial</button>
+                    <p class="skip-description">
+                        No card needed. FreeFlow will be just for you until you add a card and invite your team.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Background provisioning progress bar (shared across Screens A & B) -->
+        <div id="provisioning-bar" class="provisioning-bar hidden">
+            <span id="provisioning-bar-text" class="provisioning-bar-text">Creating your server&#8230;</span>
+            <div class="provisioning-bar-dots">
+                <div class="bar-dot"></div>
+                <div class="bar-dot"></div>
+                <div class="bar-dot"></div>
+            </div>
+        </div>
+
+        <script>
+            // --- Bridge ---
+
+            function send(action, data) {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow) {
+                    var payload = { action: action };
+                    if (data) {
+                        payload.data = data;
+                    }
+                    window.webkit.messageHandlers.freeflow.postMessage(payload);
+                }
+            }
+
+            function openExternal(url) {
+                // Open in system browser via bridge. Falls back to window.open.
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow) {
+                    send("openExternal", { url: url });
+                } else {
+                    window.open(url, "_blank");
+                }
+            }
+
+            // --- Screen management ---
+
+            var allScreens = ["welcome", "signing-in", "provisioning", "ready", "error", "account", "credit-card"];
+
+            function showScreen(name) {
+                var showBar = name === "account" || name === "credit-card";
+
+                for (var i = 0; i < allScreens.length; i++) {
+                    var el = document.getElementById("screen-" + allScreens[i]);
+                    if (el) {
+                        if (allScreens[i] === name) {
+                            el.classList.add("active");
+                        } else {
+                            el.classList.remove("active");
+                        }
+                    }
+                }
+
+                var bar = document.getElementById("provisioning-bar");
+                if (bar) {
+                    if (showBar) {
+                        bar.classList.remove("hidden");
+                    } else {
+                        bar.classList.add("hidden");
+                    }
+                }
+            }
+
+            // --- Status message updates ---
+
+            function updateStatusMessage(text) {
+                var el = document.getElementById("provisioning-status");
+                if (!el) return;
+                if (el.textContent === text) return;
+                el.classList.add("changing");
+                setTimeout(function () {
+                    el.textContent = text;
+                    el.classList.remove("changing");
+                }, 200);
+            }
+
+            function updateBarMessage(text) {
+                var el = document.getElementById("provisioning-bar-text");
+                if (!el) return;
+                if (el.textContent === text) return;
+                el.classList.add("changing");
+                setTimeout(function () {
+                    el.textContent = text;
+                    el.classList.remove("changing");
+                }, 200);
+            }
+
+            var provisioningDone = false;
+
+            function markProvisioningDone() {
+                provisioningDone = true;
+                var bar = document.getElementById("provisioning-bar");
+                if (bar) {
+                    bar.classList.add("done");
+                }
+                updateBarMessage("Server ready");
+            }
+
+            // --- Button handlers ---
+
+            function handleGetStarted() {
+                send("getStarted");
+            }
+
+            function handleRetry() {
+                send("retryProvisioning");
+            }
+
+            // --- Screen A: Account details ---
+
+            function handleAccountContinue() {
+                var firstName = document.getElementById("first-name").value.trim();
+                var lastName = document.getElementById("last-name").value.trim();
+                var company = document.getElementById("company").value.trim();
+                var valid = true;
+
+                // Validate first name
+                var fnInput = document.getElementById("first-name");
+                var fnError = document.getElementById("first-name-error");
+                if (!firstName) {
+                    fnInput.classList.add("input-error");
+                    fnError.classList.add("visible");
+                    valid = false;
+                } else {
+                    fnInput.classList.remove("input-error");
+                    fnError.classList.remove("visible");
+                }
+
+                // Validate last name
+                var lnInput = document.getElementById("last-name");
+                var lnError = document.getElementById("last-name-error");
+                if (!lastName) {
+                    lnInput.classList.add("input-error");
+                    lnError.classList.add("visible");
+                    valid = false;
+                } else {
+                    lnInput.classList.remove("input-error");
+                    lnError.classList.remove("visible");
+                }
+
+                if (!valid) return;
+
+                // Disable the button while the native side processes.
+                var btn = document.getElementById("btn-account-continue");
+                btn.disabled = true;
+                btn.textContent = "Saving\u2026";
+
+                send("accountDetails", {
+                    firstName: firstName,
+                    lastName: lastName,
+                    company: company || null,
+                });
+            }
+
+            // Clear validation errors on input
+            document.addEventListener("DOMContentLoaded", function () {
+                var fnInput = document.getElementById("first-name");
+                var lnInput = document.getElementById("last-name");
+
+                if (fnInput) {
+                    fnInput.addEventListener("input", function () {
+                        fnInput.classList.remove("input-error");
+                        document.getElementById("first-name-error").classList.remove("visible");
+                    });
+                }
+                if (lnInput) {
+                    lnInput.addEventListener("input", function () {
+                        lnInput.classList.remove("input-error");
+                        document.getElementById("last-name-error").classList.remove("visible");
+                    });
+                }
+            });
+
+            // --- Screen B: Credit card (Stripe) ---
+
+            var stripe = null;
+            var stripeElements = null;
+            var paymentElement = null;
+            var stripeClientSecret = null;
+            var stripeReady = false;
+            var cardSubmitting = false;
+
+            function initStripe(publishableKey, clientSecret) {
+                stripeClientSecret = clientSecret;
+
+                // If no publishable key, show skip-only mode.
+                if (!publishableKey) {
+                    showStripeError("Card setup is temporarily unavailable.");
+                    return;
+                }
+
+                try {
+                    stripe = Stripe(publishableKey);
+                    stripeElements = stripe.elements({
+                        clientSecret: clientSecret,
+                        appearance: {
+                            theme: "stripe",
+                            variables: {
+                                fontFamily:
+                                    '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
+                                colorPrimary: "#292929",
+                                colorBackground: "#F9F9F9",
+                                colorText: "#292929",
+                                colorDanger: "#C53030",
+                                borderRadius: "10px",
+                                spacingUnit: "4px",
+                                fontSizeBase: "15px",
+                            },
+                            rules: {
+                                ".Input": {
+                                    border: "1px solid #E8E5E3",
+                                    boxShadow: "none",
+                                    padding: "10px 12px",
+                                },
+                                ".Input:focus": {
+                                    border: "1px solid #292929",
+                                    boxShadow: "none",
+                                },
+                                ".Label": {
+                                    fontSize: "13px",
+                                    fontWeight: "500",
+                                    color: "#7A7775",
+                                },
+                            },
+                        },
+                    });
+
+                    paymentElement = stripeElements.create("payment", {
+                        layout: "tabs",
+                    });
+
+                    paymentElement.on("ready", function () {
+                        stripeReady = true;
+                        var wrapper = document.getElementById("stripe-wrapper");
+                        wrapper.classList.remove("stripe-loading");
+                        // Hide the loading text
+                        var loadingText = document.getElementById("stripe-loading-text");
+                        if (loadingText) loadingText.style.display = "none";
+                        document.getElementById("btn-add-card").disabled = false;
+                    });
+
+                    paymentElement.on("change", function (event) {
+                        var errorEl = document.getElementById("card-error");
+                        if (event.error) {
+                            errorEl.textContent = event.error.message;
+                        } else {
+                            errorEl.textContent = "";
+                        }
+                    });
+
+                    paymentElement.mount("#stripe-payment-element");
+                } catch (e) {
+                    showStripeError("Could not load payment form.");
+                }
+            }
+
+            function showStripeError(msg) {
+                var wrapper = document.getElementById("stripe-wrapper");
+                wrapper.classList.remove("stripe-loading");
+                wrapper.classList.add("stripe-error");
+                var loadingText = document.getElementById("stripe-loading-text");
+                if (loadingText) loadingText.textContent = msg;
+                // Card button stays disabled, user can only skip.
+            }
+
+            function handleAddCard() {
+                if (!stripe || !stripeElements || cardSubmitting) return;
+
+                cardSubmitting = true;
+                var btn = document.getElementById("btn-add-card");
+                btn.disabled = true;
+                btn.textContent = "Processing\u2026";
+                document.getElementById("card-error").textContent = "";
+
+                stripe
+                    .confirmSetup({
+                        elements: stripeElements,
+                        redirect: "if_required",
+                        confirmParams: {
+                            // Not actually used; redirect: 'if_required' prevents navigation.
+                            return_url: "https://autonomy.computer",
+                        },
+                    })
+                    .then(function (result) {
+                        if (result.error) {
+                            cardSubmitting = false;
+                            btn.disabled = false;
+                            btn.textContent = "Add card and continue";
+                            document.getElementById("card-error").textContent =
+                                result.error.message || "Card could not be added. Please try again.";
+                        } else {
+                            // SetupIntent confirmed. Send the ID back to native.
+                            var setupIntentId = result.setupIntent.id;
+                            send("submitPayment", { setupIntentId: setupIntentId });
+                            btn.textContent = "Saving\u2026";
+                            // Keep button disabled; native side will advance the screen.
+                        }
+                    })
+                    .catch(function (err) {
+                        cardSubmitting = false;
+                        btn.disabled = false;
+                        btn.textContent = "Add card and continue";
+                        document.getElementById("card-error").textContent =
+                            "An unexpected error occurred. Please try again.";
+                    });
+            }
+
+            function handleSkipPayment() {
+                send("skipPayment");
+            }
+
+            // --- Bridge event receiver ---
+
+            window.freeflowbridge = {
+                onEvent: function (data) {
+                    if (!data || !data.event) return;
+
+                    switch (data.event) {
+                        case "authStarted":
+                            showScreen("signing-in");
+                            break;
+
+                        case "authComplete":
+                            // Don't show provisioning spinner immediately; native
+                            // will push accountSetup next to show Screen A.
+                            break;
+
+                        case "authError":
+                            var msg = data.message ? data.message : "Sign-in failed. Please try again.";
+                            document.getElementById("error-message").textContent = msg;
+                            showScreen("error");
+                            break;
+
+                        case "provisioningProgress":
+                            // Update the bottom bar if visible (Screens A or B),
+                            // and the main spinner message if on the provisioning screen.
+                            if (data.message) {
+                                updateBarMessage(data.message);
+                                updateStatusMessage(data.message);
+                            }
+                            break;
+
+                        case "provisioningReady":
+                            markProvisioningDone();
+                            showScreen("ready");
+                            break;
+
+                        case "provisioningError":
+                            var errMsg = data.message ? data.message : "Setup failed. Please try again.";
+                            document.getElementById("error-message").textContent = errMsg;
+                            showScreen("error");
+                            break;
+
+                        case "accountSetup":
+                            showScreen("account");
+                            // Focus the first name field after the screen transition.
+                            setTimeout(function () {
+                                var fnInput = document.getElementById("first-name");
+                                if (fnInput) fnInput.focus();
+                            }, 350);
+                            break;
+
+                        case "creditCard":
+                            showScreen("credit-card");
+                            // Initialize Stripe if we have the keys.
+                            if (data.clientSecret && data.publishableKey) {
+                                // Load Stripe.js dynamically if not already loaded.
+                                if (typeof Stripe === "undefined") {
+                                    var script = document.createElement("script");
+                                    script.src = "https://js.stripe.com/v3/";
+                                    script.onload = function () {
+                                        initStripe(data.publishableKey, data.clientSecret);
+                                    };
+                                    script.onerror = function () {
+                                        showStripeError("Could not load Stripe. You can still start your free trial.");
+                                    };
+                                    document.head.appendChild(script);
+                                } else {
+                                    initStripe(data.publishableKey, data.clientSecret);
+                                }
+                            } else {
+                                // No Stripe keys: skip-only mode.
+                                showStripeError(
+                                    "Card setup is temporarily unavailable. You can still start your free trial.",
+                                );
+                            }
+                            break;
+
+                        case "paymentSuccess":
+                            // Card confirmed. Native side will advance to ready or provisioning screen.
+                            break;
+
+                        case "paymentError":
+                            var payMsg = data.message ? data.message : "Could not save card.";
+                            document.getElementById("card-error").textContent = payMsg;
+                            var addBtn = document.getElementById("btn-add-card");
+                            addBtn.disabled = false;
+                            addBtn.textContent = "Add card and continue";
+                            cardSubmitting = false;
+                            break;
+
+                        default:
+                            break;
+                    }
+                },
+            };
+        </script>
+    </body>
 </html>
