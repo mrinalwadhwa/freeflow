@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionController: PermissionController?
     private var onboardingController: OnboardingController?
     private var settingsController: SettingsController?
+    private var peopleController: PeopleController?
+    private var billingController: BillingController?
     private var provisioningController: ProvisioningController?
 
     /// URLs received before applicationDidFinishLaunching completes.
@@ -41,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPipeline()
         setupUpdater()
         setupSettings()
+        setupPeople()
         setupMenuBarState()
 
         // Process any freeflow:// URLs received before launch finished.
@@ -66,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         provisioningController?.dismissWindow()
         onboardingController?.dismissWindow()
         settingsController?.closeWindow()
+        peopleController?.closeWindow()
+        billingController?.dismissWindow()
     }
 
     // MARK: - URL Scheme
@@ -540,6 +545,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showSettings()
         }
 
+        // Wire people action.
+        controller.onOpenPeople = { [weak self] in
+            self?.showPeople()
+        }
+
         // Wire sign-out action.
         controller.onSignOut = { [weak self] in
             self?.signOut()
@@ -578,6 +588,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingController?.dismissWindow()
         onboardingController = nil
         settingsController?.closeWindow()
+        peopleController?.closeWindow()
+        billingController?.dismissWindow()
+        billingController = nil
 
         // Clear all stored credentials and state.
         keychain.deleteAll()
@@ -589,6 +602,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Return to the provisioning flow.
         showProvisioningFlow()
+    }
+
+    // MARK: - People
+
+    private func setupPeople() {
+        let controller = PeopleController()
+        controller.onOpenBilling = { [weak self] in
+            self?.showBilling()
+        }
+        peopleController = controller
+    }
+
+    // MARK: - Billing
+
+    /// Show the billing window for adding a credit card.
+    ///
+    /// Called from the People page when the user taps "Add credit card"
+    /// in the locked state.
+    private func showBilling() {
+        if billingController == nil {
+            let controller = BillingController()
+            controller.onComplete = { [weak self] in
+                Log.debug("[AppDelegate] Billing complete, refreshing People page")
+                // Close billing window
+                self?.billingController?.dismissWindow()
+                self?.billingController = nil
+                // Re-show People page so it reloads with updated state
+                self?.peopleController?.showWindow()
+            }
+            controller.onCancel = { [weak self] in
+                self?.billingController = nil
+            }
+            billingController = controller
+        }
+        billingController?.showWindow()
+    }
+
+    /// Show the People window.
+    private func showPeople() {
+        peopleController?.showWindow()
     }
 
     // MARK: - Settings

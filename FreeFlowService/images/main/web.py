@@ -142,6 +142,18 @@ async def settings_page(request: Request):
     return await _render("settings/index.html")
 
 
+@public_router.get("/people/", response_class=HTMLResponse)
+async def people_page(request: Request):
+    """People page for the macOS app WKWebView.
+
+    Displays team management: pending invites and people using the
+    FreeFlow. All data is fetched by the native side and pushed to
+    the page via the bridge. No server-side auth or data rendering
+    is needed here; the page is a pure UI shell.
+    """
+    return await _render("people/index.html")
+
+
 @public_router.get("/onboarding/", response_class=HTMLResponse)
 async def onboarding(request: Request):
     """Single-page onboarding flow for the macOS app WKWebView.

@@ -21,6 +21,7 @@ Jinja2 templates and static files.
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -407,39 +408,67 @@ async def admin_create_invite(
         except (ValueError, RuntimeError) as e:
             # Invite was created but email failed. Return the token so
             # the admin can share the link manually.
+            base_url = web._zone_base_url(raw_request)
             return {
                 "id": invite_id,
                 "token": token,
+                "invite_url": f"{base_url}/invite/{token}",
                 "email_sent": False,
                 "email_error": str(e),
             }
 
+    base_url = web._zone_base_url(raw_request)
     return {
         "id": invite_id,
         "token": token,
+        "invite_url": f"{base_url}/invite/{token}",
         "email_sent": email_sent,
     }
 
 
 @app.get("/admin/api/invites")
 async def admin_list_invites(
+    raw_request: Request,
     user: auth.AuthUser = Depends(admin.require_admin),
 ):
-    """List all invite tokens. Requires admin session."""
+    """List all invite tokens. Requires admin session.
+
+    Returns invite_url for each invite (if token is available) and a
+    derived status field: 'pending', 'used', 'expired', or 'revoked'.
+    """
     invites = await invite.list_invites()
-    return [
-        {
+    base_url = web._zone_base_url(raw_request)
+    now = datetime.now(timezone.utc)
+
+    result = []
+    for inv in invites:
+        # Derive status from invite state.
+        if inv.revoked:
+            status = "revoked"
+        elif inv.use_count >= inv.max_uses:
+            status = "used"
+        elif inv.expires_at is not None and now >= inv.expires_at:
+            status = "expired"
+        else:
+            status = "pending"
+
+        # Build invite_url if token is available.
+        invite_url = f"{base_url}/invite/{inv.token}" if inv.token else None
+
+        result.append({
             "id": inv.id,
             "label": inv.label,
             "email": inv.email,
+            "invite_url": invite_url,
+            "status": status,
             "created_at": inv.created_at.isoformat(),
             "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
             "max_uses": inv.max_uses,
             "use_count": inv.use_count,
             "revoked": inv.revoked,
-        }
-        for inv in invites
-    ]
+        })
+
+    return result
 
 
 @app.delete("/admin/api/invites/{invite_id}")

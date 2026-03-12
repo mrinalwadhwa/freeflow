@@ -1,0 +1,520 @@
+{% set app_name = "FreeFlow" %}
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{{ app_name }} People</title>
+        <link rel="stylesheet" href="/static/styles.css" />
+        <style>
+            /* ---------------------------------------------------------- */
+            /* People layout                                               */
+            /* ---------------------------------------------------------- */
+
+            html,
+            body {
+                overflow-x: hidden;
+            }
+
+            body {
+                background: var(--color-bg);
+                overflow-y: hidden;
+            }
+
+            .people {
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                max-width: 520px;
+                margin: 0 auto;
+                padding: 2.5rem 1.5rem 1rem;
+                -webkit-user-select: none;
+                user-select: none;
+                box-sizing: border-box;
+            }
+
+            .people-header {
+                text-align: center;
+                margin-bottom: 1.5rem;
+                flex-shrink: 0;
+            }
+
+            .people-header h1 {
+                font-size: 1.625rem;
+                font-weight: 700;
+                line-height: 1.384615;
+                margin: 0;
+                letter-spacing: -0.025em;
+            }
+
+            .people-header p {
+                font-size: 0.875rem;
+                color: var(--color-muted);
+                margin-top: 0.25rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Scrollable body                                             */
+            /* ---------------------------------------------------------- */
+
+            .people-body {
+                flex: 1;
+                overflow-y: auto;
+                overflow-x: hidden;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .people-body::-webkit-scrollbar {
+                width: 0;
+                height: 0;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Sections (card panels)                                      */
+            /* ---------------------------------------------------------- */
+
+            .people-section {
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 0.75rem 1.25rem;
+                margin-bottom: 0.375rem;
+            }
+
+            .people-section-label {
+                font-size: 0.6875rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--color-light);
+                margin-bottom: 0.375rem;
+                line-height: 1.5rem;
+                display: flex;
+                align-items: center;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Count badge                                                 */
+            /* ---------------------------------------------------------- */
+
+            .count-badge {
+                display: inline-block;
+                background: var(--color-border-light);
+                color: var(--color-muted);
+                font-size: 0.75rem;
+                padding: 0.125rem 0.5rem;
+                border-radius: 10px;
+                margin-left: 0.5rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Admin badge                                                 */
+            /* ---------------------------------------------------------- */
+
+            .admin-badge {
+                display: inline-block;
+                background: var(--color-green-bg);
+                color: var(--color-green);
+                font-size: 0.6875rem;
+                font-weight: 600;
+                padding: 0.125rem 0.5rem;
+                border-radius: 6px;
+                text-transform: uppercase;
+                letter-spacing: 0.02em;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Inputs                                                      */
+            /* ---------------------------------------------------------- */
+
+            .people-input {
+                width: 100%;
+                padding: 0.625rem 0.875rem;
+                font-size: 0.875rem;
+                border: 1px solid var(--color-border);
+                border-radius: 10px;
+                background: var(--color-white);
+                color: var(--color-text);
+                outline: none;
+                font-family: inherit;
+                box-sizing: border-box;
+            }
+
+            .people-input:focus {
+                border-color: var(--color-accent);
+                box-shadow: 0 0 0 2px rgba(41, 41, 41, 0.1);
+            }
+
+            .people-input::placeholder {
+                color: var(--color-light);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Invite form                                                 */
+            /* ---------------------------------------------------------- */
+
+            .invite-form-row {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .invite-form-row .people-input {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .invite-form-actions {
+                display: flex;
+                justify-content: flex-end;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Invite success                                              */
+            /* ---------------------------------------------------------- */
+
+            .invite-success {
+                background: var(--color-green-bg);
+                color: var(--color-green);
+                font-size: 0.8125rem;
+                font-weight: 500;
+                padding: 0.625rem 1rem;
+                border-radius: 10px;
+                margin-top: 0.75rem;
+            }
+
+            .invite-success-label {
+                margin-bottom: 0.375rem;
+            }
+
+            .invite-success .copy-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                margin-top: 0.375rem;
+            }
+
+            .invite-success .copy-input {
+                flex: 1;
+                min-width: 0;
+                padding: 0.375rem 0.625rem;
+                font-size: 0.75rem;
+                font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+                background: var(--color-white);
+                border: 1px solid var(--color-border-light);
+                border-radius: 8px;
+                color: var(--color-text);
+                outline: none;
+                user-select: all;
+                -webkit-user-select: all;
+            }
+
+            .invite-success .copy-input:focus {
+                border-color: var(--color-accent);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Invite & people rows                                        */
+            /* ---------------------------------------------------------- */
+
+            .invite-row,
+            .person-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0.625rem 0;
+                border-bottom: 1px solid var(--color-border-light);
+            }
+
+            .invite-row:last-child,
+            .person-row:last-child {
+                border-bottom: none;
+            }
+
+            .invite-info,
+            .person-info {
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+                flex: 1;
+                margin-right: 0.75rem;
+            }
+
+            .invite-name,
+            .person-name {
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: var(--color-text);
+                line-height: 1.5;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .invite-meta,
+            .person-meta {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                line-height: 1.5;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .invite-actions,
+            .person-badges {
+                display: flex;
+                align-items: center;
+                gap: 0.375rem;
+                flex-shrink: 0;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Locked state                                                */
+            /* ---------------------------------------------------------- */
+
+            .locked-card {
+                text-align: center;
+                padding: 1.5rem 1.25rem;
+            }
+
+            .locked-icon {
+                font-size: 1.625rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .locked-card h2 {
+                font-size: 1rem;
+                font-weight: 600;
+                margin: 0 0 0.375rem;
+                color: var(--color-text);
+            }
+
+            .locked-card p {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                margin: 0 0 1rem;
+                line-height: 1.5;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Loading state                                               */
+            /* ---------------------------------------------------------- */
+
+            .loading-state {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 3rem 1rem;
+                gap: 0.75rem;
+            }
+
+            .loading-state .spinner {
+                width: 24px;
+                height: 24px;
+                border: 2.5px solid var(--color-border);
+                border-top-color: var(--color-accent);
+                border-radius: 50%;
+                animation: spin 0.7s linear infinite;
+            }
+
+            .loading-state p {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Error state                                                 */
+            /* ---------------------------------------------------------- */
+
+            .error-state {
+                text-align: center;
+                padding: 2rem 1rem;
+            }
+
+            .error-state p {
+                font-size: 0.875rem;
+                color: var(--color-red);
+                margin-bottom: 1rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Empty state                                                 */
+            /* ---------------------------------------------------------- */
+
+            .empty-text {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                text-align: center;
+                padding: 1rem 0;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Toast                                                       */
+            /* ---------------------------------------------------------- */
+
+            .toast {
+                position: fixed;
+                bottom: 1.5rem;
+                left: 50%;
+                transform: translateX(-50%) translateY(100%);
+                background: var(--color-text);
+                color: var(--color-white);
+                padding: 0.625rem 1.25rem;
+                border-radius: 10px;
+                font-size: 0.8125rem;
+                opacity: 0;
+                transition:
+                    transform 0.3s ease,
+                    opacity 0.3s ease;
+                z-index: 1000;
+                pointer-events: none;
+                white-space: nowrap;
+            }
+
+            .toast.visible {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Footer                                                      */
+            /* ---------------------------------------------------------- */
+
+            .people-footer {
+                flex-shrink: 0;
+                text-align: center;
+                padding-top: 1rem;
+            }
+
+            .people-footer .btn-row {
+                display: flex;
+                justify-content: center;
+                margin-top: 0.375rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="people">
+            <!-- Header -->
+            <div class="people-header">
+                <h1>People</h1>
+                <p>Manage your team and invites</p>
+            </div>
+
+            <!-- Scrollable body -->
+            <div class="people-body">
+                <!-- Loading state -->
+                <div id="loading-state" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading...</p>
+                </div>
+
+                <!-- Error state -->
+                <div id="error-state" class="hidden">
+                    <div class="people-section">
+                        <div class="error-state">
+                            <p id="error-message">Something went wrong.</p>
+                            <button id="retry-btn" class="btn btn-secondary">Try Again</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Locked state (no credit card) -->
+                <div id="locked-state" class="hidden">
+                    <div class="people-section">
+                        <div class="locked-card">
+                            <div class="locked-icon">🔒</div>
+                            <h2>Invites are locked</h2>
+                            <p>Add a credit card to unlock invites for your team.</p>
+                            <button id="add-card-btn" class="btn btn-primary">Add credit card</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invite section -->
+                <div id="invite-section" class="hidden">
+                    <div class="people-section">
+                        <div class="people-section-label">Invite someone</div>
+                        <div class="invite-form-row">
+                            <input
+                                type="text"
+                                id="invite-name"
+                                class="people-input"
+                                placeholder="Name (optional)"
+                                autocomplete="off"
+                                autocorrect="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                            />
+                            <input
+                                type="email"
+                                id="invite-email"
+                                class="people-input"
+                                placeholder="Email (optional)"
+                                autocomplete="off"
+                                autocorrect="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                            />
+                        </div>
+                        <div class="invite-form-actions">
+                            <button id="create-invite-btn" class="btn btn-primary">Create invite</button>
+                        </div>
+                        <div id="invite-success" class="invite-success hidden">
+                            <div class="invite-success-label">Invite created! Link copied.</div>
+                            <div class="copy-row">
+                                <input type="text" id="invite-url-display" class="copy-input" readonly />
+                                <button id="copy-invite-btn" class="btn btn-small btn-secondary">Copy link</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending invites section -->
+                <div id="invites-section" class="hidden">
+                    <div class="people-section">
+                        <div class="people-section-label">
+                            Pending invites
+                            <span id="invites-count" class="count-badge">0</span>
+                        </div>
+                        <div id="invites-empty" class="empty-text">No pending invites yet.</div>
+                        <div id="invites-list"></div>
+                    </div>
+                </div>
+
+                <!-- People section -->
+                <div id="people-section" class="hidden">
+                    <div class="people-section">
+                        <div class="people-section-label">
+                            People
+                            <span id="people-count" class="count-badge">0</span>
+                        </div>
+                        <div id="people-empty" class="empty-text hidden">No people yet.</div>
+                        <div id="people-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="people-footer">
+                <div class="btn-row">
+                    <button id="done-btn" class="btn btn-primary" style="min-width: 120px">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast notification -->
+        <div id="toast" class="toast"></div>
+
+        <script src="/static/bridge.js"></script>
+        <script src="/static/people.js"></script>
+    </body>
+</html>

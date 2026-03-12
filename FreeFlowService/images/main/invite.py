@@ -36,6 +36,7 @@ class Invite:
 
     id: int
     token_hash: str
+    token: Optional[str]
     label: Optional[str]
     email: Optional[str]
     created_by: str
@@ -63,6 +64,7 @@ async def ensure_table():
             CREATE TABLE IF NOT EXISTS invite_tokens (
                 id              SERIAL PRIMARY KEY,
                 token_hash      TEXT NOT NULL UNIQUE,
+                token           TEXT,
                 label           TEXT,
                 email           TEXT,
                 created_by      TEXT NOT NULL,
@@ -72,6 +74,11 @@ async def ensure_table():
                 use_count       INT NOT NULL DEFAULT 0,
                 revoked         BOOLEAN NOT NULL DEFAULT FALSE
             )
+        """)
+        # Add token column if it doesn't exist (migration for existing tables).
+        await conn.execute("""
+            ALTER TABLE invite_tokens
+            ADD COLUMN IF NOT EXISTS token TEXT
         """)
 
 
@@ -95,20 +102,20 @@ async def create_invite(
         if expires_in_hours is not None:
             row = await conn.execute(
                 """
-                INSERT INTO invite_tokens (token_hash, label, email, created_by, max_uses, expires_at)
-                VALUES (%s, %s, %s, %s, %s, now() + make_interval(hours => %s))
+                INSERT INTO invite_tokens (token_hash, token, label, email, created_by, max_uses, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, now() + make_interval(hours => %s))
                 RETURNING id
                 """,
-                (token_hash, label, email, created_by, max_uses, expires_in_hours),
+                (token_hash, token, label, email, created_by, max_uses, expires_in_hours),
             )
         else:
             row = await conn.execute(
                 """
-                INSERT INTO invite_tokens (token_hash, label, email, created_by, max_uses)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO invite_tokens (token_hash, token, label, email, created_by, max_uses)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (token_hash, label, email, created_by, max_uses),
+                (token_hash, token, label, email, created_by, max_uses),
             )
         result = await row.fetchone()
         invite_id = result[0]
@@ -134,14 +141,15 @@ async def _validate_token(token: str) -> Invite:
     invite = Invite(
         id=result[0],
         token_hash=result[1],
-        label=result[2],
-        email=result[3],
-        created_by=result[4],
-        created_at=result[5],
-        expires_at=result[6],
-        max_uses=result[7],
-        use_count=result[8],
-        revoked=result[9],
+        token=result[2],
+        label=result[3],
+        email=result[4],
+        created_by=result[5],
+        created_at=result[6],
+        expires_at=result[7],
+        max_uses=result[8],
+        use_count=result[9],
+        revoked=result[10],
     )
 
     if invite.revoked:
@@ -366,14 +374,15 @@ async def list_invites() -> list[Invite]:
         Invite(
             id=row[0],
             token_hash=row[1],
-            label=row[2],
-            email=row[3],
-            created_by=row[4],
-            created_at=row[5],
-            expires_at=row[6],
-            max_uses=row[7],
-            use_count=row[8],
-            revoked=row[9],
+            token=row[2],
+            label=row[3],
+            email=row[4],
+            created_by=row[5],
+            created_at=row[6],
+            expires_at=row[7],
+            max_uses=row[8],
+            use_count=row[9],
+            revoked=row[10],
         )
         for row in rows
     ]

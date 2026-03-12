@@ -28,6 +28,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when Settings menu item is clicked.
     var onOpenSettings: (() -> Void)?
 
+    /// Callback invoked when People menu item is clicked.
+    var onOpenPeople: (() -> Void)?
+
     /// Callback invoked when the user clicks "Sign Out".
     var onSignOut: (() -> Void)?
 
@@ -241,6 +244,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // --- App ---
+
+        let people = NSMenuItem(
+            title: "People…",
+            action: #selector(openPeople),
+            keyEquivalent: ""
+        )
+        people.target = self
+        people.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: nil)
+        people.isHidden = signedInEmail == nil
+        menu.addItem(people)
 
         let settings = NSMenuItem(
             title: "Preferences…",
@@ -458,6 +471,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         onOpenSettings?()
+    }
+
+    @objc private func openPeople() {
+        onOpenPeople?()
     }
 
     @objc private func showAbout() {
