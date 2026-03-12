@@ -48,7 +48,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var micSubmenuItem: NSMenuItem?
     private var languageSubmenuItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
-    private var statusMenuItem: NSMenuItem?
     private var accountMenuItem: NSMenuItem?
     private var signOutItem: NSMenuItem?
 
@@ -113,7 +112,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         applyIcon(for: .idle)
     }
 
-    /// Update whether the hotkey is registered. Refreshes the status line.
+    /// Update whether the hotkey is registered.
     func setHotkeyRegistered(_ registered: Bool) {
         hotkeyRegistered = registered
     }
@@ -184,6 +183,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false
 
+        // --- Account ---
+
+        let account = NSMenuItem(
+            title: signedInEmail ?? "",
+            action: nil,
+            keyEquivalent: ""
+        )
+        account.isEnabled = false
+        account.image = NSImage(systemSymbolName: "person.circle", accessibilityDescription: nil)
+        account.isHidden = signedInEmail == nil
+        menu.addItem(account)
+        accountMenuItem = account
+
+        menu.addItem(.separator())
+
         // --- Primary actions ---
 
         let paste = NSMenuItem(
@@ -200,7 +214,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // --- Settings ---
+        // --- Input ---
 
         let micSubmenu = NSMenu()
         let micItem = NSMenuItem(
@@ -212,8 +226,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         micItem.image = NSImage(systemSymbolName: "mic", accessibilityDescription: nil)
         menu.addItem(micItem)
         micSubmenuItem = micItem
-
-        // --- Language ---
 
         let langSubmenu = NSMenu()
         let langItem = NSMenuItem(
@@ -228,21 +240,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // --- Status ---
+        // --- App ---
 
-        let status = NSMenuItem(
-            title: "Status: Idle",
-            action: nil,
-            keyEquivalent: ""
+        let settings = NSMenuItem(
+            title: "Preferences…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
         )
-        status.isEnabled = false
-        status.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
-        menu.addItem(status)
-        statusMenuItem = status
-
-        menu.addItem(.separator())
-
-        // --- Updates ---
+        settings.target = self
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        menu.addItem(settings)
 
         let checkForUpdates = NSMenuItem(
             title: "Check for Updates…",
@@ -256,20 +263,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(checkForUpdates)
         checkForUpdatesItem = checkForUpdates
 
-        menu.addItem(.separator())
-
-        // --- Account ---
-
-        let account = NSMenuItem(
-            title: signedInEmail ?? "",
-            action: nil,
+        let about = NSMenuItem(
+            title: "About",
+            action: #selector(showAbout),
             keyEquivalent: ""
         )
-        account.isEnabled = false
-        account.image = NSImage(systemSymbolName: "person.circle", accessibilityDescription: nil)
-        account.isHidden = signedInEmail == nil
-        menu.addItem(account)
-        accountMenuItem = account
+        about.target = self
+        about.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
+        menu.addItem(about)
+
+        menu.addItem(.separator())
+
+        // --- Session ---
 
         let signOut = NSMenuItem(
             title: "Sign Out",
@@ -283,30 +288,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         signOut.isHidden = signedInEmail == nil
         menu.addItem(signOut)
         signOutItem = signOut
-
-        menu.addItem(.separator())
-
-        // --- App ---
-
-        let settings = NSMenuItem(
-            title: "Settings…",
-            action: #selector(openSettings),
-            keyEquivalent: ","
-        )
-        settings.target = self
-        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
-        menu.addItem(settings)
-
-        let about = NSMenuItem(
-            title: "About FreeFlow",
-            action: #selector(showAbout),
-            keyEquivalent: ""
-        )
-        about.target = self
-        about.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
-        menu.addItem(about)
-
-        menu.addItem(.separator())
 
         let quit = NSMenuItem(
             title: "Quit FreeFlow",
@@ -327,7 +308,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshMicSubmenu()
         refreshLanguageSubmenu()
         refreshCheckForUpdatesItem()
-        refreshStatusItem()
     }
 
     // MARK: - Dynamic refresh
@@ -407,29 +387,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func refreshCheckForUpdatesItem() {
         checkForUpdatesItem?.isEnabled = updaterService?.canCheckForUpdates ?? false
-    }
-
-    private func refreshStatusItem() {
-        guard let statusMenuItem else { return }
-
-        let stateLabel: String
-        switch currentRecordingState {
-        case .idle:
-            stateLabel = "Idle"
-        case .recording:
-            stateLabel = "Recording"
-        case .processing:
-            stateLabel = "Processing"
-        case .injecting:
-            stateLabel = "Injecting"
-        case .injectionFailed:
-            stateLabel = "No Target"
-        case .sessionExpired:
-            stateLabel = "Session Expired"
-        }
-
-        let hotkeyLabel = hotkeyRegistered ? "Hotkey: ✓" : "Hotkey: Not registered"
-        statusMenuItem.title = "\(stateLabel)  ·  \(hotkeyLabel)"
     }
 
     // MARK: - Actions

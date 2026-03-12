@@ -542,6 +542,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// signed-in user. Prefers the Autonomy Account email (Auth0)
     /// over the zone user email.
     private func updateMenuBarEmail() {
+        #if DEBUG
+            if let envEmail = ProcessInfo.processInfo.environment["FREEFLOW_AUTONOMY_EMAIL"],
+                !envEmail.isEmpty
+            {
+                menuBarController?.setSignedInEmail(envEmail)
+                return
+            }
+        #endif
         let email = keychain.autonomyEmail() ?? keychain.userEmail()
         menuBarController?.setSignedInEmail(email)
     }
