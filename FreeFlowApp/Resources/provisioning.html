@@ -501,34 +501,6 @@
                 opacity: 0;
             }
 
-            .provisioning-bar-dots {
-                display: flex;
-                gap: 3px;
-                flex-shrink: 0;
-            }
-
-            .provisioning-bar-dots .bar-dot {
-                width: 3px;
-                height: 3px;
-                border-radius: 50%;
-                background: var(--color-border);
-                animation: pulse 1.4s ease-in-out infinite;
-            }
-
-            .provisioning-bar-dots .bar-dot:nth-child(2) {
-                animation-delay: 0.2s;
-            }
-            .provisioning-bar-dots .bar-dot:nth-child(3) {
-                animation-delay: 0.4s;
-            }
-
-            .provisioning-bar.done .bar-dot {
-                animation: none;
-                background: var(--color-green);
-                opacity: 1;
-                transform: scale(1);
-            }
-
             .provisioning-bar.done .provisioning-bar-text {
                 color: var(--color-green);
             }
@@ -869,11 +841,6 @@
         <!-- Provisioning progress bar (fixed at bottom, visible on account + credit-card screens) -->
         <div id="provisioning-bar" class="provisioning-bar hidden">
             <span id="provisioning-bar-text" class="provisioning-bar-text">Setting up…</span>
-            <div class="provisioning-bar-dots">
-                <div class="bar-dot"></div>
-                <div class="bar-dot"></div>
-                <div class="bar-dot"></div>
-            </div>
         </div>
 
         <script>
@@ -957,7 +924,7 @@
                 if (bar) {
                     bar.classList.add("done");
                 }
-                updateBarMessage("Server ready");
+                updateBarMessage("Server ready ✓");
             }
 
             // --- Button handlers ---

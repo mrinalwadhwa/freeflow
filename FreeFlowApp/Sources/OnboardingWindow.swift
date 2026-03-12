@@ -74,6 +74,8 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         titleVisibility = .hidden
         isMovableByWindowBackground = true
         level = .floating
+        backgroundColor = NSColor(
+            red: 0xEE / 255.0, green: 0xEC / 255.0, blue: 0xEB / 255.0, alpha: 1.0)
 
         // Use a container view so we can layer the drag handle on top
         // of the web view. The drag handle is a transparent view that
