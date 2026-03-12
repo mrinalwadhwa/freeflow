@@ -41,9 +41,9 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
     /// Called when the user clicks "Retry" after an error.
     var onRetry: (() -> Void)?
 
-    /// Called when the user submits account details from Screen A.
-    /// Parameters: (firstName, lastName, company).
-    var onAccountDetails: ((String, String, String?) -> Void)?
+    /// Called when the user submits account details from the account screen.
+    /// Parameters: (firstName, lastName, company, wantsCard).
+    var onAccountDetails: ((String, String, String?, Bool) -> Void)?
 
     /// Called when Stripe.js confirms a SetupIntent on Screen B.
     /// Parameter: setupIntentId.
@@ -84,7 +84,8 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
                 let lastName = data["lastName"] as? String
             {
                 let company = data["company"] as? String
-                onAccountDetails?(firstName, lastName, company)
+                let wantsCard = data["wantsCard"] as? Bool ?? false
+                onAccountDetails?(firstName, lastName, company, wantsCard)
             }
         case "submitPayment":
             if let data = body["data"] as? [String: Any],

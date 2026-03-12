@@ -39,7 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         setupPipeline()
-        setupHUD()
         setupUpdater()
         setupSettings()
         setupMenuBarState()
@@ -570,6 +569,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let pipeline else {
             Log.debug("[AppDelegate] Pipeline not initialized, cannot register hotkey")
             return
+        }
+
+        // Create the HUD on first hotkey registration (try-it step
+        // during onboarding, or permissions-granted on returning users).
+        if hudController == nil {
+            setupHUD()
         }
 
         let pipelineRef = pipeline

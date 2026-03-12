@@ -30,7 +30,7 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     /// Default window size for onboarding (matches the zone's
     /// onboarding page design at 480px width).
-    private static let defaultSize = NSSize(width: 480, height: 640)
+    private static let defaultSize = NSSize(width: 480, height: 720)
 
     /// Height of the transparent drag handle at the top of the window.
     private static let dragHandleHeight: CGFloat = 76

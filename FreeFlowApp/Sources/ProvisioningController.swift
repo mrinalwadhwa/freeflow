@@ -59,8 +59,9 @@ final class ProvisioningController {
     /// Whether background provisioning polling is still running.
     private var isPolling = false
 
-    /// Continuation for awaiting user action on Screen A.
-    private var accountContinuation: CheckedContinuation<(String, String, String?), Never>?
+    /// Continuation for awaiting user action on the account screen.
+    /// Returns (firstName, lastName, company, wantsCard).
+    private var accountContinuation: CheckedContinuation<(String, String, String?, Bool), Never>?
 
     /// Continuation for awaiting user action on Screen B.
     /// Returns the setupIntentId if the user added a card, or nil if skipped.
@@ -100,8 +101,9 @@ final class ProvisioningController {
             provBridge.onRetry = { [weak self] in
                 self?.start()
             }
-            provBridge.onAccountDetails = { [weak self] firstName, lastName, company in
-                self?.accountContinuation?.resume(returning: (firstName, lastName, company))
+            provBridge.onAccountDetails = { [weak self] firstName, lastName, company, wantsCard in
+                self?.accountContinuation?.resume(
+                    returning: (firstName, lastName, company, wantsCard))
                 self?.accountContinuation = nil
             }
             provBridge.onSubmitPayment = { [weak self] setupIntentId in
@@ -207,7 +209,7 @@ final class ProvisioningController {
                     Log.debug("[Provisioning] Showing Screen A (account details)")
                 #endif
 
-                let (firstName, lastName, company) = await waitForAccountDetails()
+                let (firstName, lastName, company, wantsCard) = await waitForAccountDetails()
 
                 // Save account details to orchestrator.
                 #if DEBUG
@@ -219,65 +221,66 @@ final class ProvisioningController {
                     company: company
                 )
 
-                // Step 4: Show Screen B (credit card).
-                // Fetch the SetupIntent result. If it failed, log the
-                // error and skip straight to the card-skip path (user
-                // can still start their trial).
-                var setupInfo: StripeSetupInfo?
-                do {
-                    setupInfo = try await setupIntentTask.value
-                    self.stripeSetupInfo = setupInfo
-                } catch {
-                    #if DEBUG
-                        Log.debug(
-                            "[Provisioning] SetupIntent fetch failed: \(error.localizedDescription)"
-                        )
-                    #endif
-                    // Screen B will show without the Stripe form; user
-                    // can only skip. We still show the screen so the
-                    // flow isn't jarring.
-                }
-
-                if let info = setupInfo {
-                    bridge?.pushCreditCard(
-                        clientSecret: info.clientSecret,
-                        publishableKey: info.publishableKey
-                    )
-                } else {
-                    // No Stripe info available — show Screen B in
-                    // skip-only mode (no card form).
-                    bridge?.pushCreditCard(clientSecret: "", publishableKey: "")
-                }
-                #if DEBUG
-                    Log.debug("[Provisioning] Showing Screen B (credit card)")
-                #endif
-
-                let setupIntentId = await waitForPaymentAction()
-
-                // Handle user's payment decision. If they submit a card
-                // and confirmation fails, let them retry or skip.
-                var paymentAction = setupIntentId
-                while let intentId = paymentAction {
-                    #if DEBUG
-                        Log.debug("[Provisioning] Confirming payment with orchestrator")
-                    #endif
+                // Step 4: Credit card (only if user chose the card path).
+                if wantsCard {
+                    // Fetch the SetupIntent result. If it failed, log
+                    // the error and skip to the no-card path.
+                    var setupInfo: StripeSetupInfo?
                     do {
-                        try await client.confirmPayment(setupIntentId: intentId)
-                        bridge?.pushPaymentSuccess()
-                        break  // Success — exit the retry loop.
+                        setupInfo = try await setupIntentTask.value
+                        self.stripeSetupInfo = setupInfo
                     } catch {
                         #if DEBUG
                             Log.debug(
-                                "[Provisioning] Payment confirmation failed: \(error.localizedDescription)"
+                                "[Provisioning] SetupIntent fetch failed: \(error.localizedDescription)"
                             )
                         #endif
-                        bridge?.pushPaymentError(message: error.localizedDescription)
-                        // Re-await: user can retry the card or skip.
-                        paymentAction = await waitForPaymentAction()
                     }
-                }
 
-                if paymentAction == nil {
+                    if let info = setupInfo {
+                        bridge?.pushCreditCard(
+                            clientSecret: info.clientSecret,
+                            publishableKey: info.publishableKey
+                        )
+                    } else {
+                        // No Stripe info — show Screen B in skip-only mode.
+                        bridge?.pushCreditCard(clientSecret: "", publishableKey: "")
+                    }
+                    #if DEBUG
+                        Log.debug("[Provisioning] Showing credit card screen")
+                    #endif
+
+                    let setupIntentId = await waitForPaymentAction()
+
+                    // Handle payment. Retry loop if confirmation fails.
+                    var paymentAction = setupIntentId
+                    while let intentId = paymentAction {
+                        #if DEBUG
+                            Log.debug("[Provisioning] Confirming payment with orchestrator")
+                        #endif
+                        do {
+                            try await client.confirmPayment(setupIntentId: intentId)
+                            bridge?.pushPaymentSuccess()
+                            break
+                        } catch {
+                            #if DEBUG
+                                Log.debug(
+                                    "[Provisioning] Payment confirmation failed: \(error.localizedDescription)"
+                                )
+                            #endif
+                            bridge?.pushPaymentError(message: error.localizedDescription)
+                            paymentAction = await waitForPaymentAction()
+                        }
+                    }
+
+                    if paymentAction == nil {
+                        #if DEBUG
+                            Log.debug("[Provisioning] User skipped card from credit card screen")
+                        #endif
+                    }
+                } else {
+                    // User chose "Start free trial" — skip card entirely.
+                    setupIntentTask.cancel()
                     #if DEBUG
                         Log.debug("[Provisioning] User skipped adding a card")
                     #endif
@@ -321,11 +324,11 @@ final class ProvisioningController {
 
     // MARK: - User interaction continuations
 
-    /// Wait for the user to submit account details on Screen A.
+    /// Wait for the user to submit account details on the account screen.
     ///
-    /// Returns (firstName, lastName, company) when the bridge receives
-    /// the `accountDetails` action from JavaScript.
-    private func waitForAccountDetails() async -> (String, String, String?) {
+    /// Returns (firstName, lastName, company, wantsCard) when the bridge
+    /// receives the `accountDetails` action from JavaScript.
+    private func waitForAccountDetails() async -> (String, String, String?, Bool) {
         await withCheckedContinuation { continuation in
             self.accountContinuation = continuation
         }

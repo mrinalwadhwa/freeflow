@@ -40,12 +40,16 @@
                 cursor: default;
             }
 
+            /* ---------------------------------------------------------- */
+            /* Screens                                                     */
+            /* ---------------------------------------------------------- */
+
             .screen {
                 display: none;
                 flex-direction: column;
                 align-items: center;
                 text-align: center;
-                max-width: 360px;
+                max-width: 380px;
                 width: 100%;
                 animation: fadeIn 0.3s ease-out;
             }
@@ -64,6 +68,10 @@
                     transform: translateY(0);
                 }
             }
+
+            /* ---------------------------------------------------------- */
+            /* Typography                                                  */
+            /* ---------------------------------------------------------- */
 
             .icon {
                 font-size: 2.5rem;
@@ -84,6 +92,10 @@
                 line-height: 1.55;
                 margin-bottom: 1.5rem;
             }
+
+            /* ---------------------------------------------------------- */
+            /* Buttons                                                     */
+            /* ---------------------------------------------------------- */
 
             .btn {
                 display: inline-flex;
@@ -141,7 +153,18 @@
                 background: transparent;
             }
 
-            /* Spinner */
+            .btn-group {
+                display: flex;
+                flex-direction: column;
+                gap: 0.625rem;
+                width: 100%;
+                max-width: 240px;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Spinner / progress dots                                     */
+            /* ---------------------------------------------------------- */
+
             .spinner-container {
                 margin-bottom: 1.5rem;
                 position: relative;
@@ -164,7 +187,6 @@
                 }
             }
 
-            /* Progress dots */
             .progress-dots {
                 display: flex;
                 gap: 6px;
@@ -199,7 +221,10 @@
                 }
             }
 
-            /* Status message with transition */
+            /* ---------------------------------------------------------- */
+            /* Status message                                              */
+            /* ---------------------------------------------------------- */
+
             .status-message {
                 font-size: 0.9375rem;
                 color: var(--color-muted);
@@ -213,7 +238,10 @@
                 opacity: 0;
             }
 
-            /* Success checkmark */
+            /* ---------------------------------------------------------- */
+            /* Success checkmark                                           */
+            /* ---------------------------------------------------------- */
+
             .checkmark {
                 width: 48px;
                 height: 48px;
@@ -240,7 +268,10 @@
                 }
             }
 
-            /* Error */
+            /* ---------------------------------------------------------- */
+            /* Error                                                       */
+            /* ---------------------------------------------------------- */
+
             .error-icon {
                 width: 48px;
                 height: 48px;
@@ -270,22 +301,14 @@
                 word-break: break-word;
             }
 
-            .btn-group {
-                display: flex;
-                flex-direction: column;
-                gap: 0.625rem;
-                width: 100%;
-                max-width: 240px;
-            }
-
             /* ---------------------------------------------------------- */
-            /* Form fields (Screen A & B)                                  */
+            /* Form fields                                                 */
             /* ---------------------------------------------------------- */
 
             .form-group {
                 width: 100%;
                 text-align: left;
-                margin-bottom: 1rem;
+                margin-bottom: 0.875rem;
             }
 
             .form-group label {
@@ -336,7 +359,7 @@
             }
 
             /* ---------------------------------------------------------- */
-            /* Plan card (Screen A)                                        */
+            /* Plan card                                                   */
             /* ---------------------------------------------------------- */
 
             .plan-card {
@@ -344,18 +367,18 @@
                 background: var(--color-surface);
                 border: 1px solid var(--color-border-light);
                 border-radius: 16px;
-                padding: 1.25rem;
+                padding: 1.125rem 1.25rem;
                 text-align: left;
                 margin-bottom: 1rem;
             }
 
             .plan-card-title {
-                font-size: 0.8125rem;
+                font-size: 0.75rem;
                 font-weight: 600;
                 color: var(--color-muted);
                 text-transform: uppercase;
                 letter-spacing: 0.05em;
-                margin-bottom: 0.625rem;
+                margin-bottom: 0.5rem;
             }
 
             .plan-card-main {
@@ -363,11 +386,11 @@
                 font-weight: 600;
                 color: var(--color-text);
                 line-height: 1.55;
-                margin-bottom: 0.375rem;
+                margin-bottom: 0.25rem;
             }
 
             .plan-card-sub {
-                font-size: 0.875rem;
+                font-size: 0.8125rem;
                 color: var(--color-muted);
                 line-height: 1.55;
             }
@@ -376,7 +399,7 @@
                 display: inline-block;
                 font-size: 0.8125rem;
                 color: var(--color-muted);
-                margin-top: 0.5rem;
+                margin-top: 0.375rem;
                 cursor: pointer;
                 text-decoration: underline;
                 text-decoration-color: var(--color-border);
@@ -393,14 +416,14 @@
             }
 
             /* ---------------------------------------------------------- */
-            /* TOS text (Screen A)                                         */
+            /* TOS text                                                    */
             /* ---------------------------------------------------------- */
 
             .tos-text {
                 font-size: 0.8125rem;
                 color: var(--color-muted);
                 line-height: 1.55;
-                margin-bottom: 1.25rem;
+                margin-bottom: 1rem;
                 text-align: center;
             }
 
@@ -421,7 +444,7 @@
             }
 
             /* ---------------------------------------------------------- */
-            /* Background provisioning progress bar                        */
+            /* Background provisioning bar                                 */
             /* ---------------------------------------------------------- */
 
             .provisioning-bar {
@@ -433,15 +456,17 @@
                 align-items: center;
                 justify-content: center;
                 gap: 0.5rem;
-                padding: 0.75rem 1.5rem;
+                padding: 0.625rem 1.5rem;
                 background: var(--color-bg);
                 border-top: 1px solid var(--color-border-light);
+                z-index: 10;
             }
 
             .provisioning-bar-text {
-                font-size: 0.75rem;
+                font-size: 0.6875rem;
                 color: var(--color-muted);
                 transition: opacity 0.2s ease;
+                white-space: nowrap;
             }
 
             .provisioning-bar-text.changing {
@@ -450,12 +475,13 @@
 
             .provisioning-bar-dots {
                 display: flex;
-                gap: 4px;
+                gap: 3px;
+                flex-shrink: 0;
             }
 
             .provisioning-bar-dots .bar-dot {
-                width: 4px;
-                height: 4px;
+                width: 3px;
+                height: 3px;
                 border-radius: 50%;
                 background: var(--color-border);
                 animation: pulse 1.4s ease-in-out infinite;
@@ -482,14 +508,14 @@
             }
 
             /* ---------------------------------------------------------- */
-            /* Screen A & B: scrollable content area                       */
+            /* Scrollable content area                                     */
             /* ---------------------------------------------------------- */
 
             .screen-scrollable {
-                max-height: calc(100vh - 4rem - 3rem);
+                max-height: calc(100vh - 4rem - 2.5rem);
                 overflow-y: auto;
                 width: 100%;
-                padding-bottom: 3rem;
+                padding-bottom: 2.5rem;
                 -webkit-overflow-scrolling: touch;
             }
 
@@ -498,7 +524,63 @@
             }
 
             /* ---------------------------------------------------------- */
-            /* Screen B: credit card                                       */
+            /* Account screen: two-path buttons                            */
+            /* ---------------------------------------------------------- */
+
+            .account-actions {
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0;
+            }
+
+            .account-actions .btn {
+                width: 100%;
+            }
+
+            .card-nudge {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                line-height: 1.45;
+                margin-top: 0.375rem;
+                margin-bottom: 0.75rem;
+                text-align: center;
+            }
+
+            .skip-nudge {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                line-height: 1.45;
+                margin-top: 0.375rem;
+                text-align: center;
+            }
+
+            .divider-inline {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                width: 100%;
+                margin: 0.125rem 0;
+            }
+
+            .divider-inline-line {
+                flex: 1;
+                height: 1px;
+                background: var(--color-border);
+            }
+
+            .divider-inline-text {
+                font-size: 0.6875rem;
+                color: var(--color-border);
+                font-weight: 500;
+                flex-shrink: 0;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Credit card screen (Stripe)                                 */
             /* ---------------------------------------------------------- */
 
             .card-description {
@@ -506,14 +588,6 @@
                 color: var(--color-muted);
                 line-height: 1.55;
                 margin-bottom: 1.25rem;
-                text-align: center;
-            }
-
-            .card-incentive {
-                font-size: 0.8125rem;
-                color: var(--color-muted);
-                line-height: 1.55;
-                margin-bottom: 1.5rem;
                 text-align: center;
             }
 
@@ -563,53 +637,29 @@
                 gap: 0.625rem;
                 width: 100%;
                 align-items: center;
-                margin-bottom: 1rem;
+                margin-bottom: 0.75rem;
             }
 
             .card-btn-group .btn {
                 width: 100%;
-                max-width: 280px;
             }
 
-            .divider {
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                width: 100%;
-                max-width: 280px;
-                margin: 0 auto 0.875rem;
-            }
-
-            .divider-line {
-                flex: 1;
-                height: 1px;
-                background: var(--color-border);
-            }
-
-            .divider-text {
-                font-size: 0.75rem;
-                color: var(--color-muted);
-                font-weight: 500;
-                flex-shrink: 0;
-            }
-
-            .skip-section {
-                text-align: center;
-                margin-bottom: 0.5rem;
-            }
-
-            .skip-section .btn-secondary {
-                margin-bottom: 0.625rem;
-                width: 100%;
-                max-width: 280px;
-            }
-
-            .skip-description {
+            .card-back-link {
                 font-size: 0.8125rem;
                 color: var(--color-muted);
-                line-height: 1.55;
-                max-width: 300px;
-                margin: 0 auto;
+                cursor: pointer;
+                text-decoration: underline;
+                text-decoration-color: var(--color-border);
+                text-underline-offset: 0.15em;
+                transition:
+                    color 0.15s,
+                    text-decoration-color 0.15s;
+                -webkit-user-select: none;
+            }
+
+            .card-back-link:hover {
+                color: var(--color-text);
+                text-decoration-color: var(--color-text);
             }
 
             .card-error-inline {
@@ -622,30 +672,30 @@
         </style>
     </head>
     <body>
-        <!-- Screen 1: Welcome / Get Started -->
+        <!-- Screen: Welcome (Get Started) -->
         <div id="screen-welcome" class="screen active">
-            <div class="icon">&#10022;</div>
+            <div class="icon">&#128075;</div>
             <h1>Welcome to FreeFlow</h1>
-            <p>Dictate anywhere on your Mac with your own private AI server. Sign in to get started.</p>
+            <p>Dictate anywhere on your Mac. Your own private server, powered by AI.</p>
             <button class="btn" onclick="handleGetStarted()">Get Started</button>
         </div>
 
-        <!-- Screen 2: Signing in -->
+        <!-- Screen: Signing in -->
         <div id="screen-signing-in" class="screen">
             <div class="spinner-container">
                 <div class="spinner"></div>
             </div>
             <h1>Signing in&#8230;</h1>
-            <p>Complete sign-in in the browser window.</p>
+            <p>Complete sign-in in your browser.</p>
         </div>
 
-        <!-- Screen 3: Provisioning in progress (shown only if zone not ready after billing) -->
+        <!-- Screen: Provisioning spinner (shown if zone not ready after billing) -->
         <div id="screen-provisioning" class="screen">
             <div class="spinner-container">
                 <div class="spinner"></div>
             </div>
             <h1>Setting up your server</h1>
-            <div id="provisioning-status" class="status-message">Creating your server&#8230;</div>
+            <p id="provisioning-status">This usually takes a minute or two&#8230;</p>
             <div class="progress-dots">
                 <div class="dot"></div>
                 <div class="dot"></div>
@@ -653,13 +703,13 @@
             </div>
         </div>
 
-        <!-- Screen 4: Ready -->
+        <!-- Screen: Ready -->
         <div id="screen-ready" class="screen">
             <div class="checkmark">
                 <svg
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="#fff"
+                    stroke="white"
                     stroke-width="2.5"
                     stroke-linecap="round"
                     stroke-linejoin="round"
@@ -667,24 +717,26 @@
                     <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
             </div>
-            <h1>Your server is ready!</h1>
-            <p>Let's set up a few things and you'll be dictating in no time.</p>
+            <h1>You&#8217;re all set</h1>
+            <p>Your FreeFlow server is ready. Let&#8217;s finish setting up.</p>
         </div>
 
-        <!-- Screen 5: Error -->
+        <!-- Screen: Error -->
         <div id="screen-error" class="screen">
-            <div class="error-icon"><span>!</span></div>
+            <div class="error-icon">
+                <span>!</span>
+            </div>
             <h1>Something went wrong</h1>
             <div id="error-message" class="error-message"></div>
             <div class="btn-group">
-                <button class="btn" onclick="handleRetry()">Try Again</button>
+                <button class="btn" onclick="handleRetry()">Try again</button>
             </div>
         </div>
 
-        <!-- Screen A: Account details + plan -->
+        <!-- Screen: Account (merged — info + two paths) -->
         <div id="screen-account" class="screen">
             <div class="screen-scrollable">
-                <h1 style="margin-bottom: 1.25rem">Set up your account</h1>
+                <h1 style="margin-bottom: 1.125rem">Set up your account</h1>
 
                 <div class="form-group">
                     <label for="first-name">First name</label>
@@ -698,7 +750,7 @@
                     <div id="last-name-error" class="field-error">Last name is required.</div>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 1.25rem">
+                <div class="form-group" style="margin-bottom: 1rem">
                     <label for="company"
                         >Company <span style="font-weight: 400; color: var(--color-border)">(optional)</span></label
                     >
@@ -707,7 +759,7 @@
 
                 <div class="plan-card">
                     <div class="plan-card-title">Your plan</div>
-                    <div class="plan-card-main">14 days free &middot; $50 credit</div>
+                    <div class="plan-card-main">14 days free · $50 credit</div>
                     <div class="plan-card-sub">Then $75/month. Your own private server, unlimited dictation.</div>
                     <a class="plan-card-link" onclick="openExternal('https://autonomy.computer/pricing')"
                         >Pricing details &#8594;</a
@@ -719,20 +771,32 @@
                     <a onclick="openExternal('https://autonomy.computer/docs/terms')">Terms of Service</a>.
                 </div>
 
-                <button class="btn" id="btn-account-continue" onclick="handleAccountContinue()">Continue</button>
+                <div class="account-actions">
+                    <button class="btn" id="btn-add-card" onclick="handleAddCardPath()">
+                        Add card and start trial
+                    </button>
+                    <div class="card-nudge">Unlocks team invites so you can share FreeFlow.</div>
+
+                    <div class="divider-inline">
+                        <div class="divider-inline-line"></div>
+                        <div class="divider-inline-text">or</div>
+                        <div class="divider-inline-line"></div>
+                    </div>
+
+                    <button class="btn btn-secondary" id="btn-skip-card" onclick="handleSkipPath()">
+                        Start free trial
+                    </button>
+                    <div class="skip-nudge">No card needed. You can add one later.</div>
+                </div>
             </div>
         </div>
 
-        <!-- Screen B: Credit card -->
+        <!-- Screen: Credit card (Stripe) -->
         <div id="screen-credit-card" class="screen">
             <div class="screen-scrollable">
                 <h1 style="margin-bottom: 0.5rem">Add a credit card</h1>
 
                 <div class="card-description">You won't be charged during your 14-day free trial.</div>
-
-                <div class="card-incentive">
-                    Adding a card unlocks team invites, so you can share FreeFlow with your team.
-                </div>
 
                 <div id="stripe-wrapper" class="stripe-container stripe-loading">
                     <span id="stripe-loading-text">Loading payment form&#8230;</span>
@@ -742,29 +806,18 @@
                 <div id="card-error" class="card-error-inline"></div>
 
                 <div class="card-btn-group">
-                    <button class="btn" id="btn-add-card" onclick="handleAddCard()" disabled>
+                    <button class="btn" id="btn-confirm-card" onclick="handleAddCard()" disabled>
                         Add card and continue
                     </button>
                 </div>
 
-                <div class="divider">
-                    <div class="divider-line"></div>
-                    <div class="divider-text">or</div>
-                    <div class="divider-line"></div>
-                </div>
-
-                <div class="skip-section">
-                    <button class="btn btn-secondary" onclick="handleSkipPayment()">Start free trial</button>
-                    <p class="skip-description">
-                        No card needed. FreeFlow will be just for you until you add a card and invite your team.
-                    </p>
-                </div>
+                <a class="card-back-link" onclick="handleSkipFromCard()">Skip for now, start free trial</a>
             </div>
         </div>
 
-        <!-- Background provisioning progress bar (shared across Screens A & B) -->
+        <!-- Provisioning progress bar (fixed at bottom, visible on account + credit-card screens) -->
         <div id="provisioning-bar" class="provisioning-bar hidden">
-            <span id="provisioning-bar-text" class="provisioning-bar-text">Creating your server&#8230;</span>
+            <span id="provisioning-bar-text" class="provisioning-bar-text">Setting up&#8230;</span>
             <div class="provisioning-bar-dots">
                 <div class="bar-dot"></div>
                 <div class="bar-dot"></div>
@@ -786,7 +839,6 @@
             }
 
             function openExternal(url) {
-                // Open in system browser via bridge. Falls back to window.open.
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow) {
                     send("openExternal", { url: url });
                 } else {
@@ -867,15 +919,13 @@
                 send("retryProvisioning");
             }
 
-            // --- Screen A: Account details ---
+            // --- Account screen validation ---
 
-            function handleAccountContinue() {
+            function validateAccountFields() {
                 var firstName = document.getElementById("first-name").value.trim();
                 var lastName = document.getElementById("last-name").value.trim();
-                var company = document.getElementById("company").value.trim();
                 var valid = true;
 
-                // Validate first name
                 var fnInput = document.getElementById("first-name");
                 var fnError = document.getElementById("first-name-error");
                 if (!firstName) {
@@ -887,7 +937,6 @@
                     fnError.classList.remove("visible");
                 }
 
-                // Validate last name
                 var lnInput = document.getElementById("last-name");
                 var lnError = document.getElementById("last-name-error");
                 if (!lastName) {
@@ -899,21 +948,73 @@
                     lnError.classList.remove("visible");
                 }
 
-                if (!valid) return;
+                if (!valid) return null;
 
-                // Disable the button while the native side processes.
-                var btn = document.getElementById("btn-account-continue");
-                btn.disabled = true;
-                btn.textContent = "Saving\u2026";
-
-                send("accountDetails", {
+                return {
                     firstName: firstName,
                     lastName: lastName,
-                    company: company || null,
+                    company: document.getElementById("company").value.trim() || null,
+                };
+            }
+
+            // Track which path the user chose so native side knows.
+            var userChoseCardPath = false;
+
+            // --- "Add card and start trial" path ---
+
+            function handleAddCardPath() {
+                var fields = validateAccountFields();
+                if (!fields) return;
+
+                userChoseCardPath = true;
+
+                // Disable both buttons while saving.
+                var addBtn = document.getElementById("btn-add-card");
+                var skipBtn = document.getElementById("btn-skip-card");
+                addBtn.disabled = true;
+                addBtn.textContent = "Saving\u2026";
+                skipBtn.disabled = true;
+
+                // Send account details; native side saves then pushes creditCard event.
+                send("accountDetails", {
+                    firstName: fields.firstName,
+                    lastName: fields.lastName,
+                    company: fields.company,
+                    wantsCard: true,
                 });
             }
 
-            // Clear validation errors on input
+            // --- "Start free trial" (skip card) path ---
+
+            function handleSkipPath() {
+                var fields = validateAccountFields();
+                if (!fields) return;
+
+                userChoseCardPath = false;
+
+                var addBtn = document.getElementById("btn-add-card");
+                var skipBtn = document.getElementById("btn-skip-card");
+                skipBtn.disabled = true;
+                skipBtn.textContent = "Starting\u2026";
+                addBtn.disabled = true;
+
+                // Send account details with skip flag; native side saves then skips payment.
+                send("accountDetails", {
+                    firstName: fields.firstName,
+                    lastName: fields.lastName,
+                    company: fields.company,
+                    wantsCard: false,
+                });
+            }
+
+            // --- "Skip for now" from the credit card screen ---
+
+            function handleSkipFromCard() {
+                send("skipPayment");
+            }
+
+            // --- Clear validation errors on input ---
+
             document.addEventListener("DOMContentLoaded", function () {
                 var fnInput = document.getElementById("first-name");
                 var lnInput = document.getElementById("last-name");
@@ -932,7 +1033,7 @@
                 }
             });
 
-            // --- Screen B: Credit card (Stripe) ---
+            // --- Credit card screen (Stripe) ---
 
             var stripe = null;
             var stripeElements = null;
@@ -944,7 +1045,6 @@
             function initStripe(publishableKey, clientSecret) {
                 stripeClientSecret = clientSecret;
 
-                // If no publishable key, show skip-only mode.
                 if (!publishableKey) {
                     showStripeError("Card setup is temporarily unavailable.");
                     return;
@@ -994,10 +1094,9 @@
                         stripeReady = true;
                         var wrapper = document.getElementById("stripe-wrapper");
                         wrapper.classList.remove("stripe-loading");
-                        // Hide the loading text
                         var loadingText = document.getElementById("stripe-loading-text");
                         if (loadingText) loadingText.style.display = "none";
-                        document.getElementById("btn-add-card").disabled = false;
+                        document.getElementById("btn-confirm-card").disabled = false;
                     });
 
                     paymentElement.on("change", function (event) {
@@ -1021,14 +1120,13 @@
                 wrapper.classList.add("stripe-error");
                 var loadingText = document.getElementById("stripe-loading-text");
                 if (loadingText) loadingText.textContent = msg;
-                // Card button stays disabled, user can only skip.
             }
 
             function handleAddCard() {
                 if (!stripe || !stripeElements || cardSubmitting) return;
 
                 cardSubmitting = true;
-                var btn = document.getElementById("btn-add-card");
+                var btn = document.getElementById("btn-confirm-card");
                 btn.disabled = true;
                 btn.textContent = "Processing\u2026";
                 document.getElementById("card-error").textContent = "";
@@ -1038,7 +1136,6 @@
                         elements: stripeElements,
                         redirect: "if_required",
                         confirmParams: {
-                            // Not actually used; redirect: 'if_required' prevents navigation.
                             return_url: "https://autonomy.computer",
                         },
                     })
@@ -1050,11 +1147,9 @@
                             document.getElementById("card-error").textContent =
                                 result.error.message || "Card could not be added. Please try again.";
                         } else {
-                            // SetupIntent confirmed. Send the ID back to native.
                             var setupIntentId = result.setupIntent.id;
                             send("submitPayment", { setupIntentId: setupIntentId });
                             btn.textContent = "Saving\u2026";
-                            // Keep button disabled; native side will advance the screen.
                         }
                     })
                     .catch(function (err) {
@@ -1064,10 +1159,6 @@
                         document.getElementById("card-error").textContent =
                             "An unexpected error occurred. Please try again.";
                     });
-            }
-
-            function handleSkipPayment() {
-                send("skipPayment");
             }
 
             // --- Bridge event receiver ---
@@ -1082,8 +1173,7 @@
                             break;
 
                         case "authComplete":
-                            // Don't show provisioning spinner immediately; native
-                            // will push accountSetup next to show Screen A.
+                            // Native will push accountSetup next.
                             break;
 
                         case "authError":
@@ -1093,8 +1183,6 @@
                             break;
 
                         case "provisioningProgress":
-                            // Update the bottom bar if visible (Screens A or B),
-                            // and the main spinner message if on the provisioning screen.
                             if (data.message) {
                                 updateBarMessage(data.message);
                                 updateStatusMessage(data.message);
@@ -1114,7 +1202,6 @@
 
                         case "accountSetup":
                             showScreen("account");
-                            // Focus the first name field after the screen transition.
                             setTimeout(function () {
                                 var fnInput = document.getElementById("first-name");
                                 if (fnInput) fnInput.focus();
@@ -1123,9 +1210,7 @@
 
                         case "creditCard":
                             showScreen("credit-card");
-                            // Initialize Stripe if we have the keys.
                             if (data.clientSecret && data.publishableKey) {
-                                // Load Stripe.js dynamically if not already loaded.
                                 if (typeof Stripe === "undefined") {
                                     var script = document.createElement("script");
                                     script.src = "https://js.stripe.com/v3/";
@@ -1133,30 +1218,31 @@
                                         initStripe(data.publishableKey, data.clientSecret);
                                     };
                                     script.onerror = function () {
-                                        showStripeError("Could not load Stripe. You can still start your free trial.");
+                                        showStripeError(
+                                            "Could not load Stripe. You can skip and start your free trial.",
+                                        );
                                     };
                                     document.head.appendChild(script);
                                 } else {
                                     initStripe(data.publishableKey, data.clientSecret);
                                 }
                             } else {
-                                // No Stripe keys: skip-only mode.
                                 showStripeError(
-                                    "Card setup is temporarily unavailable. You can still start your free trial.",
+                                    "Card setup is temporarily unavailable. You can skip and start your free trial.",
                                 );
                             }
                             break;
 
                         case "paymentSuccess":
-                            // Card confirmed. Native side will advance to ready or provisioning screen.
+                            // Native side will advance to ready or provisioning screen.
                             break;
 
                         case "paymentError":
                             var payMsg = data.message ? data.message : "Could not save card.";
                             document.getElementById("card-error").textContent = payMsg;
-                            var addBtn = document.getElementById("btn-add-card");
-                            addBtn.disabled = false;
-                            addBtn.textContent = "Add card and continue";
+                            var confirmBtn = document.getElementById("btn-confirm-card");
+                            confirmBtn.disabled = false;
+                            confirmBtn.textContent = "Add card and continue";
                             cardSubmitting = false;
                             break;
 
