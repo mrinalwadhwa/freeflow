@@ -17,6 +17,11 @@ struct HUDContentView: View {
 
     @ObservedObject var viewModel: HUDViewModel
 
+    /// Drives the breathing width pulse during `processingBreathing`.
+    /// Toggled to `true` on appear, scales the pill horizontally
+    /// between 1.0x and ~1.15x on a slow 1.6s cycle.
+    @State private var breathingExpanded = false
+
     // MARK: - Dimensions per state
 
     private var pillWidth: CGFloat {
@@ -157,6 +162,23 @@ struct HUDContentView: View {
         }
         .frame(width: pillWidth, height: pillHeight)
         .clipShape(Capsule())
+        .scaleEffect(
+            x: breathingExpanded ? 1.15 : 1.0,
+            y: 1.0,
+            anchor: .center
+        )
+        .onChange(of: viewModel.visualState) { newState in
+            if newState == .processingBreathing {
+                withAnimation(
+                    .easeInOut(duration: 1.6)
+                        .repeatForever(autoreverses: true)
+                ) {
+                    breathingExpanded = true
+                }
+            } else {
+                breathingExpanded = false
+            }
+        }
     }
 
     // MARK: - Active content (inside the pill)
