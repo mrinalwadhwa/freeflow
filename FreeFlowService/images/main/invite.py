@@ -12,7 +12,7 @@ import hmac
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -160,59 +160,27 @@ async def _validate_token(token: str) -> Invite:
 async def _create_session_for_user(user_id: str) -> str:
     """Create a new better-auth session for an existing user.
 
-    Looks up the user's email in the auth_user table, then calls
-    better-auth's sign-in endpoint with the admin API to get a fresh
-    session token. Used when the bootstrap token is re-redeemed after
-    sign-out (admin already exists, just needs a new session).
+    Inserts a session directly into the auth_session table, bypassing
+    the sign-in endpoint entirely. This avoids password issues (the
+    original password was a random throwaway from invite redemption).
+
+    The token format matches better-auth's bearer plugin expectations:
+    an opaque string that resolves via GET /api/auth/get-session.
     """
+    session_id = secrets.token_hex(16)
+    session_token = secrets.token_hex(32)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=7)
+
     pool = db.get_pool()
     async with pool.connection() as conn:
-        result = await conn.execute(
-            "SELECT email FROM auth_user WHERE id = %s", (user_id,)
+        await conn.execute(
+            """
+            INSERT INTO auth_session (id, "expiresAt", token, "createdAt", "updatedAt", "userId")
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (session_id, expires_at, session_token, now, now, user_id),
         )
-        row = await result.fetchone()
-    if row is None:
-        raise RuntimeError(f"Admin user {user_id} not found in auth_user table")
-
-    email = row[0]
-
-    # Use better-auth's sign-up endpoint which is idempotent for
-    # existing emails when using the bearer/admin plugin — it returns
-    # the existing user with a new session. If sign-up rejects
-    # (duplicate), fall back to sign-in.
-    password = secrets.token_hex(32)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # Try sign-up first (returns existing user + session if email exists
-        # in some better-auth configs). If it fails, use sign-in.
-        resp = await client.post(
-            f"{AUTH_BASE_URL}/api/auth/sign-in/email",
-            json={"email": email, "password": password},
-        )
-        if resp.status_code != 200:
-            # Sign-in with random password won't work (password doesn't match).
-            # Create a new password for the user and sign in with it.
-            new_password = secrets.token_hex(32)
-            # Update password via direct DB (better-auth hashes with SHA-256
-            # per our custom config).
-            hashed = hashlib.sha256(new_password.encode()).hexdigest()
-            async with pool.connection() as conn:
-                await conn.execute(
-                    "UPDATE auth_account SET password = %s WHERE user_id = %s AND provider_id = 'credential'",
-                    (hashed, user_id),
-                )
-            resp = await client.post(
-                f"{AUTH_BASE_URL}/api/auth/sign-in/email",
-                json={"email": email, "password": new_password},
-            )
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"Failed to create session for admin user: {resp.status_code} {resp.text}"
-                )
-
-    data = resp.json()
-    session_token = data.get("token")
-    if not session_token:
-        raise RuntimeError(f"No session token in sign-in response: {data}")
 
     return session_token
 
