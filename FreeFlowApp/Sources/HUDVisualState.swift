@@ -24,9 +24,16 @@ enum HUDVisualState: Equatable {
     /// minimized dimensions over ~0.6s, anticipating a quick result. No
     /// content inside the pill; the shrinking itself is the visual signal.
     /// If the result arrives during the collapse, the snap to minimized is
-    /// nearly imperceptible. If 1s passes without a result, transitions to
-    /// `.processingSlow`.
+    /// nearly imperceptible. If ~0.6s passes without a result, transitions
+    /// to `.processingBreathing`.
     case processingCollapsing
+
+    /// STT in flight, breathing phase. The pill stays at minimized dimensions
+    /// but shows a gentle breathing pulse (opacity/scale) for ~5 seconds.
+    /// Signals that work is happening without being intrusive. If the result
+    /// arrives during this phase, the transition to minimized is smooth.
+    /// If ~5s passes without a result, transitions to `.processingSlow`.
+    case processingBreathing
 
     /// STT in flight, slow path (threshold exceeded). Shows reassurance message
     /// and ✕ cancel affordance.
@@ -48,7 +55,7 @@ enum HUDVisualState: Equatable {
         case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired:
             return true
-        case .listeningHeld, .processingCollapsing:
+        case .listeningHeld, .processingCollapsing, .processingBreathing:
             return false
         }
     }
@@ -60,7 +67,7 @@ enum HUDVisualState: Equatable {
     /// (waveform, buttons, or messages).
     var isExpanded: Bool {
         switch self {
-        case .minimized, .ready, .processingCollapsing:
+        case .minimized, .ready, .processingCollapsing, .processingBreathing:
             return false
         case .listeningHeld, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired:

@@ -382,7 +382,7 @@ final class HUDController {
         case .sessionExpired:
             dismissNoTarget()
             return true
-        case .minimized, .ready, .listeningHeld, .processingCollapsing:
+        case .minimized, .ready, .listeningHeld, .processingCollapsing, .processingBreathing:
             return false
         }
     }

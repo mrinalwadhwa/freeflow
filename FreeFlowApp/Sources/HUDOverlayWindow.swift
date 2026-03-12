@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import FreeFlowKit
+import SwiftUI
 
 /// A floating borderless panel that displays the always-visible HUD overlay.
 ///
@@ -164,7 +164,7 @@ final class HUDOverlayWindow: NSPanel {
             pillWidth = Self.minimizedCapsuleWidth
             pillHeight = Self.minimizedCapsuleHeight
             padding = 10
-        case .processingCollapsing:
+        case .processingCollapsing, .processingBreathing:
             pillWidth = Self.minimizedCapsuleWidth
             pillHeight = Self.minimizedCapsuleHeight
             padding = 10

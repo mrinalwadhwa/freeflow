@@ -1,5 +1,5 @@
-import SwiftUI
 import FreeFlowKit
+import SwiftUI
 
 /// The pill-shaped HUD overlay rendered with SwiftUI.
 ///
@@ -29,7 +29,7 @@ struct HUDContentView: View {
             return 80
         case .listeningHandsFree:
             return 140
-        case .processingCollapsing:
+        case .processingCollapsing, .processingBreathing:
             return 46
         case .processingSlow:
             return 180
@@ -46,7 +46,7 @@ struct HUDContentView: View {
             return 8
         case .ready:
             return 10
-        case .processingCollapsing:
+        case .processingCollapsing, .processingBreathing:
             return 8
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
@@ -56,7 +56,7 @@ struct HUDContentView: View {
 
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
-        case .minimized, .processingCollapsing:
+        case .minimized, .processingCollapsing, .processingBreathing:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
@@ -66,7 +66,7 @@ struct HUDContentView: View {
 
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
-        case .minimized, .processingCollapsing:
+        case .minimized, .processingCollapsing, .processingBreathing:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
@@ -81,7 +81,7 @@ struct HUDContentView: View {
     /// Whether the pill is in a full active state (not minimized/ready).
     private var isActive: Bool {
         switch viewModel.visualState {
-        case .minimized, .ready, .processingCollapsing:
+        case .minimized, .ready, .processingCollapsing, .processingBreathing:
             return false
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired:
@@ -117,6 +117,7 @@ struct HUDContentView: View {
             .animation(
                 viewModel.visualState == .minimized
                     || viewModel.visualState == .processingCollapsing
+                    || viewModel.visualState == .processingBreathing
                     ? .easeOut(duration: 0.15)
                     : .spring(response: 0.18, dampingFraction: 0.82, blendDuration: 0),
                 value: viewModel.visualState
@@ -142,6 +143,13 @@ struct HUDContentView: View {
                     lineWidth: pillBorderWidth
                 )
 
+            // Breathing pulse overlay for the processingBreathing state.
+            if viewModel.visualState == .processingBreathing {
+                BreathingPillOverlay()
+                    .clipShape(Capsule())
+                    .transition(.opacity)
+            }
+
             // Active state content cross-fades inside the pill.
             if isActive {
                 activeContent
@@ -156,7 +164,7 @@ struct HUDContentView: View {
     @ViewBuilder
     private var activeContent: some View {
         switch viewModel.visualState {
-        case .minimized, .ready, .processingCollapsing:
+        case .minimized, .ready, .processingCollapsing, .processingBreathing:
             EmptyView()
         case .listeningHeld:
             listeningHeldContent
@@ -405,6 +413,27 @@ struct WaveformBarsView: View {
 /// Visually distinct from the waveform bars: one continuous shape instead
 /// of discrete bars, with a slow calm rhythm instead of reactive movement.
 /// When Reduce Motion is enabled, only opacity pulses.
+/// A gentle breathing pulse overlay for the minimized pill during processing.
+///
+/// Pulses the pill's opacity between dim and bright on a slow 1.6s cycle,
+/// signaling that the app is thinking without expanding the pill. Visually
+/// subtle — just enough to distinguish "processing" from "idle minimized".
+struct BreathingPillOverlay: View {
+
+    @State private var isAnimating = false
+
+    var body: some View {
+        Capsule()
+            .fill(Color.white.opacity(isAnimating ? 0.35 : 0.05))
+            .animation(
+                .easeInOut(duration: 1.6).repeatForever(autoreverses: true),
+                value: isAnimating
+            )
+            .onAppear { isAnimating = true }
+            .onDisappear { isAnimating = false }
+    }
+}
+
 struct BreathingBarView: View {
 
     /// Maximum width the bar animates to. Callers can pass a smaller value

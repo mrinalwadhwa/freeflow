@@ -1,8 +1,8 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftUI
 import FreeFlowKit
+import SwiftUI
 
 /// Smoothing factor for audio level metering. Higher values = more responsive,
 /// lower values = smoother. Range 0.0 (frozen) to 1.0 (no smoothing).
@@ -77,6 +77,9 @@ final class HUDViewModel: ObservableObject {
     /// Duration the mic callout stays visible before auto-dismissing.
     private let micCalloutDuration: TimeInterval
 
+    private var breathingTask: Task<Void, Never>?
+    private var breathingFired = false
+
     private var slowProcessingTask: Task<Void, Never>?
     private var slowProcessingFired = false
 
@@ -119,6 +122,8 @@ final class HUDViewModel: ObservableObject {
     func stop() {
         observationTask?.cancel()
         observationTask = nil
+        breathingTask?.cancel()
+        breathingTask = nil
         slowProcessingTask?.cancel()
         slowProcessingTask = nil
         hoverGraceTask?.cancel()
@@ -127,6 +132,7 @@ final class HUDViewModel: ObservableObject {
         micCalloutTask = nil
         stopAudioLevelObservation()
         pipelineState = .idle
+        breathingFired = false
         slowProcessingFired = false
         micCalloutName = nil
         visualState = .minimized
@@ -187,8 +193,11 @@ final class HUDViewModel: ObservableObject {
         let t = CFAbsoluteTimeGetCurrent()
         Log.debug("[HUD] State changed: \(previous) → \(state) at \(t)")
 
-        // Cancel slow-processing timer when leaving processing.
+        // Cancel processing timers when leaving processing.
         if state != .processing {
+            breathingTask?.cancel()
+            breathingTask = nil
+            breathingFired = false
             slowProcessingTask?.cancel()
             slowProcessingTask = nil
             slowProcessingFired = false
@@ -215,7 +224,7 @@ final class HUDViewModel: ObservableObject {
         case .processing:
             stopAudioLevelObservation()
             processingCollapsing = true
-            startSlowProcessingTimer()
+            startBreathingTimer()
             recalculate()
 
         case .injecting:
@@ -239,22 +248,30 @@ final class HUDViewModel: ObservableObject {
     // MARK: - Processing timers
 
     /// Whether the pill is in the optimistic collapsing phase.
-    /// Set to `true` on `.processing` entry, cleared when the result
-    /// arrives or the slow-processing timer fires.
+    /// Set to `true` on `.processing` entry, cleared when the breathing
+    /// timer fires (~0.6s).
     private var processingCollapsing = false
 
-    /// Start a 1s timer. If the result hasn't arrived by then, switch
-    /// from the optimistic collapse to the `.processingSlow` expanded
-    /// pill with a "Still working…" message and cancel affordance.
-    private func startSlowProcessingTimer() {
+    /// Start the breathing timer. After ~0.6s the pill finishes collapsing
+    /// and enters the breathing pulse phase. After another ~5s without a
+    /// result, transition to the slow-processing expanded pill.
+    private func startBreathingTimer() {
+        breathingTask?.cancel()
+        breathingFired = false
         slowProcessingTask?.cancel()
         slowProcessingFired = false
-        slowProcessingTask = Task { [weak self] in
-            // 1s — if the result hasn't arrived, the optimistic collapse
-            // was wrong. Re-expand to processingSlow.
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+        breathingTask = Task { [weak self] in
+            // 0.6s — collapsing animation finishes, enter breathing.
+            try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
             self?.processingCollapsing = false
+            self?.breathingFired = true
+            self?.recalculate()
+
+            // 5s — if still processing, show "Still working…".
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
             self?.slowProcessingFired = true
             self?.recalculate()
         }
@@ -282,13 +299,18 @@ final class HUDViewModel: ObservableObject {
             return .listeningHeld
 
         case .processing, .injecting:
-            if slowProcessingFired {
-                return .processingSlow
-            }
             if processingCollapsing {
                 return .processingCollapsing
             }
-            return .processingSlow
+            if slowProcessingFired {
+                return .processingSlow
+            }
+            if breathingFired {
+                return .processingBreathing
+            }
+            // Between collapsing clearing and breathingFired setting,
+            // or before any timer fires — treat as breathing.
+            return .processingBreathing
 
         case .injectionFailed:
             return .noTarget
@@ -375,6 +397,7 @@ final class HUDViewModel: ObservableObject {
 
     deinit {
         observationTask?.cancel()
+        breathingTask?.cancel()
         slowProcessingTask?.cancel()
         hoverGraceTask?.cancel()
         micCalloutTask?.cancel()
