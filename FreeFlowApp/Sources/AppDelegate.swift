@@ -98,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
             components.host == "connect"
         {
+            provisioningController?.dismissWindow()
+            provisioningController = nil
             let controller = ensureOnboardingController()
             controller.handleConnectURL(url)
         }
