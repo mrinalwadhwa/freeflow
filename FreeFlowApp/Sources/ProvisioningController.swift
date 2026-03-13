@@ -124,6 +124,7 @@ final class ProvisioningController {
 
         loadProvisioningHTML()
         window?.present()
+        start()
     }
 
     /// Dismiss the provisioning window and clean up.
