@@ -83,38 +83,38 @@
 
     // Hide loading
     if (loadingState) {
-      loadingState.style.display = "none";
+      loadingState.classList.add("hidden");
     }
 
     // Make sure error state is hidden during normal render
     if (errorState) {
-      errorState.style.display = "none";
+      errorState.classList.add("hidden");
     }
 
     if (state.hasCreditCard) {
       // Unlocked: show invite form, hide locked state
       if (lockedState) {
-        lockedState.style.display = "none";
+        lockedState.classList.add("hidden");
       }
       if (inviteSection) {
-        inviteSection.style.display = "";
+        inviteSection.classList.remove("hidden");
       }
     } else {
       // Locked: show locked state, hide invite form
       if (lockedState) {
-        lockedState.style.display = "";
+        lockedState.classList.remove("hidden");
       }
       if (inviteSection) {
-        inviteSection.style.display = "none";
+        inviteSection.classList.add("hidden");
       }
     }
 
     // Always show invites and people sections after loading
     if (invitesSection) {
-      invitesSection.style.display = "";
+      invitesSection.classList.remove("hidden");
     }
     if (peopleSection) {
-      peopleSection.style.display = "";
+      peopleSection.classList.remove("hidden");
     }
 
     renderInvites();
@@ -416,7 +416,7 @@
 
     // Show error state
     if (errorState) {
-      errorState.style.display = "";
+      errorState.classList.remove("hidden");
     }
     if (errorMessage) {
       errorMessage.textContent = message;
@@ -424,19 +424,19 @@
 
     // Hide everything else
     if (loadingState) {
-      loadingState.style.display = "none";
+      loadingState.classList.add("hidden");
     }
     if (lockedState) {
-      lockedState.style.display = "none";
+      lockedState.classList.add("hidden");
     }
     if (inviteSection) {
-      inviteSection.style.display = "none";
+      inviteSection.classList.add("hidden");
     }
     if (invitesSection) {
-      invitesSection.style.display = "none";
+      invitesSection.classList.add("hidden");
     }
     if (peopleSection) {
-      peopleSection.style.display = "none";
+      peopleSection.classList.add("hidden");
     }
   }
 
