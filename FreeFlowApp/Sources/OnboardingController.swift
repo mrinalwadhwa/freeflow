@@ -495,6 +495,7 @@ final class OnboardingController {
 
     private func handleSignInComplete() {
         dismissWindow()
+        onComplete?()
     }
 
     // MARK: - Action: emailAddedComplete

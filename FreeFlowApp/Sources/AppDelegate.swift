@@ -617,6 +617,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hudController?.stop()
         hudController = nil
 
+        // Reset the coordinator so stale pipeline state is cleared.
+        Task { await coordinator.reset() }
+
         // Dismiss any open windows.
         onboardingController?.dismissWindow()
         onboardingController = nil
@@ -649,6 +652,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.setHotkeyRegistered(false)
         hudController?.stop()
         hudController = nil
+
+        // Reset the coordinator so stale pipeline state is cleared.
+        Task { await coordinator.reset() }
 
         // Dismiss any open windows tied to the current session.
         onboardingController?.dismissWindow()
