@@ -502,6 +502,7 @@ final class OnboardingController {
 
     private func handleEmailAddedComplete() {
         dismissWindow()
+        onComplete?()
     }
 
     // MARK: - Action: startAdminSetup
