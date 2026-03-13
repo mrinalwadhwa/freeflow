@@ -558,54 +558,41 @@
                 <!-- Entry chooser -->
                 <div id="connect-choice" class="connect-state">
                     <div class="step-icon step-icon-warm">&#10024;</div>
-                    <h1>How do you want to get started?</h1>
-                    <p>Join an existing FreeFlow server, or create your own private FreeFlow server.</p>
+                    <h1>Welcome to FreeFlow</h1>
+                    <p>
+                        FreeFlow lets you dictate anywhere on your Mac using a private server. Join a server you were
+                        invited to, or create your own.
+                    </p>
 
                     <div class="entry-choice-group">
                         <button id="entry-join-invite" class="entry-choice-card" type="button">
-                            <div class="entry-choice-title">Join with an invite</div>
-                            <div class="entry-choice-copy">
-                                Use an invite link from someone who already has FreeFlow.
-                            </div>
+                            <div class="entry-choice-title">I have an invite link</div>
+                            <div class="entry-choice-copy">Join a FreeFlow server someone shared with you.</div>
                         </button>
 
                         <button id="entry-setup-admin" class="entry-choice-card" type="button">
-                            <div class="entry-choice-title">Create your private FreeFlow server</div>
+                            <div class="entry-choice-title">Create my FreeFlow server</div>
                             <div class="entry-choice-copy">
                                 Set up a private FreeFlow server for yourself and your team.
                             </div>
                         </button>
-                    </div>
-
-                    <div class="entry-footnote">
-                        If someone invited you, install FreeFlow and then click the invite link you received.
                     </div>
                 </div>
 
                 <!-- Invite waiting state -->
                 <div id="connect-waiting" class="connect-state hidden">
                     <div class="step-icon step-icon-warm">&#128279;</div>
-                    <h1>Ready to join</h1>
-                    <p>Click your invite link in your browser to connect this Mac to a FreeFlow server.</p>
+                    <h1>Open your invite link</h1>
+                    <p>
+                        Click the invite link you received in your browser. FreeFlow will connect automatically on this
+                        Mac.
+                    </p>
 
                     <div class="btn-row">
-                        <button id="waiting-setup-admin" class="btn btn-secondary">
-                            Create your private FreeFlow server
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Admin handoff state -->
-                <div id="connect-admin" class="connect-state hidden">
-                    <div class="step-icon step-icon-warm">&#9881;</div>
-                    <h1>Create your private FreeFlow server</h1>
-                    <p>Set up a private FreeFlow server for yourself and your team.</p>
-
-                    <div class="btn-row">
-                        <button id="admin-start" class="btn btn-primary">Continue</button>
+                        <button id="waiting-setup-admin" class="btn btn-secondary">Create my own server instead</button>
                     </div>
                     <div class="btn-row" style="margin-top: 0.5rem">
-                        <button id="admin-back" class="btn-link">Back</button>
+                        <button id="waiting-back" class="btn-link">Back</button>
                     </div>
                 </div>
 

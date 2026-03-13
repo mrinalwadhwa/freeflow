@@ -168,11 +168,13 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     // MARK: - Placeholder
 
-    /// Show a local placeholder page while waiting for an invite link.
+    /// Show a local onboarding chooser while waiting for a service URL.
     ///
     /// Displayed on fresh launch before a `freeflow://connect` URL has
-    /// been received. The page shows a brief instruction so the user
-    /// knows the app is waiting for their invite link click.
+    /// been received. This introduces FreeFlow, lets the user choose
+    /// between joining with an invite or creating a private server, and
+    /// keeps the invite path as an instructional waiting state. The
+    /// admin path calls back into the native bridge.
     func loadWaitingPlaceholder() {
         let html = """
             <!DOCTYPE html>
@@ -182,28 +184,201 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
               * { margin: 0; padding: 0; box-sizing: border-box; }
+              :root {
+                --color-bg: #eeeceb;
+                --color-surface: #f9f9f9;
+                --color-text: #292929;
+                --color-muted: #7a7775;
+                --color-border: #ddd9d6;
+                --color-light: #a8a4a1;
+              }
               body {
                 font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                background: #EEECEB;
-                color: #292929;
+                background: var(--color-bg);
+                color: var(--color-text);
                 display: flex;
-                flex-direction: column;
                 align-items: center;
                 justify-content: center;
                 height: 100vh;
                 padding: 2rem;
-                text-align: center;
                 -webkit-user-select: none;
               }
-              .icon { font-size: 2.5rem; margin-bottom: 1.5rem; }
-              h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem; }
-              p { font-size: 0.9375rem; color: #7A7775; line-height: 1.5; }
+              .shell {
+                width: 100%;
+                max-width: 360px;
+                text-align: center;
+              }
+              .icon {
+                width: 3rem;
+                height: 3rem;
+                margin: 0 auto 1.5rem;
+                border-radius: 999px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.5rem;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border);
+              }
+              h1 {
+                font-size: 1.75rem;
+                line-height: 1.2;
+                font-weight: 600;
+                margin-bottom: 0.75rem;
+              }
+              p {
+                font-size: 0.9375rem;
+                color: var(--color-muted);
+                line-height: 1.55;
+                margin-bottom: 1.5rem;
+              }
+              .choice-group {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                margin-bottom: 1rem;
+              }
+              .choice-card {
+                width: 100%;
+                border: 1px solid var(--color-border);
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.7);
+                padding: 1rem 1rem 0.9375rem;
+                text-align: left;
+                cursor: pointer;
+                transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+              }
+              .choice-card:hover {
+                transform: translateY(-1px);
+                border-color: var(--color-text);
+                background: rgba(255, 255, 255, 0.92);
+              }
+              .choice-title {
+                font-size: 0.9375rem;
+                font-weight: 600;
+                color: var(--color-text);
+                margin-bottom: 0.3125rem;
+              }
+              .choice-copy {
+                font-size: 0.8125rem;
+                line-height: 1.45;
+                color: var(--color-muted);
+              }
+              .footnote {
+                font-size: 0.8125rem;
+                line-height: 1.45;
+                color: var(--color-light);
+              }
+              .waiting-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                margin-top: 1rem;
+              }
+              .waiting-link {
+                border: none;
+                background: none;
+                padding: 0;
+                font: inherit;
+                font-size: 0.875rem;
+                color: var(--color-text);
+                text-decoration: underline;
+                text-underline-offset: 0.15em;
+                cursor: pointer;
+              }
+              .hidden {
+                display: none;
+              }
             </style>
             </head>
             <body>
-              <div class="icon">&#9993;</div>
-              <h1>Click your invite link</h1>
-              <p>Open the invite link you received to get started.</p>
+              <div class="shell">
+                <div id="choice-state">
+                  <div class="icon">&#10024;</div>
+                  <h1>Welcome to FreeFlow</h1>
+                  <p>FreeFlow lets you dictate anywhere on your Mac using a private server. Join a server you were invited to, or create your own.</p>
+
+                  <div class="choice-group">
+                    <button class="choice-card" type="button" id="join-choice">
+                      <div class="choice-title">I have an invite link</div>
+                      <div class="choice-copy">Join a FreeFlow server someone shared with you.</div>
+                    </button>
+
+                    <button class="choice-card" type="button" id="admin-choice">
+                      <div class="choice-title">Create my FreeFlow server</div>
+                      <div class="choice-copy">Set up a private FreeFlow server for yourself and your team.</div>
+                    </button>
+                  </div>
+                </div>
+
+                <div id="invite-state" class="hidden">
+                  <div class="icon">&#128279;</div>
+                  <h1>Open your invite link</h1>
+                  <p>Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.</p>
+
+                  <div class="waiting-actions">
+                    <button class="waiting-link" type="button" id="back-to-choice">Back</button>
+                    <button class="waiting-link" type="button" id="switch-to-admin">Create my own server instead</button>
+                  </div>
+                </div>
+              </div>
+
+              <script>
+                (function () {
+                  var choiceState = document.getElementById("choice-state");
+                  var inviteState = document.getElementById("invite-state");
+                  var joinChoice = document.getElementById("join-choice");
+                  var backToChoice = document.getElementById("back-to-choice");
+                  var switchToAdmin = document.getElementById("switch-to-admin");
+                  var adminChoice = document.getElementById("admin-choice");
+
+                  function showInviteState() {
+                    if (choiceState) choiceState.classList.add("hidden");
+                    if (inviteState) inviteState.classList.remove("hidden");
+                  }
+
+                  function showChoiceState() {
+                    if (inviteState) inviteState.classList.add("hidden");
+                    if (choiceState) choiceState.classList.remove("hidden");
+                  }
+
+                  function openProvisioning() {
+                    if (
+                      window.webkit &&
+                      window.webkit.messageHandlers &&
+                      window.webkit.messageHandlers.freeflow
+                    ) {
+                      window.webkit.messageHandlers.freeflow.postMessage({
+                        action: "openProvisioning"
+                      });
+                    }
+                  }
+
+                  if (joinChoice) {
+                    joinChoice.addEventListener("click", function () {
+                      showInviteState();
+                    });
+                  }
+
+                  if (backToChoice) {
+                    backToChoice.addEventListener("click", function () {
+                      showChoiceState();
+                    });
+                  }
+
+                  if (switchToAdmin) {
+                    switchToAdmin.addEventListener("click", function () {
+                      openProvisioning();
+                    });
+                  }
+
+                  if (adminChoice) {
+                    adminChoice.addEventListener("click", function () {
+                      openProvisioning();
+                    });
+                  }
+                })();
+              </script>
             </body>
             </html>
             """

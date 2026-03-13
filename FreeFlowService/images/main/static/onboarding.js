@@ -252,7 +252,7 @@
   }
 
   function showConnectState(state) {
-    var states = ["choice", "waiting", "admin", "loading", "success", "error"];
+    var states = ["choice", "waiting", "loading", "success", "error"];
     for (var i = 0; i < states.length; i++) {
       var el = document.getElementById("connect-" + states[i]);
       if (el) {
@@ -268,7 +268,23 @@
   function configureFlowUI() {
     updateStepLabels();
 
+    setText("connect-choice-title", "Welcome to FreeFlow");
+    setText(
+      "connect-choice-copy",
+      "FreeFlow lets you dictate anywhere on your Mac using a private server. Join a server you were invited to, or create your own.",
+    );
+    setText("entry-join-invite-title", "I have an invite link");
+    setText("entry-join-invite-copy", "Join a FreeFlow server someone shared with you.");
+    setText("entry-setup-admin-title", "Create my FreeFlow server");
+    setText("entry-setup-admin-copy", "Set up a private FreeFlow server for yourself and your team.");
+
     if (flow.mode === "invite") {
+      setText("connect-waiting-title", "Open your invite link");
+      setText(
+        "connect-waiting-copy",
+        "Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.",
+      );
+      setText("waiting-setup-admin-label", "Create my own server instead");
       setText("connect-loading-title", "Connecting you to FreeFlow");
       setText("connect-loading-copy", "Setting up FreeFlow on this Mac…");
       setText("connect-success-title", "You're connected");
@@ -277,16 +293,22 @@
       setText("done-title", "You're all set");
       setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
     } else if (flow.mode === "admin") {
-      setText("connect-loading-title", "Create your private FreeFlow server");
-      setText("connect-loading-copy", "Set up a private FreeFlow server for yourself and your team.");
+      setText("connect-loading-title", "Create your FreeFlow server");
+      setText("connect-loading-copy", "We’re setting up your private FreeFlow server and preparing this Mac.");
       setText("connect-success-title", "Your FreeFlow server is ready");
       setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! Your FreeFlow server is ready.');
       setText("connect-error-title", "Setup couldn't continue");
       setText("done-title", "Your FreeFlow server is ready");
       setText("done-copy", "FreeFlow lives in your menu bar. You can invite others anytime from People.");
     } else {
-      setText("connect-loading-title", "How do you want to get started?");
-      setText("connect-loading-copy", "Choose whether you are joining with an invite or setting up your own FreeFlow.");
+      setText("connect-waiting-title", "Open your invite link");
+      setText(
+        "connect-waiting-copy",
+        "Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.",
+      );
+      setText("waiting-setup-admin-label", "Create my own server instead");
+      setText("connect-loading-title", "Connecting you to FreeFlow");
+      setText("connect-loading-copy", "Setting things up on this Mac…");
       setText("connect-success-title", "Connected");
       setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! Your FreeFlow service is ready.');
       setText("connect-error-title", "Connection failed");
@@ -569,24 +591,12 @@
     });
 
     bindClick("entry-setup-admin", function () {
-      showConnectState("admin");
+      chooseAdminPath();
     });
 
     // Waiting state: switch to admin path.
     bindClick("waiting-setup-admin", function () {
-      showConnectState("admin");
-    });
-
-    // Admin handoff state.
-    bindClick("admin-start", function () {
       chooseAdminPath();
-    });
-
-    bindClick("admin-back", function () {
-      flow.mode = "chooser";
-      configureFlowUI();
-      showConnectState("choice");
-      updateIndicators();
     });
 
     // Connect: retry button.

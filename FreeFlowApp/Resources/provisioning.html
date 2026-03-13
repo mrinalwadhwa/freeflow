@@ -679,7 +679,7 @@
         </style>
     </head>
     <body>
-        <!-- Screen: Welcome (Get Started) -->
+        <!-- Screen: Welcome (Create server) -->
         <div id="screen-welcome" class="screen active">
             <div class="icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -690,9 +690,9 @@
                     <line x1="20" y1="8" x2="20" y2="16" />
                 </svg>
             </div>
-            <h1>Welcome to FreeFlow</h1>
-            <p>Dictate anywhere on your Mac. Your own private server, powered by AI.</p>
-            <button class="btn" onclick="handleGetStarted()">Get Started</button>
+            <h1>Create your FreeFlow server</h1>
+            <p>Sign in to continue. We’ll create your private FreeFlow server and then finish setup on this Mac.</p>
+            <button class="btn" onclick="handleGetStarted()">Continue</button>
         </div>
 
         <!-- Screen: Signing in -->
@@ -1197,6 +1197,7 @@
                         case "authError":
                             var msg = data.message ? data.message : "Sign-in failed. Please try again.";
                             document.getElementById("error-message").textContent = msg;
+                            document.querySelector("#screen-error h1").textContent = "Setup couldn't continue";
                             showScreen("error");
                             break;
 
