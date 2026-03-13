@@ -181,37 +181,106 @@
             .entry-icon svg line {
                 transform-box: fill-box;
                 transform-origin: center;
-                animation: entry-bar-breathe 2.4s ease-in-out infinite;
             }
 
             .entry-icon svg line:nth-child(1) {
-                animation-delay: -0.32s;
+                animation: entry-bar-1 1.8s ease-in-out infinite;
             }
             .entry-icon svg line:nth-child(2) {
-                animation-delay: -0.18s;
+                animation: entry-bar-2 1.4s ease-in-out infinite;
             }
             .entry-icon svg line:nth-child(3) {
-                animation-delay: 0s;
+                animation: entry-bar-3 1.7s ease-in-out infinite;
             }
             .entry-icon svg line:nth-child(4) {
-                animation-delay: -0.24s;
+                animation: entry-bar-4 1.5s ease-in-out infinite;
             }
             .entry-icon svg line:nth-child(5) {
-                animation-delay: -0.1s;
+                animation: entry-bar-5 1.3s ease-in-out infinite;
             }
             .entry-icon svg line:nth-child(6) {
-                animation-delay: -0.28s;
+                animation: entry-bar-6 1.6s ease-in-out infinite;
             }
 
-            @keyframes entry-bar-breathe {
+            @keyframes entry-bar-1 {
                 0%,
                 100% {
-                    opacity: 0.92;
-                    transform: scaleY(0.94);
+                    transform: scaleY(0.6);
                 }
-                50% {
-                    opacity: 1;
-                    transform: scaleY(1.04);
+                40% {
+                    transform: scaleY(0.85);
+                }
+                70% {
+                    transform: scaleY(0.55);
+                }
+            }
+            @keyframes entry-bar-2 {
+                0%,
+                100% {
+                    transform: scaleY(0.7);
+                }
+                35% {
+                    transform: scaleY(1);
+                }
+                65% {
+                    transform: scaleY(0.5);
+                }
+            }
+            @keyframes entry-bar-3 {
+                0%,
+                100% {
+                    transform: scaleY(0.8);
+                }
+                30% {
+                    transform: scaleY(0.5);
+                }
+                60% {
+                    transform: scaleY(1.05);
+                }
+                85% {
+                    transform: scaleY(0.65);
+                }
+            }
+            @keyframes entry-bar-4 {
+                0%,
+                100% {
+                    transform: scaleY(0.55);
+                }
+                25% {
+                    transform: scaleY(0.9);
+                }
+                55% {
+                    transform: scaleY(0.6);
+                }
+                80% {
+                    transform: scaleY(0.95);
+                }
+            }
+            @keyframes entry-bar-5 {
+                0%,
+                100% {
+                    transform: scaleY(0.65);
+                }
+                30% {
+                    transform: scaleY(1);
+                }
+                60% {
+                    transform: scaleY(0.55);
+                }
+                85% {
+                    transform: scaleY(0.85);
+                }
+            }
+            @keyframes entry-bar-6 {
+                0%,
+                100% {
+                    transform: scaleY(0.7);
+                }
+                45% {
+                    transform: scaleY(0.5);
+                }
+                75% {
+                    transform: scaleY(0.9);
                 }
             }
 
@@ -380,7 +449,7 @@
                 gap: 0.75rem;
                 width: 100%;
                 max-width: 392px;
-                margin: 0.5rem auto 1.5rem;
+                margin: 1.5rem auto 1.5rem;
             }
 
             .entry-divider-line {
@@ -391,7 +460,7 @@
 
             .entry-divider-text {
                 font-size: 0.6875rem;
-                color: var(--color-border);
+                color: var(--color-muted);
                 font-weight: 500;
                 flex-shrink: 0;
                 text-transform: uppercase;
@@ -788,7 +857,7 @@
             <!-- ====================================================== -->
             <!-- Screen 1: Entry                                         -->
             <!-- ====================================================== -->
-            <section class="step-section step-hidden" data-step="connect">
+            <section class="step-section step-hidden" data-step="connect" style="padding-bottom: 3rem">
                 <!-- Entry chooser -->
                 <div id="connect-choice" class="connect-state">
                     <div class="entry-icon" aria-hidden="true">
@@ -808,7 +877,7 @@
                         </svg>
                     </div>
                     <h1>Welcome to FreeFlow</h1>
-                    <p class="intro-copy">Press a key, dictate naturally, polished text appears in any app.</p>
+                    <p class="intro-copy">Press a hotkey, dictate naturally, polished text appears in any app.</p>
 
                     <div style="height: 3rem"></div>
 

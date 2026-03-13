@@ -307,6 +307,10 @@ final class ProvisioningController {
                 let result: ProvisioningStatus
                 if let cached = self.provisioningResult {
                     result = cached
+                    // Provisioning finished while user was on billing
+                    // screens. Mark the bar as done so it doesn't stay
+                    // stuck on "Configuring your server…".
+                    bridge?.pushProvisioningProgress(message: "Server ready ✓")
                 } else {
                     // Zone not ready yet — show the spinner screen while
                     // we wait for the background provisioning task.

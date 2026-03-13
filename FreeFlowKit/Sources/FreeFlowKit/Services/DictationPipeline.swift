@@ -284,10 +284,12 @@ public actor DictationPipeline: PipelineProviding {
             break
         case .failure(let error):
             Log.debug("[Pipeline] Failed to start recording: \(error)")
-            // If startRecording() is still running in the background
-            // (timeout case), it may finish later. The next session's
-            // ensureEngine() will tear down and rebuild, so leaving it
-            // dangling is safe.
+            // If startRecording() timed out, the background task may
+            // finish and leave _isRecording=true permanently. Stop it
+            // so the next session can start cleanly.
+            Task { [audioProvider] in
+                _ = try? await audioProvider.stopRecording()
+            }
             pendingContext?.cancel()
             pendingContext = nil
             await coordinator.reset()

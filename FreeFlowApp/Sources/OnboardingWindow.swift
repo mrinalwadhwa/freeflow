@@ -100,9 +100,23 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         container.addSubview(dragHandle)
 
         contentView = container
-        center()
+        positionRight()
 
         webView.navigationDelegate = self
+    }
+
+    /// Position the window on the right side of the screen, vertically
+    /// centered, with a comfortable margin from the edge.
+    private func positionRight() {
+        guard let screen = NSScreen.main else {
+            center()
+            return
+        }
+        let visible = screen.visibleFrame
+        let margin: CGFloat = 96
+        let x = visible.maxX - frame.width - margin
+        let y = visible.maxY - frame.height - margin
+        setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     // MARK: - Close override

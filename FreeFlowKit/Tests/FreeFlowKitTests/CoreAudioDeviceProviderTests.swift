@@ -109,7 +109,9 @@ struct CoreAudioDeviceProviderTests {
         #expect(provider.selectedDeviceID == nil, "Initially no device should be selected")
 
         let devices = await provider.availableDevices()
-        guard let device = devices.first else { return }
+        // Pick a non-default device so selectDevice doesn't clear
+        // the selection (selecting the system default is a no-op).
+        guard let device = devices.first(where: { !$0.isDefault }) ?? devices.first else { return }
 
         try await provider.selectDevice(id: device.id)
         #expect(provider.selectedDeviceID == device.id)
@@ -145,7 +147,9 @@ struct CoreAudioDeviceProviderTests {
         let providerB = CoreAudioDeviceProvider()
 
         let devices = await providerA.availableDevices()
-        guard let device = devices.first else { return }
+        // Pick a non-default device so selectDevice doesn't clear
+        // the selection (selecting the system default is a no-op).
+        guard let device = devices.first(where: { !$0.isDefault }) ?? devices.first else { return }
 
         try await providerA.selectDevice(id: device.id)
         #expect(providerA.selectedDeviceID == device.id)
