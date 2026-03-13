@@ -25,6 +25,13 @@ final class PeopleController {
     /// provisioning billing flow.
     var onOpenBilling: (() -> Void)?
 
+    /// Optional fallback email for the signed-in admin from the
+    /// Autonomy account. Used when the zone admin record still has
+    /// a placeholder email.
+    var adminFallbackEmail: String? {
+        keychain.autonomyEmail()
+    }
+
     // MARK: - Initialization
 
     init(
@@ -86,6 +93,10 @@ final class PeopleController {
 
         bridge.onCopyText = { [weak self] text in
             self?.handleCopyText(text: text)
+        }
+
+        bridge.onRemovePerson = { [weak self] id in
+            self?.handleRemovePerson(id: id)
         }
 
         bridge.onOpenBilling = { [weak self] in
@@ -159,6 +170,26 @@ final class PeopleController {
         bridge.pushToast(message: "Link copied to clipboard")
     }
 
+    // MARK: - Action: removePerson
+
+    private func handleRemovePerson(id: String) {
+        Task {
+            do {
+                try await removePerson(id: id)
+                let people = try await fetchPeople()
+                bridge.pushPeopleState(
+                    hasCreditCard: await fetchHasCreditCard(),
+                    invites: try await fetchInvites(),
+                    people: people
+                )
+                bridge.pushToast(message: "Person removed")
+            } catch {
+                Log.debug("[PeopleController] removePerson failed: \(error)")
+                bridge.pushActionError(message: "Failed to remove person. Please try again.")
+            }
+        }
+    }
+
     // MARK: - Orchestrator API
 
     /// Fetch the `has_credit_card` flag from the Autonomy orchestrator.
@@ -227,12 +258,30 @@ final class PeopleController {
             return []
         }
 
-        // Normalize field names for JS (camelCase).
+        // Normalize field names for JS (camelCase) and improve admin identity
+        // display when the zone admin still has a placeholder email.
         return users.map { user -> [String: Any] in
             var result = user
-            result["hasEmail"] = user["has_email"]
-            result["isAdmin"] = user["is_admin"]
-            result["createdAt"] = user["created_at"]
+            let isAdmin = user["is_admin"] as? Bool ?? false
+            let hasEmail = user["has_email"] as? Bool ?? false
+            let currentEmail = user["email"] as? String
+            let currentName = user["name"] as? String
+
+            if isAdmin, !hasEmail, let fallbackEmail = adminFallbackEmail, !fallbackEmail.isEmpty {
+                result["email"] = fallbackEmail
+                result["has_email"] = true
+                if currentName == nil || currentName == "Admin" {
+                    result["name"] = fallbackEmail
+                }
+            } else if isAdmin, let currentEmail, !currentEmail.isEmpty,
+                currentName == nil || currentName == "Admin"
+            {
+                result["name"] = currentEmail
+            }
+
+            result["hasEmail"] = result["has_email"]
+            result["isAdmin"] = result["is_admin"]
+            result["createdAt"] = result["created_at"]
             return result
         }
     }
@@ -285,6 +334,14 @@ final class PeopleController {
         _ = try await zoneAdminRequest(
             method: "DELETE",
             path: "/admin/api/invites/\(id)"
+        )
+    }
+
+    /// Remove a person via the zone admin API.
+    private func removePerson(id: String) async throws {
+        _ = try await zoneAdminRequest(
+            method: "DELETE",
+            path: "/admin/api/users/\(id)"
         )
     }
 

@@ -262,11 +262,21 @@
             }
 
             .invite-actions,
-            .person-badges {
+            .person-badges,
+            .person-actions {
                 display: flex;
                 align-items: center;
                 gap: 0.375rem;
                 flex-shrink: 0;
+            }
+
+            .person-actions .btn {
+                min-width: 0;
+            }
+
+            .person-actions .btn:disabled {
+                opacity: 0.5;
+                cursor: default;
             }
 
             /* ---------------------------------------------------------- */

@@ -10,6 +10,7 @@
  *   - createInvite   — { name: string|null, email: string|null }
  *   - revokeInvite   — { id: number }
  *   - copyText       — { text: string }
+ *   - removePerson   — { id: string }
  *   - openBilling    — open billing flow
  *   - closePeople    — close the window
  *
@@ -17,6 +18,7 @@
  *   - peopleState    — { hasCreditCard, invites, people }
  *   - inviteCreated  — { invite: { id, name, email, inviteUrl, createdAt } }
  *   - inviteRevoked  — { id }
+ *   - personRemoved  — { id }
  *   - actionError    — { message }
  *   - pageError      — { message }
  *   - toast          — { message }
@@ -34,6 +36,7 @@
     invites: [],
     people: [],
     creatingInvite: false,
+    removingPersonId: null,
     lastCreatedInvite: null,
   };
 
@@ -46,6 +49,7 @@
     bridge.on("peopleState", handlePeopleState);
     bridge.on("inviteCreated", handleInviteCreated);
     bridge.on("inviteRevoked", handleInviteRevoked);
+    bridge.on("personRemoved", handlePersonRemoved);
     bridge.on("actionError", handleActionError);
     bridge.on("pageError", handlePageError);
     bridge.on("toast", handleToast);
@@ -285,6 +289,7 @@
 
     if (peopleList) {
       peopleList.innerHTML = html;
+      wirePeopleButtons(peopleList);
     }
   }
 
@@ -292,12 +297,26 @@
     var name = person.name || "Unnamed";
     var email = person.email || "No email on file";
     var adminBadge = person.isAdmin ? ' <span class="admin-badge">Admin</span>' : "";
+    var canRemove = !person.isAdmin;
+    var isRemoving = state.removingPersonId === person.id;
 
     var html = '<div class="person-row">';
     html += '<div class="person-info">';
     html += '<div class="person-name">' + escapeHtml(name) + adminBadge + "</div>";
     html += '<div class="person-meta">' + escapeHtml(email) + "</div>";
     html += "</div>";
+    if (canRemove) {
+      html += '<div class="person-badges">';
+      html +=
+        '<button class="btn btn-small btn-danger" data-remove-person-id="' +
+        escapeAttr(String(person.id)) +
+        '"' +
+        (isRemoving ? " disabled" : "") +
+        ">" +
+        (isRemoving ? "Removing..." : "Remove") +
+        "</button>";
+      html += "</div>";
+    }
     html += "</div>";
     return html;
   }
@@ -380,6 +399,45 @@
     showToast("Invite revoked");
   }
 
+  function wirePeopleButtons(container) {
+    var removeBtns = container.querySelectorAll("[data-remove-person-id]");
+    for (var i = 0; i < removeBtns.length; i++) {
+      (function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          if (btn.disabled) return;
+          var id = btn.getAttribute("data-remove-person-id");
+          if (!id) return;
+          state.removingPersonId = id;
+          renderPeople();
+          bridge.send("removePerson", { id: id });
+        });
+      })(removeBtns[i]);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Person removed
+  // ----------------------------------------------------------------
+
+  function handlePersonRemoved(data) {
+    var id = data && data.id;
+    if (id === undefined || id === null) return;
+
+    var normalizedId = String(id);
+    var nextPeople = [];
+    for (var i = 0; i < state.people.length; i++) {
+      if (String(state.people[i].id) !== normalizedId) {
+        nextPeople.push(state.people[i]);
+      }
+    }
+    state.people = nextPeople;
+    state.removingPersonId = null;
+
+    renderPeople();
+    showToast("Person removed");
+  }
+
   // ----------------------------------------------------------------
   // Action error
   // ----------------------------------------------------------------
@@ -395,6 +453,8 @@
       }
     }
     state.creatingInvite = false;
+    state.removingPersonId = null;
+    renderPeople();
 
     showToast(message);
   }

@@ -493,22 +493,43 @@ async def admin_list_users(
     return users
 
 
-@app.post("/admin/api/users/{target_user_id}/revoke")
-async def admin_revoke_user(
+@app.delete("/admin/api/users/{target_user_id}")
+async def admin_remove_user(
     target_user_id: str,
     user: auth.AuthUser = Depends(admin.require_admin),
 ):
-    """Revoke a user by deleting their sessions. Requires admin session."""
+    """Remove a non-admin user from the zone. Requires admin session."""
+    if target_user_id == user.user_id:
+        raise HTTPException(status_code=400, detail="You cannot remove yourself")
+
+    if await admin.is_admin(target_user_id):
+        raise HTTPException(status_code=400, detail="You cannot remove another admin")
+
     pool = db.get_pool()
     async with pool.connection() as conn:
-        result = await conn.execute(
+        session_result = await conn.execute(
             'DELETE FROM auth_session WHERE "userId" = %s',
             (target_user_id,),
         )
-        deleted = result.rowcount
-    if deleted == 0:
-        raise HTTPException(status_code=404, detail="User not found or has no sessions")
-    return {"ok": True, "sessions_deleted": deleted}
+        account_result = await conn.execute(
+            'DELETE FROM auth_account WHERE "userId" = %s',
+            (target_user_id,),
+        )
+        user_result = await conn.execute(
+            'DELETE FROM auth_user WHERE id = %s RETURNING id',
+            (target_user_id,),
+        )
+        deleted_user = await user_result.fetchone()
+
+    if deleted_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "ok": True,
+        "user_id": target_user_id,
+        "sessions_deleted": session_result.rowcount,
+        "accounts_deleted": account_result.rowcount,
+    }
 
 
 @app.get("/admin/api/users/email-status")

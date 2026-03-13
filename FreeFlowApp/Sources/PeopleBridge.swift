@@ -15,6 +15,7 @@ import WebKit
 ///   - getPeopleState: { action }
 ///   - createInvite: { action, data: { name?, email? } }
 ///   - revokeInvite: { action, data: { id } }
+///   - removePerson: { action, data: { id } }
 ///   - copyText: { action, data: { text } }
 ///   - openBilling: { action }
 ///   - closePeople: { action }
@@ -23,6 +24,7 @@ import WebKit
 ///   - peopleState: { event, hasCreditCard, invites, people }
 ///   - inviteCreated: { event, invite }
 ///   - inviteRevoked: { event, id }
+///   - personRemoved: { event, id }
 ///   - actionError: { event, message }
 ///   - pageError: { event, message }
 ///   - toast: { event, message }
@@ -38,6 +40,7 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
     var onGetPeopleState: (() -> Void)?
     var onCreateInvite: ((_ name: String?, _ email: String?) -> Void)?
     var onRevokeInvite: ((_ id: Int) -> Void)?
+    var onRemovePerson: ((_ id: String) -> Void)?
     var onCopyText: ((_ text: String) -> Void)?
     var onOpenBilling: (() -> Void)?
     var onClosePeople: (() -> Void)?
@@ -79,6 +82,11 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
                 onRevokeInvite?(idNumber.intValue)
             } else if let idInt = data["id"] as? Int {
                 onRevokeInvite?(idInt)
+            }
+
+        case "removePerson":
+            if let id = data["id"] as? String, !id.isEmpty {
+                onRemovePerson?(id)
             }
 
         case "copyText":
@@ -160,6 +168,13 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
     /// - Parameter id: The id of the revoked invite.
     func pushInviteRevoked(id: Int) {
         pushEvent(name: "inviteRevoked", data: ["id": id])
+    }
+
+    /// Push a person removed confirmation event.
+    ///
+    /// - Parameter id: The id of the removed person.
+    func pushPersonRemoved(id: String) {
+        pushEvent(name: "personRemoved", data: ["id": id])
     }
 
     /// Push an action error event to the people page.
