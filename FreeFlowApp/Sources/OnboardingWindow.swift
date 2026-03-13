@@ -220,16 +220,21 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
                 background: var(--color-surface);
                 border: 1px solid var(--color-border);
               }
+              .icon svg {
+                width: 1.25rem;
+                height: 1.25rem;
+              }
               h1 {
-                font-size: 1.75rem;
-                line-height: 1.2;
-                font-weight: 600;
-                margin-bottom: 0.75rem;
+                font-size: 1.625rem;
+                line-height: 1.384615;
+                font-weight: 700;
+                margin-bottom: 0.461538em;
+                letter-spacing: -0.025em;
               }
               p {
                 font-size: 0.9375rem;
                 color: var(--color-muted);
-                line-height: 1.55;
+                line-height: 1.6;
                 margin-bottom: 1.5rem;
               }
               .choice-group {
@@ -294,19 +299,27 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
             <body>
               <div class="shell">
                 <div id="choice-state">
-                  <div class="icon">&#10024;</div>
+                  <div class="icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                      <line x1="4" y1="8" x2="4" y2="16" />
+                      <line x1="8" y1="5" x2="8" y2="19" />
+                      <line x1="12" y1="3" x2="12" y2="21" />
+                      <line x1="16" y1="5" x2="16" y2="19" />
+                      <line x1="20" y1="8" x2="20" y2="16" />
+                    </svg>
+                  </div>
                   <h1>Welcome to FreeFlow</h1>
-                  <p>FreeFlow lets you dictate anywhere on your Mac using a private server. Join a server you were invited to, or create your own.</p>
+                  <p>Dictate naturally on your Mac and get polished text back, using your own private FreeFlow server.</p>
 
                   <div class="choice-group">
                     <button class="choice-card" type="button" id="join-choice">
                       <div class="choice-title">I have an invite link</div>
-                      <div class="choice-copy">Join a FreeFlow server someone shared with you.</div>
+                      <div class="choice-copy">Join an existing FreeFlow server.</div>
                     </button>
 
                     <button class="choice-card" type="button" id="admin-choice">
                       <div class="choice-title">Create my FreeFlow server</div>
-                      <div class="choice-copy">Set up a private FreeFlow server for yourself and your team.</div>
+                      <div class="choice-copy">Sign in to set up your private server and invite your team.</div>
                     </button>
                   </div>
                 </div>
@@ -317,7 +330,6 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
                   <p>Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.</p>
 
                   <div class="waiting-actions">
-                    <button class="waiting-link" type="button" id="back-to-choice">Back</button>
                     <button class="waiting-link" type="button" id="switch-to-admin">Create my own server instead</button>
                   </div>
                 </div>
@@ -328,18 +340,12 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
                   var choiceState = document.getElementById("choice-state");
                   var inviteState = document.getElementById("invite-state");
                   var joinChoice = document.getElementById("join-choice");
-                  var backToChoice = document.getElementById("back-to-choice");
                   var switchToAdmin = document.getElementById("switch-to-admin");
                   var adminChoice = document.getElementById("admin-choice");
 
                   function showInviteState() {
                     if (choiceState) choiceState.classList.add("hidden");
                     if (inviteState) inviteState.classList.remove("hidden");
-                  }
-
-                  function showChoiceState() {
-                    if (inviteState) inviteState.classList.add("hidden");
-                    if (choiceState) choiceState.classList.remove("hidden");
                   }
 
                   function openProvisioning() {
@@ -357,12 +363,6 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
                   if (joinChoice) {
                     joinChoice.addEventListener("click", function () {
                       showInviteState();
-                    });
-                  }
-
-                  if (backToChoice) {
-                    backToChoice.addEventListener("click", function () {
-                      showChoiceState();
                     });
                   }
 

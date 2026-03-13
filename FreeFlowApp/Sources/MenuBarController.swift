@@ -149,12 +149,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
 
         let hint = NSMenuItem(
-            title: "Click your invite link to get started",
+            title: "Finish setting up FreeFlow",
             action: nil,
             keyEquivalent: ""
         )
         hint.isEnabled = false
-        hint.image = NSImage(systemSymbolName: "link", accessibilityDescription: nil)
+        hint.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
         menu.addItem(hint)
 
         menu.addItem(.separator())

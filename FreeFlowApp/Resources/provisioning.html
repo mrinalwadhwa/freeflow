@@ -679,24 +679,8 @@
         </style>
     </head>
     <body>
-        <!-- Screen: Welcome (Create server) -->
-        <div id="screen-welcome" class="screen active">
-            <div class="icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <line x1="4" y1="8" x2="4" y2="16" />
-                    <line x1="8" y1="5" x2="8" y2="19" />
-                    <line x1="12" y1="3" x2="12" y2="21" />
-                    <line x1="16" y1="5" x2="16" y2="19" />
-                    <line x1="20" y1="8" x2="20" y2="16" />
-                </svg>
-            </div>
-            <h1>Create your FreeFlow server</h1>
-            <p>Sign in to continue. We’ll create your private FreeFlow server and then finish setup on this Mac.</p>
-            <button class="btn" onclick="handleGetStarted()">Continue</button>
-        </div>
-
         <!-- Screen: Signing in -->
-        <div id="screen-signing-in" class="screen">
+        <div id="screen-signing-in" class="screen active">
             <div class="spinner-container">
                 <div class="spinner"></div>
             </div>
@@ -866,7 +850,7 @@
 
             // --- Screen management ---
 
-            var allScreens = ["welcome", "signing-in", "provisioning", "ready", "error", "account", "credit-card"];
+            var allScreens = ["signing-in", "provisioning", "ready", "error", "account", "credit-card"];
 
             function showScreen(name) {
                 var showBar = name === "account" || name === "credit-card";

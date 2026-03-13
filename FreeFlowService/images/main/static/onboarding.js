@@ -271,12 +271,12 @@
     setText("connect-choice-title", "Welcome to FreeFlow");
     setText(
       "connect-choice-copy",
-      "FreeFlow lets you dictate anywhere on your Mac using a private server. Join a server you were invited to, or create your own.",
+      "Dictate naturally on your Mac and get polished text back, using your own private FreeFlow server.",
     );
     setText("entry-join-invite-title", "I have an invite link");
-    setText("entry-join-invite-copy", "Join a FreeFlow server someone shared with you.");
+    setText("entry-join-invite-copy", "Join an existing FreeFlow server.");
     setText("entry-setup-admin-title", "Create my FreeFlow server");
-    setText("entry-setup-admin-copy", "Set up a private FreeFlow server for yourself and your team.");
+    setText("entry-setup-admin-copy", "Sign in to set up your private server and invite your team.");
 
     if (flow.mode === "invite") {
       setText("connect-waiting-title", "Open your invite link");
