@@ -130,7 +130,9 @@ async def _validate_token(token: str) -> Invite:
 
     async with pool.connection() as conn:
         row = await conn.execute(
-            "SELECT * FROM invite_tokens WHERE token_hash = %s",
+            """SELECT id, token_hash, token, label, email, created_by,
+                      created_at, expires_at, max_uses, use_count, revoked
+               FROM invite_tokens WHERE token_hash = %s""",
             (token_hash,),
         )
         result = await row.fetchone()
@@ -366,7 +368,9 @@ async def list_invites() -> list[Invite]:
     pool = db.get_pool()
     async with pool.connection() as conn:
         result = await conn.execute(
-            "SELECT * FROM invite_tokens ORDER BY created_at DESC"
+            """SELECT id, token_hash, token, label, email, created_by,
+                      created_at, expires_at, max_uses, use_count, revoked
+               FROM invite_tokens ORDER BY created_at DESC"""
         )
         rows = await result.fetchall()
 
