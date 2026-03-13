@@ -1,18 +1,17 @@
 /**
  * Onboarding step manager.
  *
- * Manage the 6-screen onboarding flow displayed in the macOS app's
- * WKWebView. Each screen is a <section> element with a data-step
- * attribute. This module handles step navigation, CSS transitions,
- * bridge event routing, and error/retry display.
+ * Manage the split-path onboarding flow displayed in the macOS app's
+ * WKWebView. Manual launch and deep-link launch have different intents:
  *
- * Screens:
- *   1. connect       — Redeem invite token, show spinner then result.
- *   2. accessibility  — Request accessibility permission.
- *   3. microphone     — Request microphone permission.
- *   4. how-it-works   — Hotkey education (informational, no bridge).
- *   5. try-it         — Live dictation test area.
- *   6. done           — Setup complete, share link.
+ *   - manual launch: user must choose between joining with an invite
+ *     or setting up their own FreeFlow
+ *   - invite deep link: skip the chooser and go straight into connect
+ *
+ * After the entry choice, all users continue through the same device
+ * setup flow (permissions, microphone selection, try-it, done), but
+ * copy and transitions are tailored to whether the user is joining or
+ * setting up their own FreeFlow.
  *
  * Depends on bridge.js (window.freeflowbridge).
  */
@@ -25,6 +24,12 @@
   var sections = {};
   var indicators = [];
   var transitioning = false;
+
+  var flow = {
+    mode: "chooser", // chooser | invite | admin
+    hasToken: false,
+    skipConnect: false,
+  };
 
   // Permission state tracked across events.
   var permissions = {
@@ -64,20 +69,29 @@
     // Wire up button click handlers.
     bindButtons();
 
-    // Determine starting step.
-    var skip = getQueryParam("skip");
-    if (skip === "connect" && steps[0] === "connect") {
-      // Provisioning already authenticated — skip the connect step.
-      goTo(1);
-    } else {
-      goTo(0);
+    // Determine entry path.
+    flow.hasToken = !!getQueryParam("token");
+    flow.skipConnect = getQueryParam("skip") === "connect";
 
-      // If we have a token, start the connect flow immediately.
-      var token = getQueryParam("token");
-      if (token && steps[0] === "connect") {
-        startConnect(token);
-      }
+    if (flow.hasToken) {
+      flow.mode = "invite";
+      configureFlowUI();
+      goTo(0);
+      startConnect(getQueryParam("token"));
+      return;
     }
+
+    if (flow.skipConnect) {
+      flow.mode = "admin";
+      configureFlowUI();
+      goTo(1);
+      return;
+    }
+
+    flow.mode = "chooser";
+    configureFlowUI();
+    goTo(0);
+    showConnectState("choice");
   }
 
   // ----------------------------------------------------------------
@@ -142,8 +156,14 @@
   }
 
   function updateIndicators() {
+    var hiddenIndicator = flow.mode === "chooser" && currentIndex === 0;
+
     for (var i = 0; i < indicators.length; i++) {
       indicators[i].classList.remove("active", "completed");
+      indicators[i].style.visibility = hiddenIndicator ? "hidden" : "visible";
+
+      if (hiddenIndicator) continue;
+
       if (i < currentIndex) {
         indicators[i].classList.add("completed");
       } else if (i === currentIndex) {
@@ -159,7 +179,11 @@
   function onStepEnter(step) {
     switch (step) {
       case "connect":
-        // Connect is started by init() if a token is present.
+        if (flow.mode === "chooser") {
+          showConnectState("choice");
+        } else if (flow.mode === "invite" && !flow.hasToken) {
+          showConnectState("waiting");
+        }
         break;
 
       case "accessibility":
@@ -193,15 +217,23 @@
   // ----------------------------------------------------------------
 
   function startConnect(token) {
+    flow.mode = "invite";
+    configureFlowUI();
     showConnectState("loading");
     bridge.send("redeemInvite", { token: token });
   }
 
   function handleInviteRedeemed(data) {
+    flow.mode = "invite";
+    configureFlowUI();
     showConnectState("success");
     var nameEl = document.getElementById("connect-user-name");
-    if (nameEl && data.user && data.user.name) {
-      nameEl.textContent = data.user.name;
+    if (nameEl) {
+      if (data && data.user && data.user.name) {
+        nameEl.textContent = " " + data.user.name;
+      } else {
+        nameEl.textContent = "";
+      }
     }
     // Auto-advance after a short pause.
     setTimeout(function () {
@@ -210,6 +242,8 @@
   }
 
   function handleInviteRedeemFailed(data) {
+    flow.mode = "invite";
+    configureFlowUI();
     showConnectState("error");
     var msgEl = document.getElementById("connect-error-message");
     if (msgEl) {
@@ -218,7 +252,7 @@
   }
 
   function showConnectState(state) {
-    var states = ["loading", "success", "error"];
+    var states = ["choice", "waiting", "admin", "loading", "success", "error"];
     for (var i = 0; i < states.length; i++) {
       var el = document.getElementById("connect-" + states[i]);
       if (el) {
@@ -229,6 +263,71 @@
         }
       }
     }
+  }
+
+  function configureFlowUI() {
+    updateStepLabels();
+
+    if (flow.mode === "invite") {
+      setText("connect-loading-title", "Connecting you to FreeFlow");
+      setText("connect-loading-copy", "Setting up FreeFlow on this Mac…");
+      setText("connect-success-title", "You're connected");
+      setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! FreeFlow is ready on this Mac.');
+      setText("connect-error-title", "Couldn't connect");
+      setText("done-title", "You're all set");
+      setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
+    } else if (flow.mode === "admin") {
+      setText("connect-loading-title", "Create your private FreeFlow server");
+      setText("connect-loading-copy", "Set up a private FreeFlow server for yourself and your team.");
+      setText("connect-success-title", "Your FreeFlow server is ready");
+      setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! Your FreeFlow server is ready.');
+      setText("connect-error-title", "Setup couldn't continue");
+      setText("done-title", "Your FreeFlow server is ready");
+      setText("done-copy", "FreeFlow lives in your menu bar. You can invite others anytime from People.");
+    } else {
+      setText("connect-loading-title", "How do you want to get started?");
+      setText("connect-loading-copy", "Choose whether you are joining with an invite or setting up your own FreeFlow.");
+      setText("connect-success-title", "Connected");
+      setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! Your FreeFlow service is ready.');
+      setText("connect-error-title", "Connection failed");
+      setText("done-title", "You're all set");
+      setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
+    }
+  }
+
+  function updateStepLabels() {
+    var tryItSkip = document.getElementById("try-it-skip");
+    var doneFinish = document.getElementById("done-finish");
+
+    if (flow.mode === "invite") {
+      if (tryItSkip) tryItSkip.textContent = "Skip for now";
+      if (doneFinish) doneFinish.textContent = "Finish";
+    } else if (flow.mode === "admin") {
+      if (tryItSkip) tryItSkip.textContent = "Skip for now";
+      if (doneFinish) doneFinish.textContent = "Open FreeFlow";
+    } else {
+      if (tryItSkip) tryItSkip.textContent = "Skip for now";
+      if (doneFinish) doneFinish.textContent = "Finish";
+    }
+  }
+
+  function chooseInvitePath() {
+    flow.mode = "invite";
+    configureFlowUI();
+
+    var token = getQueryParam("token");
+    if (token) {
+      startConnect(token);
+      return;
+    }
+
+    showConnectState("waiting");
+  }
+
+  function chooseAdminPath() {
+    flow.mode = "admin";
+    configureFlowUI();
+    bridge.send("openProvisioning");
   }
 
   // ----------------------------------------------------------------
@@ -464,12 +563,51 @@
   // ----------------------------------------------------------------
 
   function bindButtons() {
+    // Connect: chooser actions.
+    bindClick("entry-join-invite", function () {
+      chooseInvitePath();
+    });
+
+    bindClick("entry-setup-admin", function () {
+      showConnectState("admin");
+    });
+
+    // Waiting state: switch to admin path.
+    bindClick("waiting-setup-admin", function () {
+      showConnectState("admin");
+    });
+
+    // Admin handoff state.
+    bindClick("admin-start", function () {
+      chooseAdminPath();
+    });
+
+    bindClick("admin-back", function () {
+      flow.mode = "chooser";
+      configureFlowUI();
+      showConnectState("choice");
+      updateIndicators();
+    });
+
     // Connect: retry button.
     bindClick("connect-retry", function () {
       var token = getQueryParam("token");
       if (token) {
         startConnect(token);
+      } else if (flow.mode === "invite") {
+        showConnectState("waiting");
+        var msgEl = document.getElementById("connect-error-message");
+        if (msgEl) {
+          msgEl.textContent = "Click your invite link in your browser to connect this Mac to a FreeFlow server.";
+        }
       }
+    });
+
+    bindClick("connect-back-to-choice", function () {
+      flow.mode = "chooser";
+      configureFlowUI();
+      showConnectState("choice");
+      updateIndicators();
     });
 
     // Accessibility: open settings.
@@ -536,6 +674,12 @@
   function getQueryParam(name) {
     var params = new URLSearchParams(window.location.search);
     return params.get(name);
+  }
+
+  function setText(id, text) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = text;
   }
 
   // ----------------------------------------------------------------

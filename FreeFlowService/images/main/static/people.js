@@ -12,10 +12,11 @@
  *   - copyText       — { text: string }
  *   - removePerson   — { id: string }
  *   - openBilling    — open billing flow
+ *   - disconnectFromServer — disconnect this device from the current FreeFlow server
  *   - closePeople    — close the window
  *
  * Bridge events (native -> people):
- *   - peopleState    — { hasCreditCard, invites, people }
+ *   - peopleState    — { hasCreditCard, invites, people, isAdmin, connectedServer, canDisconnect }
  *   - inviteCreated  — { invite: { id, name, email, inviteUrl, createdAt } }
  *   - inviteRevoked  — { id }
  *   - personRemoved  — { id }
@@ -38,6 +39,9 @@
     creatingInvite: false,
     removingPersonId: null,
     lastCreatedInvite: null,
+    isAdmin: false,
+    connectedServer: "",
+    canDisconnect: false,
   };
 
   // ----------------------------------------------------------------
@@ -69,6 +73,9 @@
     state.hasCreditCard = !!(data && data.hasCreditCard);
     state.invites = (data && data.invites) || [];
     state.people = (data && data.people) || [];
+    state.isAdmin = !!(data && data.isAdmin);
+    state.connectedServer = (data && data.connectedServer) || "";
+    state.canDisconnect = !!(data && data.canDisconnect);
     state.loading = false;
     render();
   }
@@ -84,6 +91,7 @@
     var inviteSection = document.getElementById("invite-section");
     var invitesSection = document.getElementById("invites-section");
     var peopleSection = document.getElementById("people-section");
+    var connectionSection = document.getElementById("connection-section");
 
     // Hide loading
     if (loadingState) {
@@ -120,9 +128,13 @@
     if (peopleSection) {
       peopleSection.classList.remove("hidden");
     }
+    if (connectionSection) {
+      connectionSection.classList.remove("hidden");
+    }
 
     renderInvites();
     renderPeople();
+    renderConnection();
   }
 
   // ----------------------------------------------------------------
@@ -151,7 +163,7 @@
     if (pending.length === 0) {
       // Show empty state
       if (invitesEmpty) {
-        invitesEmpty.style.display = "";
+        invitesEmpty.classList.remove("hidden");
       }
       if (invitesList) {
         invitesList.innerHTML = "";
@@ -161,7 +173,7 @@
 
     // Hide empty state
     if (invitesEmpty) {
-      invitesEmpty.style.display = "none";
+      invitesEmpty.classList.add("hidden");
     }
 
     // Build invite rows
@@ -261,7 +273,7 @@
     if (count <= 1) {
       // Only admin (or nobody), show empty state
       if (peopleEmpty) {
-        peopleEmpty.style.display = "";
+        peopleEmpty.classList.remove("hidden");
         peopleEmpty.textContent = "You're the only person here.";
       }
       if (peopleList) {
@@ -278,7 +290,7 @@
 
     // Hide empty state
     if (peopleEmpty) {
-      peopleEmpty.style.display = "none";
+      peopleEmpty.classList.add("hidden");
     }
 
     // Build person rows
@@ -322,6 +334,44 @@
   }
 
   // ----------------------------------------------------------------
+  // Connection
+  // ----------------------------------------------------------------
+
+  function renderConnection() {
+    var connectionSection = document.getElementById("connection-section");
+    var connectedServer = document.getElementById("connected-server");
+    var disconnectHelp = document.getElementById("disconnect-help");
+    var disconnectBtn = document.getElementById("disconnect-btn");
+
+    if (!connectionSection) return;
+
+    if (connectedServer) {
+      connectedServer.textContent = state.connectedServer || "Unknown server";
+    }
+
+    if (disconnectHelp) {
+      if (state.canDisconnect) {
+        disconnectHelp.textContent =
+          "Disconnecting removes this server from this Mac only. Your server-side account stays intact.";
+      } else if (state.isAdmin) {
+        disconnectHelp.textContent =
+          "As the admin, use Sign Out from the menu bar if you want to switch accounts or reprovision this Mac.";
+      } else {
+        disconnectHelp.textContent = "";
+      }
+    }
+
+    if (disconnectBtn) {
+      if (state.canDisconnect) {
+        disconnectBtn.classList.remove("hidden");
+        disconnectBtn.disabled = false;
+      } else {
+        disconnectBtn.classList.add("hidden");
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------
   // Invite created
   // ----------------------------------------------------------------
 
@@ -339,7 +389,7 @@
     var copyInviteBtn = document.getElementById("copy-invite-btn");
 
     if (inviteSuccess) {
-      inviteSuccess.style.display = "";
+      inviteSuccess.classList.remove("hidden");
     }
     if (inviteUrlDisplay) {
       inviteUrlDisplay.textContent = invite.inviteUrl || "";
@@ -554,7 +604,7 @@
         // Hide previous success message
         var inviteSuccess = document.getElementById("invite-success");
         if (inviteSuccess) {
-          inviteSuccess.style.display = "none";
+          inviteSuccess.classList.add("hidden");
         }
 
         state.creatingInvite = true;
@@ -586,6 +636,16 @@
       });
     }
 
+    // Disconnect button
+    var disconnectBtn = document.getElementById("disconnect-btn");
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (disconnectBtn.disabled) return;
+        bridge.send("disconnectFromServer");
+      });
+    }
+
     // Retry button
     var retryBtn = document.getElementById("retry-btn");
     if (retryBtn) {
@@ -595,10 +655,10 @@
         var loadingState = document.getElementById("loading-state");
 
         if (errorState) {
-          errorState.style.display = "none";
+          errorState.classList.add("hidden");
         }
         if (loadingState) {
-          loadingState.style.display = "";
+          loadingState.classList.remove("hidden");
         }
 
         state.loading = true;

@@ -18,12 +18,18 @@ final class PeopleController {
     private let bridge: PeopleBridge
     private let config: ServiceConfig
     private let keychain: KeychainService
+    private let authClient: AuthClient
     private var window: PeopleWindow?
 
     /// Callback invoked when the user taps "Add credit card" in the
     /// locked state. The AppDelegate should wire this to open the
     /// provisioning billing flow.
     var onOpenBilling: (() -> Void)?
+
+    /// Callback invoked when the current user chooses to disconnect
+    /// from the currently connected FreeFlow server. The AppDelegate
+    /// should wire this to clear only local zone state for invitees.
+    var onDisconnectFromServer: (() -> Void)?
 
     /// Optional fallback email for the signed-in admin from the
     /// Autonomy account. Used when the zone admin record still has
@@ -36,10 +42,12 @@ final class PeopleController {
 
     init(
         config: ServiceConfig = .shared,
-        keychain: KeychainService = KeychainService()
+        keychain: KeychainService = KeychainService(),
+        authClient: AuthClient = AuthClient()
     ) {
         self.config = config
         self.keychain = keychain
+        self.authClient = authClient
         self.bridge = PeopleBridge()
 
         setupBridgeHandlers()
@@ -103,6 +111,10 @@ final class PeopleController {
             self?.onOpenBilling?()
         }
 
+        bridge.onDisconnectFromServer = { [weak self] in
+            self?.onDisconnectFromServer?()
+        }
+
         bridge.onClosePeople = { [weak self] in
             self?.closeWindow()
         }
@@ -120,10 +132,14 @@ final class PeopleController {
                 let invites = try await fetchInvites()
                 let people = try await fetchPeople()
 
+                let connection = currentConnectionState(people: people)
                 bridge.pushPeopleState(
                     hasCreditCard: hasCreditCard,
                     invites: invites,
-                    people: people
+                    people: people,
+                    connectedServer: connection["serverHost"] as? String,
+                    isAdmin: connection["isAdmin"] as? Bool ?? false,
+                    canDisconnect: connection["canDisconnect"] as? Bool ?? false
                 )
             } catch {
                 Log.debug("[PeopleController] getPeopleState failed: \(error)")
@@ -183,10 +199,16 @@ final class PeopleController {
             do {
                 try await removePerson(id: id)
                 let people = try await fetchPeople()
+                let invites = try await fetchInvites()
+                let hasCreditCard = await fetchHasCreditCard()
+                let connection = currentConnectionState(people: people)
                 bridge.pushPeopleState(
-                    hasCreditCard: await fetchHasCreditCard(),
-                    invites: try await fetchInvites(),
-                    people: people
+                    hasCreditCard: hasCreditCard,
+                    invites: invites,
+                    people: people,
+                    connectedServer: connection["serverHost"] as? String,
+                    isAdmin: connection["isAdmin"] as? Bool ?? false,
+                    canDisconnect: connection["canDisconnect"] as? Bool ?? false
                 )
                 bridge.pushToast(message: "Person removed")
             } catch {
@@ -216,6 +238,49 @@ final class PeopleController {
             Log.debug("[PeopleController] Failed to fetch Autonomy status: \(error)")
             return false
         }
+    }
+
+    // MARK: - Connection state
+
+    /// Build connection metadata for the People page so it can show
+    /// which FreeFlow server the app is currently connected to and
+    /// whether a local disconnect action should be available.
+    private func currentConnectionState(people: [[String: Any]]) -> [String: Any] {
+        let serviceURL = keychain.serviceURL() ?? config.baseURL
+        let host = URL(string: serviceURL)?.host ?? serviceURL
+        let sessionToken = keychain.sessionToken() ?? config.sessionToken
+
+        return [
+            "serverURL": serviceURL,
+            "serverHost": host,
+            "isAdmin": isCurrentUserAdmin(people: people),
+            "canDisconnect": sessionToken != nil,
+        ]
+    }
+
+    /// Best-effort admin detection for the currently signed-in user.
+    ///
+    /// Prefer matching by real email when available. Fall back to
+    /// treating the single-admin list entry as the current admin.
+    private func isCurrentUserAdmin(people: [[String: Any]]) -> Bool {
+        let knownEmails = [keychain.userEmail(), adminFallbackEmail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+
+        if !knownEmails.isEmpty {
+            for person in people {
+                let isAdmin = person["isAdmin"] as? Bool ?? false
+                let email = (person["email"] as? String ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                if isAdmin, knownEmails.contains(email) {
+                    return true
+                }
+            }
+        }
+
+        let adminCount = people.filter { ($0["isAdmin"] as? Bool) ?? false }.count
+        return adminCount == 1
     }
 
     // MARK: - Zone Admin API

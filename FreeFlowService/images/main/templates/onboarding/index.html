@@ -4,7 +4,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Set up {{ app_name }}</title>
+        <title>Get Started with {{ app_name }}</title>
         <link rel="stylesheet" href="/static/styles.css" />
         <style>
             /* ---------------------------------------------------------- */
@@ -107,6 +107,61 @@
 
             .step-section .btn {
                 min-width: 200px;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Entry screens                                               */
+            /* ---------------------------------------------------------- */
+
+            .entry-choice-group {
+                width: 100%;
+                max-width: 360px;
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                margin: 0 auto 1.5rem;
+            }
+
+            .entry-choice-card {
+                width: 100%;
+                text-align: left;
+                padding: 1rem 1rem 1.125rem;
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 14px;
+                cursor: pointer;
+                transition:
+                    border-color 0.15s ease,
+                    transform 0.15s ease,
+                    background 0.15s ease;
+            }
+
+            .entry-choice-card:hover {
+                border-color: var(--color-text);
+                transform: translateY(-1px);
+                background: var(--color-white);
+            }
+
+            .entry-choice-title {
+                font-size: 0.9375rem;
+                font-weight: 600;
+                color: var(--color-text);
+                line-height: 1.6;
+                margin-bottom: 0.125rem;
+            }
+
+            .entry-choice-copy {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                line-height: 1.538462;
+            }
+
+            .entry-footnote {
+                font-size: 0.8125rem;
+                color: var(--color-light);
+                line-height: 1.538462;
+                max-width: 340px;
+                margin: 0 auto;
             }
 
             /* ---------------------------------------------------------- */
@@ -497,16 +552,70 @@
             </div>
 
             <!-- ====================================================== -->
-            <!-- Screen 1: Connect                                       -->
+            <!-- Screen 1: Entry                                         -->
             <!-- ====================================================== -->
             <section class="step-section step-hidden" data-step="connect">
+                <!-- Entry chooser -->
+                <div id="connect-choice" class="connect-state">
+                    <div class="step-icon step-icon-warm">&#10024;</div>
+                    <h1>How do you want to get started?</h1>
+                    <p>Join an existing FreeFlow server, or create your own private FreeFlow server.</p>
+
+                    <div class="entry-choice-group">
+                        <button id="entry-join-invite" class="entry-choice-card" type="button">
+                            <div class="entry-choice-title">Join with an invite</div>
+                            <div class="entry-choice-copy">
+                                Use an invite link from someone who already has FreeFlow.
+                            </div>
+                        </button>
+
+                        <button id="entry-setup-admin" class="entry-choice-card" type="button">
+                            <div class="entry-choice-title">Create your private FreeFlow server</div>
+                            <div class="entry-choice-copy">
+                                Set up a private FreeFlow server for yourself and your team.
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="entry-footnote">
+                        If someone invited you, install FreeFlow and then click the invite link you received.
+                    </div>
+                </div>
+
+                <!-- Invite waiting state -->
+                <div id="connect-waiting" class="connect-state hidden">
+                    <div class="step-icon step-icon-warm">&#128279;</div>
+                    <h1>Ready to join</h1>
+                    <p>Click your invite link in your browser to connect this Mac to a FreeFlow server.</p>
+
+                    <div class="btn-row">
+                        <button id="waiting-setup-admin" class="btn btn-secondary">
+                            Create your private FreeFlow server
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Admin handoff state -->
+                <div id="connect-admin" class="connect-state hidden">
+                    <div class="step-icon step-icon-warm">&#9881;</div>
+                    <h1>Create your private FreeFlow server</h1>
+                    <p>Set up a private FreeFlow server for yourself and your team.</p>
+
+                    <div class="btn-row">
+                        <button id="admin-start" class="btn btn-primary">Continue</button>
+                    </div>
+                    <div class="btn-row" style="margin-top: 0.5rem">
+                        <button id="admin-back" class="btn-link">Back</button>
+                    </div>
+                </div>
+
                 <!-- Loading state -->
-                <div id="connect-loading" class="connect-state">
+                <div id="connect-loading" class="connect-state hidden">
                     <div class="connect-spinner">
                         <div class="spinner"></div>
                     </div>
-                    <h1>Connecting</h1>
-                    <p>Setting up your account&#8230;</p>
+                    <h1 id="connect-loading-title">Connecting to FreeFlow</h1>
+                    <p id="connect-loading-copy">Setting things up on this Mac&#8230;</p>
                 </div>
 
                 <!-- Success state -->
@@ -514,16 +623,23 @@
                     <div class="connect-checkmark">
                         <svg viewBox="0 0 24 24"><polyline points="5 13 10 18 19 6"></polyline></svg>
                     </div>
-                    <h1>Connected</h1>
-                    <p>Welcome<span id="connect-user-name"></span>! Your {{ app_name }} service is ready.</p>
+                    <h1 id="connect-success-title">You&#8217;re connected</h1>
+                    <p id="connect-success-copy">
+                        Welcome<span id="connect-user-name"></span>! {{ app_name }} is ready on this Mac.
+                    </p>
                 </div>
 
                 <!-- Error state -->
                 <div id="connect-error" class="connect-state hidden">
                     <div class="step-icon step-icon-warm">&#9888;</div>
-                    <h1>Connection failed</h1>
-                    <p id="connect-error-message">Could not connect. Please try again.</p>
+                    <h1 id="connect-error-title">Couldn&#8217;t connect</h1>
+                    <p id="connect-error-message">
+                        Your invite link may have expired, or this connection could not be completed.
+                    </p>
                     <button id="connect-retry" class="btn btn-primary">Try again</button>
+                    <div class="btn-row" style="margin-top: 0.5rem">
+                        <button id="connect-back-to-choice" class="btn-link">Choose another way to get started</button>
+                    </div>
                 </div>
             </section>
 
@@ -639,8 +755,8 @@
                 <div class="connect-checkmark">
                     <svg viewBox="0 0 24 24"><polyline points="5 13 10 18 19 6"></polyline></svg>
                 </div>
-                <h1>You're all set</h1>
-                <p>{{ app_name }} lives in your menu bar. Hold Right Option any time to dictate.</p>
+                <h1 id="done-title">You&#8217;re all set</h1>
+                <p id="done-copy">{{ app_name }} lives in your menu bar. Hold Right Option any time to dictate.</p>
 
                 <div class="done-menu-bar">
                     <span class="done-menu-bar-icon">&#9776;</span>
@@ -649,11 +765,8 @@
 
                 {% if is_admin %}
                 <div class="share-section">
-                    <h3>Share with your team</h3>
-                    <p>
-                        Create invite links from your
-                        <a href="{{ base_url }}/admin/invites" target="_blank">admin dashboard</a> to invite others.
-                    </p>
+                    <h3>Invite people when you&#8217;re ready</h3>
+                    <p>Open People from the menu bar to create invite links and add others to your FreeFlow.</p>
                 </div>
                 {% endif %}
 

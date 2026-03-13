@@ -18,13 +18,15 @@ import WebKit
 ///   - removePerson: { action, data: { id } }
 ///   - copyText: { action, data: { text } }
 ///   - openBilling: { action }
+///   - disconnectFromServer: { action }
 ///   - closePeople: { action }
 ///
 /// Events pushed to people page:
-///   - peopleState: { event, hasCreditCard, invites, people }
+///   - peopleState: { event, hasCreditCard, invites, people, connectedServer, isAdmin, canDisconnect }
 ///   - inviteCreated: { event, invite }
 ///   - inviteRevoked: { event, id }
 ///   - personRemoved: { event, id }
+///   - disconnectedFromServer: { event }
 ///   - actionError: { event, message }
 ///   - pageError: { event, message }
 ///   - toast: { event, message }
@@ -43,6 +45,7 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
     var onRemovePerson: ((_ id: String) -> Void)?
     var onCopyText: ((_ text: String) -> Void)?
     var onOpenBilling: (() -> Void)?
+    var onDisconnectFromServer: (() -> Void)?
     var onClosePeople: (() -> Void)?
 
     // MARK: - WKScriptMessageHandler
@@ -97,6 +100,9 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
         case "openBilling":
             onOpenBilling?()
 
+        case "disconnectFromServer":
+            onDisconnectFromServer?()
+
         case "closePeople":
             onClosePeople?()
 
@@ -144,7 +150,10 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
     func pushPeopleState(
         hasCreditCard: Bool,
         invites: [[String: Any]],
-        people: [[String: Any]]
+        people: [[String: Any]],
+        connectedServer: String? = nil,
+        isAdmin: Bool = false,
+        canDisconnect: Bool = false
     ) {
         pushEvent(
             name: "peopleState",
@@ -152,6 +161,9 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
                 "hasCreditCard": hasCreditCard,
                 "invites": invites,
                 "people": people,
+                "connectedServer": connectedServer ?? "",
+                "isAdmin": isAdmin,
+                "canDisconnect": canDisconnect,
             ]
         )
     }
@@ -175,6 +187,11 @@ final class PeopleBridge: NSObject, WKScriptMessageHandler {
     /// - Parameter id: The id of the removed person.
     func pushPersonRemoved(id: String) {
         pushEvent(name: "personRemoved", data: ["id": id])
+    }
+
+    /// Push a disconnected-from-server confirmation event.
+    func pushDisconnectedFromServer() {
+        pushEvent(name: "disconnectedFromServer")
     }
 
     /// Push an action error event to the people page.

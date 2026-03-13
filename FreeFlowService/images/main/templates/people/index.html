@@ -398,6 +398,42 @@
             /* Footer                                                      */
             /* ---------------------------------------------------------- */
 
+            .connection-section {
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 0.75rem 1.25rem;
+                margin-bottom: 0.375rem;
+            }
+
+            .connection-status {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 0.75rem;
+            }
+
+            .connection-info {
+                min-width: 0;
+                flex: 1;
+                text-align: left;
+            }
+
+            .connection-title {
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: var(--color-text);
+                line-height: 1.5;
+            }
+
+            .connection-meta {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                line-height: 1.5;
+                margin-top: 0.125rem;
+                word-break: break-word;
+            }
+
             .people-footer {
                 flex-shrink: 0;
                 text-align: center;
@@ -514,6 +550,23 @@
                         </div>
                         <div id="people-empty" class="empty-text hidden">No people yet.</div>
                         <div id="people-list"></div>
+                    </div>
+                </div>
+
+                <!-- Connection section -->
+                <div id="connection-section" class="hidden">
+                    <div class="connection-section">
+                        <div class="people-section-label">Connection</div>
+                        <div class="connection-status">
+                            <div class="connection-info">
+                                <div class="connection-title">Connected to this FreeFlow server</div>
+                                <div id="connected-server" class="connection-meta">freeflow.example.com</div>
+                                <div id="disconnect-help" class="connection-meta"></div>
+                            </div>
+                            <button id="disconnect-btn" class="btn btn-small btn-danger" type="button">
+                                Disconnect
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

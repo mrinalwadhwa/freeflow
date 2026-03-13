@@ -24,6 +24,7 @@ import WebKit
 ///   - stopMicPreview: { action }
 ///   - registerHotkey: { action }
 ///   - completeOnboarding: { action }
+///   - openProvisioning: { action }
 ///
 /// Events pushed to web pages:
 ///   - inviteRedeemed: { event, userId, hasEmail }
@@ -55,6 +56,7 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
     var onStopMicPreview: (() -> Void)?
     var onRegisterHotkey: (() -> Void)?
     var onCompleteOnboarding: (() -> Void)?
+    var onOpenProvisioning: (() -> Void)?
 
     // MARK: - WKScriptMessageHandler
 
@@ -125,6 +127,9 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
         case "completeOnboarding":
             onCompleteOnboarding?()
+
+        case "openProvisioning":
+            onOpenProvisioning?()
 
         default:
             break

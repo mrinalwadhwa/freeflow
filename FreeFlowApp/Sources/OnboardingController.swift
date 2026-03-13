@@ -60,6 +60,11 @@ final class OnboardingController {
     /// Polling timer for accessibility permission checks.
     private var accessibilityPollTimer: Timer?
 
+    /// Called when the user chooses the admin setup path from the
+    /// onboarding entry chooser. AppDelegate wires this to open the
+    /// native provisioning flow.
+    var onStartAdminSetup: (() -> Void)?
+
     /// Task for streaming audio levels during mic preview.
     private var audioLevelTask: Task<Void, Never>?
 
@@ -210,6 +215,10 @@ final class OnboardingController {
             self?.handleRegisterHotkey()
         }
 
+        bridge.onOpenProvisioning = { [weak self] in
+            self?.handleStartAdminSetup()
+        }
+
         bridge.onCompleteOnboarding = { [weak self] in
             self?.handleCompleteOnboarding()
         }
@@ -284,6 +293,12 @@ final class OnboardingController {
     private func handleEmailAdded(email: String) {
         UserDefaults.standard.set(true, forKey: "hasEmailOnFile")
         keychain.saveUserEmail(email)
+    }
+
+    // MARK: - Action: startAdminSetup
+
+    private func handleStartAdminSetup() {
+        onStartAdminSetup?()
     }
 
     // MARK: - Action: listMicrophones

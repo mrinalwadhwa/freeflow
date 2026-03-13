@@ -112,8 +112,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Decision tree:
     /// 1. If onboarding completed and Keychain has a session token: validate
     ///    session, then check permissions and register hotkey.
-    /// 2. If an Autonomy token exists but no zone URL: resume provisioning.
-    /// 3. Otherwise: show provisioning flow for fresh install.
+    /// 2. If a zone URL exists but onboarding is incomplete: resume onboarding.
+    /// 3. If an Autonomy token exists but no zone URL: resume provisioning.
+    /// 4. Otherwise: show onboarding and wait for an invite link.
     private func determineLaunchFlow() {
         let config = ServiceConfig.shared
 
@@ -140,9 +141,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Fresh install: show the provisioning flow.
-        Log.debug("[AppDelegate] Fresh install, showing provisioning flow")
-        showProvisioningFlow()
+        // No stored zone URL and no provisioning state: wait for an invite
+        // link instead of forcing provisioning. This supports invited users
+        // and local disconnect/reset without deleting server-side identity.
+        Log.debug("[AppDelegate] No zone URL, showing onboarding waiting state")
+        showOnboarding()
     }
 
     // MARK: - Session Validation
@@ -282,6 +285,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func startProvisioningFromOnboarding() {
+        let windowFrame = onboardingController?.window?.frame
+        onboardingController?.dismissWindow()
+        onboardingController = nil
+        showProvisioningFlow(windowFrame: windowFrame)
+    }
+
     // MARK: - Provisioning Flow
 
     /// Show the provisioning flow for fresh installs.
@@ -292,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// - Parameter resume: If true, attempt to resume an interrupted
     ///   provisioning session using a stored Autonomy token.
-    private func showProvisioningFlow(resume: Bool = false) {
+    private func showProvisioningFlow(resume: Bool = false, windowFrame: NSRect? = nil) {
         let controller = ProvisioningController(
             keychain: keychain,
             authClient: authClient
@@ -317,6 +327,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         provisioningController = controller
         controller.showWindow()
+
+        if let frame = windowFrame {
+            controller.window?.setFrameOrigin(frame.origin)
+        }
 
         if resume {
             controller.resumeIfNeeded()
@@ -343,6 +357,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onRegisterHotkey = { [weak self] in
             self?.registerHotkey()
             self?.startOnboardingDictationObserver()
+        }
+
+        controller.onStartAdminSetup = { [weak self] in
+            self?.startProvisioningFromOnboarding()
         }
 
         controller.onComplete = { [weak self] in
@@ -606,12 +624,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showProvisioningFlow()
     }
 
+    /// Disconnect from the currently connected FreeFlow server without
+    /// deleting any server-side identity. This is intended for invited
+    /// users who want to reset their local app connection and later
+    /// reconnect with a fresh invite or recovery flow.
+    private func disconnectFromCurrentServer() {
+        Log.debug("[AppDelegate] Disconnect from current server requested")
+
+        // Stop the hotkey and HUD.
+        hotkeyProvider.unregister()
+        menuBarController?.setHotkeyRegistered(false)
+        hudController?.stop()
+        hudController = nil
+
+        // Dismiss any open windows tied to the current session.
+        onboardingController?.dismissWindow()
+        onboardingController = nil
+        settingsController?.closeWindow()
+        peopleController?.closeWindow()
+        billingController?.dismissWindow()
+        billingController = nil
+
+        // Clear only local zone/session state. Keep Autonomy credentials
+        // intact so admin sign-in remains distinct from invitee disconnect.
+        keychain.deleteSessionToken()
+        keychain.deleteServiceURL()
+        keychain.deleteUserEmail()
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.removeObject(forKey: "hasEmailOnFile")
+
+        // Clear the displayed email because there is no active zone session.
+        menuBarController?.setSignedInEmail(nil)
+
+        // Return to onboarding waiting state and wait for the next invite
+        // link or recovery action.
+        showOnboarding()
+    }
+
     // MARK: - People
 
     private func setupPeople() {
         let controller = PeopleController()
         controller.onOpenBilling = { [weak self] in
             self?.showBilling()
+        }
+        controller.onDisconnectFromServer = { [weak self] in
+            self?.disconnectFromCurrentServer()
         }
         peopleController = controller
     }
