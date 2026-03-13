@@ -368,7 +368,7 @@ DEFAULT_INVITE_EXPIRY_HOURS = 7 * 24
 class CreateInviteRequest(BaseModel):
     """Request body for creating an invite."""
     label: Optional[str] = None
-    email: Optional[str] = None
+    email: str
     send_email: bool = False
     max_uses: int = 1
     expires_in_hours: Optional[int] = None
@@ -382,25 +382,30 @@ async def admin_create_invite(
 ):
     """Create a new invite token. Requires admin session.
 
-    When send_email is true and email is provided, send the invite link
-    directly to the recipient via the configured email provider.
+    Invite email is required so invited users have durable server-side
+    identity from the start. Email delivery remains optional: when
+    send_email is true, send the invite link via the configured email
+    provider. Otherwise the admin can copy and share the link manually.
     """
+    email = request.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required.")
     expires = request.expires_in_hours if request.expires_in_hours is not None else DEFAULT_INVITE_EXPIRY_HOURS
     token, invite_id = await invite.create_invite(
         created_by=user.user_id,
         label=request.label,
-        email=request.email,
+        email=email,
         max_uses=request.max_uses,
         expires_in_hours=expires,
     )
 
     email_sent = False
-    if request.send_email and request.email:
+    if request.send_email:
         base_url = web._zone_base_url(raw_request)
         try:
             await invite.send_invite_email(
                 token=token,
-                email=request.email,
+                email=email,
                 base_url=base_url,
                 label=request.label,
             )
@@ -413,6 +418,7 @@ async def admin_create_invite(
                 "id": invite_id,
                 "token": token,
                 "invite_url": f"{base_url}/invite/{token}",
+                "email": email,
                 "email_sent": False,
                 "email_error": str(e),
             }
@@ -422,6 +428,7 @@ async def admin_create_invite(
         "id": invite_id,
         "token": token,
         "invite_url": f"{base_url}/invite/{token}",
+        "email": email,
         "email_sent": email_sent,
     }
 

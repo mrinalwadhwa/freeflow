@@ -135,9 +135,15 @@ final class PeopleController {
     // MARK: - Action: createInvite
 
     private func handleCreateInvite(name: String?, email: String?) {
+        let normalizedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalizedEmail.isEmpty else {
+            bridge.pushActionError(message: "Email is required to create an invite.")
+            return
+        }
+
         Task {
             do {
-                let invite = try await createInvite(name: name, email: email)
+                let invite = try await createInvite(name: name, email: normalizedEmail)
                 bridge.pushInviteCreated(invite: invite)
             } catch {
                 Log.debug("[PeopleController] createInvite failed: \(error)")
@@ -291,14 +297,17 @@ final class PeopleController {
     /// Returns the created invite dictionary including the token and
     /// derived invite URL.
     private func createInvite(name: String?, email: String?) async throws -> [String: Any] {
+        let normalizedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalizedEmail.isEmpty else {
+            throw PeopleError.missingInviteEmail
+        }
+
         var body: [String: Any] = [
-            "max_uses": 1
+            "max_uses": 1,
+            "email": normalizedEmail,
         ]
         if let name, !name.isEmpty {
             body["label"] = name
-        }
-        if let email, !email.isEmpty {
-            body["email"] = email
         }
 
         let responseData = try await zoneAdminRequest(
@@ -402,6 +411,7 @@ final class PeopleController {
         case invalidURL
         case noSession
         case invalidResponse
+        case missingInviteEmail
         case serverError(statusCode: Int)
     }
 }

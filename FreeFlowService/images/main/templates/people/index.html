@@ -468,13 +468,18 @@
                                 type="email"
                                 id="invite-email"
                                 class="people-input"
-                                placeholder="Email (optional)"
+                                placeholder="Email"
                                 autocomplete="off"
                                 autocorrect="off"
                                 autocapitalize="off"
                                 spellcheck="false"
+                                required
                             />
                         </div>
+                        <p style="font-size: 0.75rem; color: var(--color-muted); margin: 0.5rem 0 0">
+                            Email is required so this person has a durable identity on your FreeFlow server. You can
+                            still copy the link and send it manually.
+                        </p>
                         <div class="invite-form-actions">
                             <button id="create-invite-btn" class="btn btn-primary">Create invite</button>
                         </div>

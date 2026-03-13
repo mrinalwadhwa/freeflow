@@ -7,7 +7,7 @@
  *
  * Bridge actions (people -> native):
  *   - getPeopleState — request current people state
- *   - createInvite   — { name: string|null, email: string|null }
+ *   - createInvite   — { name: string|null, email: string }
  *   - revokeInvite   — { id: number }
  *   - copyText       — { text: string }
  *   - removePerson   — { id: string }
@@ -168,8 +168,8 @@
     var html = "";
     for (var j = 0; j < pending.length; j++) {
       var invite = pending[j];
-      // Use name, fall back to label (API field), then default
-      var name = invite.name || invite.label || "Unnamed invite";
+      // Use name, fall back to label (API field), then email
+      var name = invite.name || invite.label || invite.email || "Unnamed invite";
       var metaParts = [];
       if (invite.email) {
         metaParts.push(escapeHtml(invite.email));
@@ -365,6 +365,7 @@
     }
     if (emailInput) {
       emailInput.value = "";
+      emailInput.setCustomValidity("");
     }
 
     // Re-enable create button
@@ -538,6 +539,18 @@
         var name = nameInput ? nameInput.value.trim() : "";
         var email = emailInput ? emailInput.value.trim() : "";
 
+        if (!email) {
+          if (emailInput) {
+            emailInput.setCustomValidity("Email is required");
+            emailInput.reportValidity();
+          }
+          return;
+        }
+
+        if (emailInput) {
+          emailInput.setCustomValidity("");
+        }
+
         // Hide previous success message
         var inviteSuccess = document.getElementById("invite-success");
         if (inviteSuccess) {
@@ -550,7 +563,7 @@
 
         bridge.send("createInvite", {
           name: name || null,
-          email: email || null,
+          email: email,
         });
       });
     }

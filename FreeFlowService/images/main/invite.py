@@ -264,17 +264,16 @@ async def redeem(token: str) -> RedeemResult:
         invite = await _validate_token(token)
 
     # Determine email for the new user.
-    if not is_bootstrap and invite.email:
+    if not is_bootstrap:
+        if not invite.email:
+            raise ValueError("Invite is missing an email address")
         email = invite.email
         has_email = True
         label = invite.label or "Invited user"
     else:
-        # Generate a placeholder email. Use a unique suffix to avoid
-        # collisions. The user can add a real email later (Tier 2).
-        placeholder_id = secrets.token_hex(8)
-        email = f"{placeholder_id}@placeholder.freeflow.local"
         has_email = False
-        label = "Admin" if is_bootstrap else (invite.label or "Invited user")
+        label = "Admin"
+        email = f"admin-{secrets.token_hex(8)}@placeholder.freeflow.local"
 
     user_id, session_token = await _create_user_via_auth(email, label)
 
