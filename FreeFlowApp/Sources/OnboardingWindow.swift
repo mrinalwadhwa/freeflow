@@ -148,6 +148,7 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     /// base (e.g. `https://zone.example.com/onboarding/?token=abc`).
     func navigate(to url: URL) {
         Self.log("navigate(to: \(url.absoluteString))")
+        NSLog("[OnboardingWindow] navigate(to:) \(url.absoluteString)")
         let request = URLRequest(url: url)
         webView.load(request)
     }
@@ -159,6 +160,10 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     ///   - path: The path to load (e.g. `/onboarding/?token=abc`).
     func navigate(baseURL: String, path: String) {
         let combined = "\(baseURL)\(path)"
+        Self.log("navigate(baseURL:path:) base=\(baseURL) path=\(path) combined=\(combined)")
+        NSLog(
+            "[OnboardingWindow] navigate(baseURL:path:) base=%@ path=%@ combined=%@", baseURL, path,
+            combined)
         guard let url = URL(string: combined) else {
             Self.log("navigate(baseURL:path:) failed to create URL from: \(combined)")
             return
@@ -166,223 +171,40 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         navigate(to: url)
     }
 
-    // MARK: - Placeholder
+    // MARK: - Bundled onboarding
 
-    /// Show a local onboarding chooser while waiting for a service URL.
+    /// Load the bundled onboarding HTML page from the app bundle.
     ///
-    /// Displayed on fresh launch before a `freeflow://connect` URL has
-    /// been received. This introduces FreeFlow, lets the user choose
-    /// between joining with an invite or creating a private server, and
-    /// keeps the invite path as an instructional waiting state. The
-    /// admin path calls back into the native bridge.
-    func loadWaitingPlaceholder() {
-        let html = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              :root {
-                --color-bg: #eeeceb;
-                --color-surface: #f9f9f9;
-                --color-text: #292929;
-                --color-muted: #7a7775;
-                --color-border: #ddd9d6;
-                --color-light: #a8a4a1;
-              }
-              body {
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                background: var(--color-bg);
-                color: var(--color-text);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                padding: 2rem;
-                -webkit-user-select: none;
-              }
-              .shell {
-                width: 100%;
-                max-width: 360px;
-                text-align: center;
-              }
-              .icon {
-                width: 3rem;
-                height: 3rem;
-                margin: 0 auto 1.5rem;
-                border-radius: 999px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 1.5rem;
-                background: var(--color-surface);
-                border: 1px solid var(--color-border);
-              }
-              .icon svg {
-                width: 1.25rem;
-                height: 1.25rem;
-              }
-              h1 {
-                font-size: 1.625rem;
-                line-height: 1.384615;
-                font-weight: 700;
-                margin-bottom: 0.461538em;
-                letter-spacing: -0.025em;
-              }
-              p {
-                font-size: 0.9375rem;
-                color: var(--color-muted);
-                line-height: 1.6;
-                margin-bottom: 1.5rem;
-              }
-              .choice-group {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-                margin-bottom: 1rem;
-              }
-              .choice-card {
-                width: 100%;
-                border: 1px solid var(--color-border);
-                border-radius: 16px;
-                background: rgba(255, 255, 255, 0.7);
-                padding: 1rem 1rem 0.9375rem;
-                text-align: left;
-                cursor: pointer;
-                transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-              }
-              .choice-card:hover {
-                transform: translateY(-1px);
-                border-color: var(--color-text);
-                background: rgba(255, 255, 255, 0.92);
-              }
-              .choice-title {
-                font-size: 0.9375rem;
-                font-weight: 600;
-                color: var(--color-text);
-                margin-bottom: 0.3125rem;
-              }
-              .choice-copy {
-                font-size: 0.8125rem;
-                line-height: 1.45;
-                color: var(--color-muted);
-              }
-              .footnote {
-                font-size: 0.8125rem;
-                line-height: 1.45;
-                color: var(--color-light);
-              }
-              .waiting-actions {
-                display: flex;
-                flex-direction: column;
-                gap: 0.75rem;
-                margin-top: 1rem;
-              }
-              .waiting-link {
-                border: none;
-                background: none;
-                padding: 0;
-                font: inherit;
-                font-size: 0.875rem;
-                color: var(--color-text);
-                text-decoration: underline;
-                text-underline-offset: 0.15em;
-                cursor: pointer;
-              }
-              .hidden {
-                display: none;
-              }
-            </style>
-            </head>
-            <body>
-              <div class="shell">
-                <div id="choice-state">
-                  <div class="icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                      <line x1="4" y1="8" x2="4" y2="16" />
-                      <line x1="8" y1="5" x2="8" y2="19" />
-                      <line x1="12" y1="3" x2="12" y2="21" />
-                      <line x1="16" y1="5" x2="16" y2="19" />
-                      <line x1="20" y1="8" x2="20" y2="16" />
-                    </svg>
-                  </div>
-                  <h1>Welcome to FreeFlow</h1>
-                  <p>Dictate naturally on your Mac and get polished text back, using your own private FreeFlow server.</p>
+    /// The onboarding page is self-contained (all CSS and JS inlined)
+    /// and does not depend on a zone server. Optional query parameters
+    /// are appended to the file URL so the page JS can read them with
+    /// `URLSearchParams(window.location.search)`.
+    ///
+    /// - Parameter queryString: Optional query string without the
+    ///   leading `?`, e.g. `"token=abc"` or `"skip=connect"`.
+    func loadBundledOnboarding(queryString: String? = nil) {
+        guard
+            let htmlURL = Bundle.main.url(
+                forResource: "onboarding",
+                withExtension: "html"
+            )
+        else {
+            Self.log("onboarding.html not found in bundle")
+            return
+        }
 
-                  <div class="choice-group">
-                    <button class="choice-card" type="button" id="join-choice">
-                      <div class="choice-title">I have an invite link</div>
-                      <div class="choice-copy">Join an existing FreeFlow server.</div>
-                    </button>
+        var fileURL = htmlURL
+        if let queryString, !queryString.isEmpty {
+            var components = URLComponents(url: htmlURL, resolvingAgainstBaseURL: false)
+            components?.query = queryString
+            fileURL = components?.url ?? htmlURL
+        }
 
-                    <button class="choice-card" type="button" id="admin-choice">
-                      <div class="choice-title">Create my FreeFlow server</div>
-                      <div class="choice-copy">Sign in to set up your private server and invite your team.</div>
-                    </button>
-                  </div>
-                </div>
-
-                <div id="invite-state" class="hidden">
-                  <div class="icon">&#128279;</div>
-                  <h1>Open your invite link</h1>
-                  <p>Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.</p>
-
-                  <div class="waiting-actions">
-                    <button class="waiting-link" type="button" id="switch-to-admin">Create my own server instead</button>
-                  </div>
-                </div>
-              </div>
-
-              <script>
-                (function () {
-                  var choiceState = document.getElementById("choice-state");
-                  var inviteState = document.getElementById("invite-state");
-                  var joinChoice = document.getElementById("join-choice");
-                  var switchToAdmin = document.getElementById("switch-to-admin");
-                  var adminChoice = document.getElementById("admin-choice");
-
-                  function showInviteState() {
-                    if (choiceState) choiceState.classList.add("hidden");
-                    if (inviteState) inviteState.classList.remove("hidden");
-                  }
-
-                  function openProvisioning() {
-                    if (
-                      window.webkit &&
-                      window.webkit.messageHandlers &&
-                      window.webkit.messageHandlers.freeflow
-                    ) {
-                      window.webkit.messageHandlers.freeflow.postMessage({
-                        action: "openProvisioning"
-                      });
-                    }
-                  }
-
-                  if (joinChoice) {
-                    joinChoice.addEventListener("click", function () {
-                      showInviteState();
-                    });
-                  }
-
-                  if (switchToAdmin) {
-                    switchToAdmin.addEventListener("click", function () {
-                      openProvisioning();
-                    });
-                  }
-
-                  if (adminChoice) {
-                    adminChoice.addEventListener("click", function () {
-                      openProvisioning();
-                    });
-                  }
-                })();
-              </script>
-            </body>
-            </html>
-            """
-        webView.loadHTMLString(html, baseURL: nil)
+        Self.log("loadBundledOnboarding: \(fileURL.absoluteString)")
+        webView.loadFileURL(
+            fileURL,
+            allowingReadAccessTo: htmlURL.deletingLastPathComponent()
+        )
     }
 
     // MARK: - Presentation

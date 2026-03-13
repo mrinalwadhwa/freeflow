@@ -16,6 +16,69 @@
                 overflow: hidden;
             }
 
+            /* ---------------------------------------------------------- */
+            /* Entry icon: large 6-bar mark matching menu bar symbol       */
+            /* ---------------------------------------------------------- */
+
+            .entry-icon {
+                width: 9rem;
+                height: 9rem;
+                margin: 0 auto 1.5rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--color-text);
+            }
+
+            .entry-icon svg {
+                width: 4.5rem;
+                height: 4.5rem;
+                overflow: visible;
+            }
+
+            .entry-icon svg line {
+                transform-box: fill-box;
+                transform-origin: center;
+                animation: entry-bar-breathe 2.4s ease-in-out infinite;
+            }
+
+            .entry-icon svg line:nth-child(1) {
+                animation-delay: -0.32s;
+            }
+            .entry-icon svg line:nth-child(2) {
+                animation-delay: -0.18s;
+            }
+            .entry-icon svg line:nth-child(3) {
+                animation-delay: 0s;
+            }
+            .entry-icon svg line:nth-child(4) {
+                animation-delay: -0.24s;
+            }
+            .entry-icon svg line:nth-child(5) {
+                animation-delay: -0.1s;
+            }
+            .entry-icon svg line:nth-child(6) {
+                animation-delay: -0.28s;
+            }
+
+            @keyframes entry-bar-breathe {
+                0%,
+                100% {
+                    opacity: 0.92;
+                    transform: scaleY(0.94);
+                }
+                50% {
+                    opacity: 1;
+                    transform: scaleY(1.04);
+                }
+            }
+
+            .intro-copy {
+                max-width: 32ch;
+                margin-left: auto;
+                margin-right: auto;
+            }
+
             .onboarding {
                 display: flex;
                 flex-direction: column;
@@ -115,31 +178,31 @@
 
             .entry-choice-group {
                 width: 100%;
-                max-width: 360px;
+                max-width: 392px;
                 display: flex;
                 flex-direction: column;
                 gap: 0.75rem;
-                margin: 0 auto 1.5rem;
+                margin: 0 auto 0;
             }
 
             .entry-choice-card {
                 width: 100%;
                 text-align: left;
-                padding: 1rem 1rem 1.125rem;
-                background: var(--color-surface);
-                border: 1px solid var(--color-border-light);
-                border-radius: 14px;
+                padding: 1rem 1rem 0.9375rem;
+                background: rgba(255, 255, 255, 0.7);
+                border: 1px solid var(--color-border);
+                border-radius: 16px;
                 cursor: pointer;
                 transition:
-                    border-color 0.15s ease,
-                    transform 0.15s ease,
-                    background 0.15s ease;
+                    border-color 0.12s ease,
+                    transform 0.12s ease,
+                    background 0.12s ease;
             }
 
             .entry-choice-card:hover {
                 border-color: var(--color-text);
                 transform: translateY(-1px);
-                background: var(--color-white);
+                background: rgba(255, 255, 255, 0.92);
             }
 
             .entry-choice-title {
@@ -153,7 +216,8 @@
             .entry-choice-copy {
                 font-size: 0.8125rem;
                 color: var(--color-muted);
-                line-height: 1.538462;
+                line-height: 1.45;
+                max-width: 31ch;
             }
 
             .entry-footnote {
@@ -162,6 +226,34 @@
                 line-height: 1.538462;
                 max-width: 340px;
                 margin: 0 auto;
+            }
+
+            .entry-wrap-break {
+                display: inline-block;
+            }
+
+            .entry-divider {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                width: 100%;
+                max-width: 392px;
+                margin: 0.5rem auto 1.5rem;
+            }
+
+            .entry-divider-line {
+                flex: 1;
+                height: 1px;
+                background: var(--color-border);
+            }
+
+            .entry-divider-text {
+                font-size: 0.6875rem;
+                color: var(--color-border);
+                font-weight: 500;
+                flex-shrink: 0;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
             }
 
             /* ---------------------------------------------------------- */
@@ -557,23 +649,47 @@
             <section class="step-section step-hidden" data-step="connect">
                 <!-- Entry chooser -->
                 <div id="connect-choice" class="connect-state">
-                    <div class="step-icon step-icon-warm">&#127908;</div>
+                    <div class="entry-icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 28 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.25"
+                            stroke-linecap="round"
+                        >
+                            <line x1="4" y1="9" x2="4" y2="15" />
+                            <line x1="8" y1="6" x2="8" y2="18" />
+                            <line x1="12" y1="3" x2="12" y2="21" />
+                            <line x1="16" y1="7" x2="16" y2="17" />
+                            <line x1="20" y1="5" x2="20" y2="19" />
+                            <line x1="24" y1="8" x2="24" y2="16" />
+                        </svg>
+                    </div>
                     <h1>Welcome to FreeFlow</h1>
-                    <p>
-                        Dictate naturally on your Mac and get polished text back, using your own private FreeFlow
-                        server.
-                    </p>
+                    <p class="intro-copy">Press a key, dictate naturally, polished text appears in any app.</p>
+
+                    <div style="height: 3rem"></div>
+
+                    <div class="entry-choice-group">
+                        <button id="entry-setup-admin" class="entry-choice-card" type="button">
+                            <div class="entry-choice-title">Create your own FreeFlow server</div>
+                            <div class="entry-choice-copy">
+                                Sign in to set up your private server and invite your friends or your team.
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="entry-divider">
+                        <div class="entry-divider-line"></div>
+                        <div class="entry-divider-text">or</div>
+                        <div class="entry-divider-line"></div>
+                    </div>
 
                     <div class="entry-choice-group">
                         <button id="entry-join-invite" class="entry-choice-card" type="button">
                             <div class="entry-choice-title">I have an invite link</div>
-                            <div class="entry-choice-copy">Join an existing FreeFlow server.</div>
-                        </button>
-
-                        <button id="entry-setup-admin" class="entry-choice-card" type="button">
-                            <div class="entry-choice-title">Create my FreeFlow server</div>
                             <div class="entry-choice-copy">
-                                Sign in to set up your private server and invite your team.
+                                Join a FreeFlow server with an invite link someone sent you.
                             </div>
                         </button>
                     </div>
@@ -582,14 +698,16 @@
                 <!-- Invite waiting state -->
                 <div id="connect-waiting" class="connect-state hidden">
                     <div class="step-icon step-icon-warm">&#128279;</div>
-                    <h1>Open your invite link</h1>
-                    <p>
-                        Click the invite link you received in your browser. FreeFlow will connect automatically on this
-                        Mac.
+                    <h1 id="connect-waiting-title">Open your invite link</h1>
+                    <p id="connect-waiting-copy">
+                        Open the invite link that a person sent you in your browser. FreeFlow will connect automatically
+                        on this Mac.
                     </p>
 
+                    <div style="height: 6rem"></div>
+
                     <div class="btn-row">
-                        <button id="waiting-setup-admin" class="btn btn-secondary">Create my own server instead</button>
+                        <button id="waiting-setup-admin" class="btn-link">Create my own server instead</button>
                     </div>
                 </div>
 

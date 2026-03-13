@@ -87,15 +87,17 @@ final class OnboardingController {
 
     // MARK: - Window management
 
-    /// Open the onboarding window and navigate to the given path.
+    /// Open the onboarding window and load the bundled onboarding page.
     ///
-    /// If the window already exists, it navigates to the new path
-    /// without recreating it. When no service URL is configured yet
-    /// (fresh install before an invite link is clicked), the window
-    /// is presented empty and waits for a `freeflow://connect` URL to
-    /// provide the service URL.
+    /// The onboarding page is a self-contained HTML file shipped in the
+    /// app bundle. It does not depend on the zone server. Query
+    /// parameters (e.g. `?token=abc`, `?skip=connect`) are appended to
+    /// the file URL so the page JS can read them with
+    /// `URLSearchParams(window.location.search)`.
     ///
-    /// - Parameter path: The path to load, e.g. `/onboarding/?token=abc`.
+    /// - Parameter path: Query string portion, e.g. `/onboarding/?token=abc`.
+    ///   Only the query parameters are used; the path component is ignored
+    ///   because the page always loads from the bundle.
     func showWindow(path: String) {
         if window == nil {
             let win = OnboardingWindow(bridge: bridge)
@@ -103,23 +105,21 @@ final class OnboardingController {
             window = win
         }
 
-        let baseURL = config.baseURL
-        // Only navigate if we have a real service URL. The localhost
-        // fallback means no Keychain URL and no env var, so the zone
-        // is unreachable. Show a placeholder page until handleConnectURL
-        // stores a service URL and navigates.
-        if !baseURL.contains("localhost") {
-            window?.navigate(baseURL: baseURL, path: path)
-        } else {
-            window?.loadWaitingPlaceholder()
-        }
+        window?.loadBundledOnboarding(queryString: extractQuery(from: path))
         window?.present()
+    }
+
+    /// Extract the query string from a path like `/onboarding/?token=abc`.
+    private func extractQuery(from path: String) -> String? {
+        guard let questionMark = path.firstIndex(of: "?") else { return nil }
+        let query = String(path[path.index(after: questionMark)...])
+        return query.isEmpty ? nil : query
     }
 
     /// Open the onboarding flow for a freeflow:// connect URL.
     ///
     /// Parses the URL, stores the service URL in the Keychain, and
-    /// opens the onboarding page with the invite token.
+    /// opens the bundled onboarding page with the invite token.
     func handleConnectURL(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
             components.scheme == "freeflow",
@@ -142,22 +142,43 @@ final class OnboardingController {
 
     /// Show the add-email page in the onboarding window.
     ///
+    /// The add-email page is still zone-hosted, so navigate to the
+    /// zone URL directly.
+    ///
     /// - Parameter variant: The variant query parameter (voluntary, grace, enforced).
     func showAddEmail(variant: String = "voluntary") {
-        showWindow(path: "/account/add-email?variant=\(variant)")
+        ensureWindow()
+        let baseURL = config.baseURL
+        window?.navigate(baseURL: baseURL, path: "/account/add-email?variant=\(variant)")
+        window?.present()
     }
 
     /// Show the sign-in page for session recovery.
     ///
+    /// The sign-in page is still zone-hosted, so navigate to the
+    /// zone URL directly.
+    ///
     /// - Parameter email: The user's email to pre-fill.
     func showSignIn(email: String? = nil) {
+        ensureWindow()
         var path = "/account/sign-in"
         if let email, !email.isEmpty {
             let encoded =
                 email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email
             path += "?email=\(encoded)"
         }
-        showWindow(path: path)
+        let baseURL = config.baseURL
+        window?.navigate(baseURL: baseURL, path: path)
+        window?.present()
+    }
+
+    /// Ensure the onboarding window exists, creating it if needed.
+    private func ensureWindow() {
+        if window == nil {
+            let win = OnboardingWindow(bridge: bridge)
+            bridge.webView = win.webView
+            window = win
+        }
     }
 
     /// Dismiss the onboarding window and clean up.

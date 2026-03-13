@@ -574,6 +574,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onSignOut = { [weak self] in
             self?.signOut()
         }
+
+        // Wire disconnect action (for invited users).
+        controller.onDisconnect = { [weak self] in
+            self?.disconnectFromCurrentServer()
+        }
+
+        // Set admin/invitee role based on whether an Autonomy token
+        // exists. Admins provisioned the server and signed in via
+        // Auth0; invitees redeemed an invite link and have no
+        // Autonomy token.
+        controller.setIsAdmin(keychain.autonomyToken() != nil)
     }
 
     /// Update the menu bar with the best available email for the
@@ -585,11 +596,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 !envEmail.isEmpty
             {
                 menuBarController?.setSignedInEmail(envEmail)
+                menuBarController?.setIsAdmin(keychain.autonomyToken() != nil)
                 return
             }
         #endif
         let email = keychain.autonomyEmail() ?? keychain.userEmail()
         menuBarController?.setSignedInEmail(email)
+        menuBarController?.setIsAdmin(keychain.autonomyToken() != nil)
     }
 
     /// Sign out: clear all stored credentials and return to the

@@ -1,3 +1,4 @@
+import AppKit
 import AuthenticationServices
 
 /// Manage the Autonomy Account login flow using ASWebAuthenticationSession.
@@ -44,6 +45,8 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
         guard let url = URL(string: "\(autonomyURL)/signin?state=app%3Dfreeflow") else {
             throw AuthControllerError.authFailed("Invalid Autonomy URL")
         }
+
+        NSLog("[AuthController] Starting sign-in flow: %@", url.absoluteString)
 
         return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
@@ -110,12 +113,17 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             session.prefersEphemeralWebBrowserSession = true
 
             self.authSession = session
+            NSLog("[AuthController] Presenting sign-in sheet")
 
             if !session.start() {
                 self.authSession = nil
+                NSLog(
+                    "[AuthController] Failed to start authentication session, opening browser fallback"
+                )
+                NSWorkspace.shared.open(url)
                 continuation.resume(
                     throwing: AuthControllerError.authFailed(
-                        "Failed to start authentication session"
+                        "Failed to start authentication session. Opened sign-in in your browser instead."
                     )
                 )
             }
@@ -134,8 +142,15 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
         for session: ASWebAuthenticationSession
     ) -> ASPresentationAnchor {
         // Attach the browser sheet to the key window (the onboarding
-        // window) or fall back to any available window.
-        NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
+        // window) or fall back to any available visible window.
+        let anchor =
+            NSApp.keyWindow
+            ?? NSApp.mainWindow
+            ?? NSApp.windows.first(where: { $0.isVisible })
+            ?? NSApp.windows.first
+            ?? ASPresentationAnchor()
+        NSLog("[AuthController] Using presentation anchor: %@", String(describing: anchor.title))
+        return anchor
     }
 }
 

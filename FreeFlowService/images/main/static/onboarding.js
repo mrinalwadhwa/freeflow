@@ -268,51 +268,41 @@
   function configureFlowUI() {
     updateStepLabels();
 
-    setText("connect-choice-title", "Welcome to FreeFlow");
-    setText(
-      "connect-choice-copy",
-      "Dictate naturally on your Mac and get polished text back, using your own private FreeFlow server.",
-    );
-    setText("entry-join-invite-title", "I have an invite link");
-    setText("entry-join-invite-copy", "Join an existing FreeFlow server.");
-    setText("entry-setup-admin-title", "Create my FreeFlow server");
-    setText("entry-setup-admin-copy", "Sign in to set up your private server and invite your team.");
-
     if (flow.mode === "invite") {
       setText("connect-waiting-title", "Open your invite link");
       setText(
         "connect-waiting-copy",
-        "Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.",
+        "Open the invite link that a person sent you in your browser. FreeFlow will connect automatically on this Mac.",
       );
-      setText("waiting-setup-admin-label", "Create my own server instead");
+      setText("waiting-setup-admin", "Create my own server instead");
       setText("connect-loading-title", "Connecting you to FreeFlow");
-      setText("connect-loading-copy", "Setting up FreeFlow on this Mac…");
-      setText("connect-success-title", "You're connected");
+      setText("connect-loading-copy", "Setting up FreeFlow on this Mac\u2026");
+      setText("connect-success-title", "You\u2019re connected");
       setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! FreeFlow is ready on this Mac.');
-      setText("connect-error-title", "Couldn't connect");
-      setText("done-title", "You're all set");
+      setText("connect-error-title", "Couldn\u2019t connect");
+      setText("done-title", "You\u2019re all set");
       setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
     } else if (flow.mode === "admin") {
       setText("connect-loading-title", "Create your FreeFlow server");
-      setText("connect-loading-copy", "We’re setting up your private FreeFlow server and preparing this Mac.");
+      setText("connect-loading-copy", "We\u2019re setting up your private FreeFlow server and preparing this Mac.");
       setText("connect-success-title", "Your FreeFlow server is ready");
       setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! Your FreeFlow server is ready.');
-      setText("connect-error-title", "Setup couldn't continue");
+      setText("connect-error-title", "Setup couldn\u2019t continue");
       setText("done-title", "Your FreeFlow server is ready");
       setText("done-copy", "FreeFlow lives in your menu bar. You can invite others anytime from People.");
     } else {
       setText("connect-waiting-title", "Open your invite link");
       setText(
         "connect-waiting-copy",
-        "Click the invite link you received in your browser. FreeFlow will connect automatically on this Mac.",
+        "Open the invite link that a person sent you in your browser. FreeFlow will connect automatically on this Mac.",
       );
-      setText("waiting-setup-admin-label", "Create my own server instead");
+      setText("waiting-setup-admin", "Create my own server instead");
       setText("connect-loading-title", "Connecting you to FreeFlow");
-      setText("connect-loading-copy", "Setting things up on this Mac…");
-      setText("connect-success-title", "Connected");
-      setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! Your FreeFlow service is ready.');
-      setText("connect-error-title", "Connection failed");
-      setText("done-title", "You're all set");
+      setText("connect-loading-copy", "Setting things up on this Mac\u2026");
+      setText("connect-success-title", "You\u2019re connected");
+      setText("connect-success-copy", 'Welcome<span id="connect-user-name"></span>! FreeFlow is ready on this Mac.');
+      setText("connect-error-title", "Couldn\u2019t connect");
+      setText("done-title", "You\u2019re all set");
       setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
     }
   }

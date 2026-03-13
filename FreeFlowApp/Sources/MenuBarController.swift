@@ -34,6 +34,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when the user clicks "Sign Out".
     var onSignOut: (() -> Void)?
 
+    /// Callback invoked when an invited user clicks "Disconnect".
+    var onDisconnect: (() -> Void)?
+
+    /// Whether the current signed-in user is an admin (provisioned the
+    /// server) or an invitee. Admins see "Sign Out"; invitees see
+    /// "Disconnect". Defaults to true so the menu shows "Sign Out"
+    /// until the app determines the actual role.
+    private var isAdmin: Bool = true
+
     // MARK: - Onboarding mode
 
     /// When true, the menu shows a minimal onboarding hint instead of
@@ -53,6 +62,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var checkForUpdatesItem: NSMenuItem?
     private var accountMenuItem: NSMenuItem?
     private var signOutItem: NSMenuItem?
+    private var disconnectItem: NSMenuItem?
 
     /// The email address shown in the menu bar for the signed-in user.
     private var signedInEmail: String?
@@ -128,7 +138,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         signedInEmail = email
         accountMenuItem?.title = email ?? ""
         accountMenuItem?.isHidden = email == nil
-        signOutItem?.isHidden = email == nil
+        signOutItem?.isHidden = email == nil || !isAdmin
+        disconnectItem?.isHidden = email == nil || isAdmin
+    }
+
+    /// Update the admin/invitee role flag and refresh menu visibility.
+    func setIsAdmin(_ admin: Bool) {
+        isAdmin = admin
+        signOutItem?.isHidden = signedInEmail == nil || !isAdmin
+        disconnectItem?.isHidden = signedInEmail == nil || isAdmin
     }
 
     /// Switch to onboarding mode: show a minimal menu with a setup hint.
@@ -298,9 +316,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         signOut.image = NSImage(
             systemSymbolName: "rectangle.portrait.and.arrow.right",
             accessibilityDescription: nil)
-        signOut.isHidden = signedInEmail == nil
+        signOut.isHidden = signedInEmail == nil || !isAdmin
         menu.addItem(signOut)
         signOutItem = signOut
+
+        let disconnect = NSMenuItem(
+            title: "Disconnect",
+            action: #selector(disconnectAction),
+            keyEquivalent: ""
+        )
+        disconnect.target = self
+        disconnect.image = NSImage(
+            systemSymbolName: "wifi.slash",
+            accessibilityDescription: nil)
+        disconnect.isHidden = signedInEmail == nil || isAdmin
+        menu.addItem(disconnect)
+        disconnectItem = disconnect
 
         let quit = NSMenuItem(
             title: "Quit FreeFlow",
@@ -488,6 +519,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func signOutAction() {
         onSignOut?()
+    }
+
+    @objc private func disconnectAction() {
+        onDisconnect?()
     }
 
     // MARK: - Icon mapping
