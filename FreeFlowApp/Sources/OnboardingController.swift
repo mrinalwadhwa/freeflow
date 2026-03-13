@@ -142,33 +142,33 @@ final class OnboardingController {
 
     /// Show the add-email page in the onboarding window.
     ///
-    /// The add-email page is still zone-hosted, so navigate to the
-    /// zone URL directly.
+    /// Loads the bundled add-email page from the app bundle. The
+    /// variant query parameter controls the UI tone (voluntary, grace,
+    /// enforced). All HTTP calls go through the native bridge.
     ///
     /// - Parameter variant: The variant query parameter (voluntary, grace, enforced).
     func showAddEmail(variant: String = "voluntary") {
         ensureWindow()
-        let baseURL = config.baseURL
-        window?.navigate(baseURL: baseURL, path: "/account/add-email?variant=\(variant)")
+        window?.loadBundledPage("add-email", queryString: "variant=\(variant)")
         window?.present()
     }
 
     /// Show the sign-in page for session recovery.
     ///
-    /// The sign-in page is still zone-hosted, so navigate to the
-    /// zone URL directly.
+    /// Loads the bundled sign-in page from the app bundle. The email
+    /// parameter pre-fills the input field. All HTTP calls go through
+    /// the native bridge.
     ///
     /// - Parameter email: The user's email to pre-fill.
     func showSignIn(email: String? = nil) {
         ensureWindow()
-        var path = "/account/sign-in"
+        var queryString = ""
         if let email, !email.isEmpty {
             let encoded =
                 email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email
-            path += "?email=\(encoded)"
+            queryString = "email=\(encoded)"
         }
-        let baseURL = config.baseURL
-        window?.navigate(baseURL: baseURL, path: path)
+        window?.loadBundledPage("sign-in", queryString: queryString.isEmpty ? nil : queryString)
         window?.present()
     }
 
@@ -244,6 +244,36 @@ final class OnboardingController {
             self?.handleCompleteOnboarding()
         }
 
+        // Account page actions (add-email flow)
+        bridge.onChangeEmail = { [weak self] email, callbackURL in
+            self?.handleChangeEmail(email: email, callbackURL: callbackURL)
+        }
+
+        bridge.onVerifyEmailOtp = { [weak self] email, otp in
+            self?.handleVerifyEmailOtp(email: email, otp: otp)
+        }
+
+        // Account page actions (sign-in flow)
+        bridge.onSendSignInOtp = { [weak self] email, type in
+            self?.handleSendSignInOtp(email: email, type: type)
+        }
+
+        bridge.onSignInWithOtp = { [weak self] email, otp in
+            self?.handleSignInWithOtp(email: email, otp: otp)
+        }
+
+        bridge.onDismiss = { [weak self] in
+            self?.handleDismiss()
+        }
+
+        bridge.onSignInComplete = { [weak self] in
+            self?.handleSignInComplete()
+        }
+
+        bridge.onEmailAddedComplete = { [weak self] in
+            self?.handleEmailAddedComplete()
+        }
+
         // Wire dictation results back to the bridge.
         onDictationResult = { [weak self] text in
             self?.bridge.pushDictationResult(text: text)
@@ -314,6 +344,163 @@ final class OnboardingController {
     private func handleEmailAdded(email: String) {
         UserDefaults.standard.set(true, forKey: "hasEmailOnFile")
         keychain.saveUserEmail(email)
+    }
+
+    // MARK: - Action: changeEmail (add-email flow)
+
+    /// Handle the changeEmail bridge action by making an HTTP request
+    /// to the zone's change-email endpoint and pushing the result back.
+    private func handleChangeEmail(email: String, callbackURL: String) {
+        Task {
+            do {
+                let result = try await zoneAuthRequest(
+                    path: "/api/auth/change-email",
+                    body: [
+                        "newEmail": email,
+                        "callbackURL": callbackURL,
+                    ]
+                )
+                // Success: the zone sent a verification OTP to the email.
+                _ = result
+                bridge.pushChangeEmailResult()
+            } catch {
+                bridge.pushChangeEmailResult(error: extractErrorMessage(error))
+            }
+        }
+    }
+
+    // MARK: - Action: verifyEmailOtp (add-email flow)
+
+    /// Handle the verifyEmailOtp bridge action by making an HTTP
+    /// request to the zone's verify-email endpoint.
+    private func handleVerifyEmailOtp(email: String, otp: String) {
+        Task {
+            do {
+                let result = try await zoneAuthRequest(
+                    path: "/api/auth/email-otp/verify-email",
+                    body: [
+                        "email": email,
+                        "otp": otp,
+                    ]
+                )
+                _ = result
+                bridge.pushVerifyEmailOtpResult()
+            } catch {
+                bridge.pushVerifyEmailOtpResult(error: extractErrorMessage(error))
+            }
+        }
+    }
+
+    // MARK: - Action: sendSignInOtp (sign-in flow)
+
+    /// Handle the sendSignInOtp bridge action by making an HTTP
+    /// request to the zone's send-verification-otp endpoint.
+    private func handleSendSignInOtp(email: String, type: String) {
+        Task {
+            do {
+                let result = try await zoneAuthRequest(
+                    path: "/api/auth/email-otp/send-verification-otp",
+                    body: [
+                        "email": email,
+                        "type": type,
+                    ]
+                )
+                _ = result
+                bridge.pushSendSignInOtpResult()
+            } catch {
+                bridge.pushSendSignInOtpResult(error: extractErrorMessage(error))
+            }
+        }
+    }
+
+    // MARK: - Action: signInWithOtp (sign-in flow)
+
+    /// Handle the signInWithOtp bridge action by making an HTTP
+    /// request to the zone's sign-in endpoint. Extracts the session
+    /// token from the response header and stores it in the Keychain.
+    private func handleSignInWithOtp(email: String, otp: String) {
+        Task {
+            do {
+                let serviceURL = config.baseURL
+                guard
+                    let url = URL(
+                        string: "\(serviceURL)/api/auth/sign-in/email-otp")
+                else {
+                    bridge.pushSignInWithOtpResult(error: "Invalid URL")
+                    return
+                }
+
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue(
+                    "application/json",
+                    forHTTPHeaderField: "Content-Type")
+
+                // Include session token if available for authenticated
+                // sign-in requests.
+                if let token = keychain.sessionToken(), !token.isEmpty {
+                    request.setValue(
+                        "Bearer \(token)",
+                        forHTTPHeaderField: "Authorization")
+                }
+
+                request.httpBody = try JSONSerialization.data(
+                    withJSONObject: [
+                        "email": email,
+                        "otp": otp,
+                    ])
+
+                let (data, response) = try await URLSession.shared.data(
+                    for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse
+                else {
+                    bridge.pushSignInWithOtpResult(
+                        error: "Invalid response")
+                    return
+                }
+
+                if httpResponse.statusCode != 200 {
+                    let errorMsg =
+                        extractServerError(from: data)
+                        ?? "Sign-in failed"
+                    bridge.pushSignInWithOtpResult(error: errorMsg)
+                    return
+                }
+
+                // Extract the session token from the set-auth-token
+                // header (better-auth bearer plugin behavior).
+                if let token = httpResponse.value(
+                    forHTTPHeaderField: "set-auth-token"),
+                    !token.isEmpty
+                {
+                    keychain.saveSessionToken(token)
+                }
+
+                bridge.pushSignInWithOtpResult()
+            } catch {
+                bridge.pushSignInWithOtpResult(
+                    error: extractErrorMessage(error))
+            }
+        }
+    }
+
+    // MARK: - Action: dismiss
+
+    private func handleDismiss() {
+        window?.orderOut(nil)
+    }
+
+    // MARK: - Action: signInComplete
+
+    private func handleSignInComplete() {
+        dismissWindow()
+    }
+
+    // MARK: - Action: emailAddedComplete
+
+    private func handleEmailAddedComplete() {
+        dismissWindow()
     }
 
     // MARK: - Action: startAdminSetup
@@ -556,5 +743,89 @@ final class OnboardingController {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         dismissWindow()
         onComplete?()
+    }
+
+    // MARK: - Zone auth HTTP helpers
+
+    /// Make an authenticated POST request to a zone auth endpoint and
+    /// return the response data.
+    ///
+    /// Includes the session token from the Keychain as a Bearer header
+    /// if available, matching the `credentials: "same-origin"` behavior
+    /// of the original fetch calls.
+    private func zoneAuthRequest(
+        path: String,
+        body: [String: Any]
+    ) async throws -> Data {
+        let serviceURL = config.baseURL
+        guard let url = URL(string: "\(serviceURL)\(path)") else {
+            throw ZoneAuthError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json", forHTTPHeaderField: "Content-Type")
+
+        // Include session token if available.
+        if let token = keychain.sessionToken(), !token.isEmpty {
+            request.setValue(
+                "Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(
+            for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ZoneAuthError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let detail =
+                extractServerError(from: data)
+                ?? "Request failed (HTTP \(httpResponse.statusCode))"
+            throw ZoneAuthError.serverError(detail)
+        }
+
+        return data
+    }
+
+    /// Extract a user-facing error message from a server JSON error
+    /// response, falling back to a generic message.
+    private func extractServerError(from data: Data) -> String? {
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else {
+            return nil
+        }
+        return json["message"] as? String
+            ?? json["error"] as? String
+            ?? json["detail"] as? String
+    }
+
+    /// Extract a user-facing error message from a Swift Error.
+    private func extractErrorMessage(_ error: Error) -> String {
+        if let zoneError = error as? ZoneAuthError {
+            switch zoneError {
+            case .invalidURL:
+                return "Invalid server URL"
+            case .invalidResponse:
+                return "Invalid response from server"
+            case .serverError(let detail):
+                return detail
+            }
+        }
+        return error.localizedDescription
+    }
+
+    /// Errors from zone auth HTTP requests.
+    private enum ZoneAuthError: Error {
+        case invalidURL
+        case invalidResponse
+        case serverError(String)
     }
 }

@@ -7,10 +7,10 @@ import FreeFlowKit
 /// and a window, wires bridge actions to native service calls, and
 /// pushes state back to the web page via bridge events.
 ///
-/// The settings page is a single-page web UI served by the zone at
-/// `/settings/`. It communicates with native code via the
-/// `SettingsBridge` message handler. All settings state is local to
-/// the app (UserDefaults, Keychain) and does not require server auth.
+/// The settings page is a self-contained HTML file shipped in the app
+/// bundle. It communicates with native code via the `SettingsBridge`
+/// message handler. All settings state is local to the app
+/// (UserDefaults, Keychain) and does not require server auth.
 @MainActor
 final class SettingsController {
 
@@ -51,12 +51,13 @@ final class SettingsController {
 
     /// Show the settings window, creating it if necessary.
     ///
-    /// Navigates to the `/settings/` page on the zone. If the window
-    /// already exists, it brings it to the front without reloading.
+    /// Loads the bundled settings page from the app bundle. If the
+    /// window already exists, it brings it to the front and reloads
+    /// the page to refresh state.
     func showWindow() {
         if let existingWindow = window {
-            // Re-navigate to refresh state, then present.
-            existingWindow.navigate(baseURL: config.baseURL)
+            // Reload bundled page to refresh state, then present.
+            existingWindow.loadBundledSettings()
             existingWindow.present()
             // Restart mic preview for fresh level display.
             handleStartMicPreview()
@@ -70,7 +71,7 @@ final class SettingsController {
         }
         window = win
 
-        win.navigate(baseURL: config.baseURL)
+        win.loadBundledSettings()
         win.present()
     }
 

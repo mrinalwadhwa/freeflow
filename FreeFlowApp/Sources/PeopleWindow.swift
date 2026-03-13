@@ -4,8 +4,8 @@ import WebKit
 /// A window that hosts a WKWebView for the people page.
 ///
 /// Follows the same pattern as `SettingsWindow` but with a size
-/// appropriate for people and invite lists. The web view loads the
-/// people page from the user's FreeFlowService zone and communicates
+/// appropriate for people and invite lists. The web view loads a
+/// self-contained HTML page from the app bundle and communicates
 /// with native code via the same bridge message handler protocol.
 ///
 /// The window is reused across open/close cycles. Call `present()` to
@@ -156,6 +156,31 @@ final class PeopleWindow: NSWindow, WKNavigationDelegate {
         Self.log("navigate(to: \(url.absoluteString))")
         let request = URLRequest(url: url)
         webView.load(request)
+    }
+
+    // MARK: - Bundled page
+
+    /// Load the bundled people HTML page from the app bundle.
+    ///
+    /// The people page is self-contained (all CSS and JS inlined) and
+    /// does not depend on a zone server. All data flows through the
+    /// native bridge.
+    func loadBundledPeople() {
+        guard
+            let htmlURL = Bundle.main.url(
+                forResource: "people",
+                withExtension: "html"
+            )
+        else {
+            Self.log("people.html not found in bundle")
+            return
+        }
+
+        Self.log("loadBundledPeople: \(htmlURL.absoluteString)")
+        webView.loadFileURL(
+            htmlURL,
+            allowingReadAccessTo: htmlURL.deletingLastPathComponent()
+        )
     }
 
     // MARK: - Presentation

@@ -14,8 +14,8 @@ Expose a /polish endpoint that accepts raw transcript text and context,
 and returns polished text. This is the polish_text function exposed as
 a standalone HTTP endpoint.
 
-Serve zone web pages (homepage, invite landing, admin dashboard) via
-Jinja2 templates and static files.
+Serve the invite landing page via a Jinja2 template. The zone root
+redirects to the project repository.
 """
 
 import os
@@ -37,7 +37,6 @@ from fastapi import (
     WebSocket,
 )
 from fastapi.responses import JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import admin
@@ -73,11 +72,8 @@ async def lifespan(app):
 
 app = FastAPI(lifespan=lifespan)
 
-# Mount web page routes and static files.
-app.include_router(web.admin_router)
+# Mount web page routes (invite landing page, root redirect).
 app.include_router(web.public_router)
-_static_dir = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 STT_MODEL = "gpt-4o-mini-transcribe"
 

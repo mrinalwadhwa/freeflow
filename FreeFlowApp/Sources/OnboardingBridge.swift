@@ -25,6 +25,13 @@ import WebKit
 ///   - registerHotkey: { action }
 ///   - completeOnboarding: { action }
 ///   - openProvisioning: { action }
+///   - changeEmail: { action, data: { email, callbackURL } }
+///   - verifyEmailOtp: { action, data: { email, otp } }
+///   - sendSignInOtp: { action, data: { email, type } }
+///   - signInWithOtp: { action, data: { email, otp } }
+///   - dismiss: { action }
+///   - signInComplete: { action }
+///   - emailAddedComplete: { action }
 ///
 /// Events pushed to web pages:
 ///   - inviteRedeemed: { event, userId, hasEmail }
@@ -35,6 +42,10 @@ import WebKit
 ///   - audioLevel: { event, level }
 ///   - dictationResult: { event, text }
 ///   - tokenStored: { event }
+///   - changeEmailResult: { event, error? }
+///   - verifyEmailOtpResult: { event, error? }
+///   - sendSignInOtpResult: { event, error? }
+///   - signInWithOtpResult: { event, error? }
 @MainActor
 final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
@@ -57,6 +68,15 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
     var onRegisterHotkey: (() -> Void)?
     var onCompleteOnboarding: (() -> Void)?
     var onOpenProvisioning: (() -> Void)?
+
+    // Account page actions (add-email and sign-in flows)
+    var onChangeEmail: ((_ email: String, _ callbackURL: String) -> Void)?
+    var onVerifyEmailOtp: ((_ email: String, _ otp: String) -> Void)?
+    var onSendSignInOtp: ((_ email: String, _ type: String) -> Void)?
+    var onSignInWithOtp: ((_ email: String, _ otp: String) -> Void)?
+    var onDismiss: (() -> Void)?
+    var onSignInComplete: (() -> Void)?
+    var onEmailAddedComplete: (() -> Void)?
 
     // MARK: - WKScriptMessageHandler
 
@@ -130,6 +150,41 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
         case "openProvisioning":
             onOpenProvisioning?()
+
+        case "changeEmail":
+            if let email = data["email"] as? String {
+                let callbackURL = data["callbackURL"] as? String ?? ""
+                onChangeEmail?(email, callbackURL)
+            }
+
+        case "verifyEmailOtp":
+            if let email = data["email"] as? String,
+                let otp = data["otp"] as? String
+            {
+                onVerifyEmailOtp?(email, otp)
+            }
+
+        case "sendSignInOtp":
+            if let email = data["email"] as? String {
+                let type = data["type"] as? String ?? "sign-in"
+                onSendSignInOtp?(email, type)
+            }
+
+        case "signInWithOtp":
+            if let email = data["email"] as? String,
+                let otp = data["otp"] as? String
+            {
+                onSignInWithOtp?(email, otp)
+            }
+
+        case "dismiss":
+            onDismiss?()
+
+        case "signInComplete":
+            onSignInComplete?()
+
+        case "emailAddedComplete":
+            onEmailAddedComplete?()
 
         default:
             break
@@ -226,5 +281,43 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
     /// Push a tokenStored event.
     func pushTokenStored() {
         pushEvent(name: "tokenStored")
+    }
+
+    // MARK: - Account page events
+
+    /// Push a changeEmailResult event (success or error).
+    func pushChangeEmailResult(error: String? = nil) {
+        if let error {
+            pushEvent(name: "changeEmailResult", data: ["error": error])
+        } else {
+            pushEvent(name: "changeEmailResult")
+        }
+    }
+
+    /// Push a verifyEmailOtpResult event (success or error).
+    func pushVerifyEmailOtpResult(error: String? = nil) {
+        if let error {
+            pushEvent(name: "verifyEmailOtpResult", data: ["error": error])
+        } else {
+            pushEvent(name: "verifyEmailOtpResult")
+        }
+    }
+
+    /// Push a sendSignInOtpResult event (success or error).
+    func pushSendSignInOtpResult(error: String? = nil) {
+        if let error {
+            pushEvent(name: "sendSignInOtpResult", data: ["error": error])
+        } else {
+            pushEvent(name: "sendSignInOtpResult")
+        }
+    }
+
+    /// Push a signInWithOtpResult event (success or error).
+    func pushSignInWithOtpResult(error: String? = nil) {
+        if let error {
+            pushEvent(name: "signInWithOtpResult", data: ["error": error])
+        } else {
+            pushEvent(name: "signInWithOtpResult")
+        }
     }
 }

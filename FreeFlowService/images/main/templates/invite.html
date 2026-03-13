@@ -1,75 +1,327 @@
-{% extends "base.html" %} {% block title %}You're invited to {{ app_name }}{% endblock %} {% block nav %}{% endblock %}
-{% block content %} {% if not token_valid %}
-<div class="invite-page">
-    <h1>Invite unavailable</h1>
-    <p>{{ token_error or "This invite link is no longer valid." }}</p>
-    <a href="/" class="btn btn-secondary">Go to homepage</a>
-</div>
+{% set app_name = "FreeFlow" %}
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>You're invited to {{ app_name }}</title>
+        <style>
+            :root {
+                --color-bg: #eeeceb;
+                --color-surface: #f9f9f9;
+                --color-text: #292929;
+                --color-muted: #7a7775;
+                --color-light: #a8a4a1;
+                --color-border: #ddd9d6;
+                --color-border-light: #e8e5e3;
+                --color-accent: #292929;
+                --color-accent-hover: #3d3d3d;
+                --color-white: #ffffff;
+            }
 
-{% else %}
-<div class="invite-page">
-    <h1>You're invited to {{ app_name }}</h1>
-    <p style="color: var(--color-light)">Hold a key, speak, release. Polished text appears at your cursor.</p>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
 
-    <div class="card" style="text-align: left; margin-top: 1.5rem; padding-top: 3rem">
-        <div class="invite-steps">
-            <div class="invite-step">
-                <div class="invite-step-number">1</div>
-                <div class="invite-step-text">
-                    <a
-                        href="https://autonomy.computer/freeflow/FreeFlow.dmg"
-                        class="btn btn-primary btn-small"
-                        id="download-btn"
-                        >Download for macOS</a
-                    >
-                    <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
-                        >Requires macOS 14 or later</span
-                    >
+            html {
+                font-size: 16px;
+                -webkit-text-size-adjust: 100%;
+            }
+
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
+                    "Apple Color Emoji", "Segoe UI Emoji";
+                font-size: 1rem;
+                line-height: 1.5;
+                color: var(--color-text);
+                background: var(--color-bg);
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            a {
+                color: var(--color-text);
+                text-decoration: underline;
+                text-decoration-color: var(--color-border);
+                text-underline-offset: 0.15em;
+                transition: text-decoration-color 0.15s;
+            }
+
+            a:hover {
+                text-decoration-color: var(--color-text);
+            }
+
+            h1 {
+                font-size: 2rem;
+                font-weight: 700;
+                line-height: 1.5;
+                margin-bottom: 0.75em;
+                color: var(--color-text);
+                letter-spacing: -0.025em;
+            }
+
+            p {
+                margin-bottom: 1.5em;
+                color: var(--color-muted);
+            }
+
+            .container {
+                max-width: 640px;
+                margin: 0 auto;
+                padding: 3rem 1.5rem;
+            }
+
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1.25rem;
+                font-size: 0.875rem;
+                font-weight: 500;
+                line-height: 1.714286;
+                border: 1px solid transparent;
+                border-radius: 9999px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    border-color 0.15s,
+                    color 0.15s,
+                    box-shadow 0.15s;
+                text-decoration: none;
+                white-space: nowrap;
+                letter-spacing: -0.005em;
+            }
+
+            a.btn,
+            a.btn:hover {
+                text-decoration: none;
+            }
+
+            .btn:hover {
+                text-decoration: none;
+            }
+
+            .btn-primary {
+                background: var(--color-accent);
+                color: var(--color-white);
+                border-color: var(--color-accent);
+            }
+
+            .btn-primary:hover {
+                background: var(--color-accent-hover);
+                border-color: var(--color-accent-hover);
+                color: var(--color-white);
+            }
+
+            .btn-secondary {
+                background: var(--color-white);
+                color: var(--color-text);
+                border-color: var(--color-border);
+            }
+
+            .btn-secondary:hover {
+                background: var(--color-surface);
+                border-color: var(--color-light);
+            }
+
+            .btn-small {
+                padding: 0.25rem 0.75rem;
+                font-size: 0.8125rem;
+            }
+
+            .card {
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .invite-page {
+                text-align: center;
+                padding: 4.5rem 0;
+            }
+
+            .invite-page h1 {
+                font-size: 2rem;
+                margin-bottom: 0.375em;
+            }
+
+            .invite-page p {
+                color: var(--color-muted);
+                margin-bottom: 1.5rem;
+            }
+
+            .invite-steps {
+                text-align: left;
+                max-width: 400px;
+                margin: 0 auto 1.5rem;
+            }
+
+            .invite-step {
+                display: flex;
+                gap: 1rem;
+                align-items: flex-start;
+                margin-bottom: 1.5rem;
+            }
+
+            .invite-step-number {
+                flex-shrink: 0;
+                width: 1.5rem;
+                height: 1.5rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.75rem;
+                font-weight: 600;
+                background: var(--color-text);
+                color: var(--color-white);
+                border-radius: 50%;
+            }
+
+            .invite-step-text {
+                font-size: 0.9375rem;
+                line-height: 1.6;
+                color: var(--color-muted);
+                padding-top: 0;
+            }
+
+            .text-secondary {
+                color: var(--color-muted);
+            }
+
+            .text-small {
+                font-size: 0.875rem;
+                line-height: 1.714286;
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            .site-footer {
+                text-align: center;
+                padding: 1.5rem;
+                font-size: 0.8125rem;
+                line-height: 1.5rem;
+                color: var(--color-light);
+                border-top: 1px solid var(--color-border-light);
+                margin-top: 3rem;
+            }
+
+            .site-footer a {
+                color: var(--color-muted);
+            }
+
+            .site-footer a:hover {
+                color: var(--color-text);
+            }
+
+            @media (max-width: 600px) {
+                .container {
+                    padding: 1.5rem 1rem;
+                }
+
+                h1 {
+                    font-size: 1.625rem;
+                    line-height: 1.384615;
+                }
+
+                .card {
+                    border-radius: 12px;
+                    padding: 1.25rem;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main class="container">
+            {% if not token_valid %}
+            <div class="invite-page">
+                <h1>Invite unavailable</h1>
+                <p>{{ token_error or "This invite link is no longer valid." }}</p>
+                <a href="/" class="btn btn-secondary">Go to homepage</a>
+            </div>
+
+            {% else %}
+            <div class="invite-page">
+                <h1>You're invited to {{ app_name }}</h1>
+                <p style="color: var(--color-light)">
+                    Hold a key, speak, release. Polished text appears at your cursor.
+                </p>
+
+                <div class="card" style="text-align: left; margin-top: 1.5rem; padding-top: 3rem">
+                    <div class="invite-steps">
+                        <div class="invite-step">
+                            <div class="invite-step-number">1</div>
+                            <div class="invite-step-text">
+                                <a
+                                    href="https://autonomy.computer/freeflow/FreeFlow.dmg"
+                                    class="btn btn-primary btn-small"
+                                    id="download-btn"
+                                    >Download for macOS</a
+                                >
+                                <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
+                                    >Requires macOS 14 or later</span
+                                >
+                            </div>
+                        </div>
+                        <div class="invite-step">
+                            <div class="invite-step-number">2</div>
+                            <div class="invite-step-text">
+                                Open the downloaded <strong>FreeFlow.dmg</strong> and drag <strong>FreeFlow</strong> to
+                                <strong>Applications</strong>
+                            </div>
+                        </div>
+                        <div class="invite-step">
+                            <div class="invite-step-number">3</div>
+                            <div class="invite-step-text">
+                                <a href="{{ connect_url }}" class="btn btn-primary btn-small" id="connect-btn"
+                                    >Connect {{ app_name }}</a
+                                >
+                                <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
+                                    >Opens the app and links your invite</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="view-opened" class="hidden" style="text-align: center; margin-top: 1.5rem">
+                    <p style="color: var(--color-light)">Check the {{ app_name }} window to continue setup.</p>
+                    <p style="margin-top: 0.75rem">
+                        <a href="{{ connect_url }}" class="text-small">Click here if {{ app_name }} didn't open</a>
+                    </p>
                 </div>
             </div>
-            <div class="invite-step">
-                <div class="invite-step-number">2</div>
-                <div class="invite-step-text">
-                    Open the downloaded <strong>FreeFlow.dmg</strong> and drag <strong>FreeFlow</strong> to
-                    <strong>Applications</strong>
-                </div>
-            </div>
-            <div class="invite-step">
-                <div class="invite-step-number">3</div>
-                <div class="invite-step-text">
-                    <a href="{{ connect_url }}" class="btn btn-primary btn-small" id="connect-btn"
-                        >Connect {{ app_name }}</a
-                    >
-                    <span class="text-small text-secondary" style="display: block; margin-top: 0.25rem"
-                        >Opens the app and links your invite</span
-                    >
-                </div>
-            </div>
-        </div>
-    </div>
+            {% endif %}
+        </main>
 
-    <div id="view-opened" class="hidden" style="text-align: center; margin-top: 1.5rem">
-        <p style="color: var(--color-light)">Check the {{ app_name }} window to continue setup.</p>
-        <p style="margin-top: 0.75rem">
-            <a href="{{ connect_url }}" class="text-small">Click here if {{ app_name }} didn't open</a>
-        </p>
-    </div>
-</div>
-{% endif %} {% endblock %} {% block scripts %} {% if token_valid %}
-<script>
-    (function () {
-        var connectBtn = document.getElementById("connect-btn");
-        var viewOpened = document.getElementById("view-opened");
+        <footer class="site-footer">Powered by <a href="https://autonomy.computer">Autonomy</a></footer>
 
-        if (connectBtn) {
-            connectBtn.addEventListener("click", function () {
-                // After clicking, show a hint that the app should be opening.
-                // Use a short delay so the browser has time to hand off to the app.
-                setTimeout(function () {
-                    viewOpened.classList.remove("hidden");
-                }, 1000);
-            });
-        }
-    })();
-</script>
-{% endif %} {% endblock %}
+        {% if token_valid %}
+        <script>
+            (function () {
+                var connectBtn = document.getElementById("connect-btn");
+                var viewOpened = document.getElementById("view-opened");
+
+                if (connectBtn) {
+                    connectBtn.addEventListener("click", function () {
+                        // After clicking, show a hint that the app should be opening.
+                        // Use a short delay so the browser has time to hand off to the app.
+                        setTimeout(function () {
+                            viewOpened.classList.remove("hidden");
+                        }, 1000);
+                    });
+                }
+            })();
+        </script>
+        {% endif %}
+    </body>
+</html>

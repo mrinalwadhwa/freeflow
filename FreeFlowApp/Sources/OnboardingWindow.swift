@@ -171,25 +171,28 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         navigate(to: url)
     }
 
-    // MARK: - Bundled onboarding
+    // MARK: - Bundled pages
 
-    /// Load the bundled onboarding HTML page from the app bundle.
+    /// Load a bundled HTML page from the app bundle by resource name.
     ///
-    /// The onboarding page is self-contained (all CSS and JS inlined)
-    /// and does not depend on a zone server. Optional query parameters
+    /// The page must be a self-contained HTML file (all CSS and JS
+    /// inlined) shipped in the app bundle. Optional query parameters
     /// are appended to the file URL so the page JS can read them with
     /// `URLSearchParams(window.location.search)`.
     ///
-    /// - Parameter queryString: Optional query string without the
-    ///   leading `?`, e.g. `"token=abc"` or `"skip=connect"`.
-    func loadBundledOnboarding(queryString: String? = nil) {
+    /// - Parameters:
+    ///   - name: The resource name without extension (e.g. "onboarding",
+    ///     "add-email", "sign-in").
+    ///   - queryString: Optional query string without the leading `?`,
+    ///     e.g. `"token=abc"` or `"variant=grace"`.
+    func loadBundledPage(_ name: String, queryString: String? = nil) {
         guard
             let htmlURL = Bundle.main.url(
-                forResource: "onboarding",
+                forResource: name,
                 withExtension: "html"
             )
         else {
-            Self.log("onboarding.html not found in bundle")
+            Self.log("\(name).html not found in bundle")
             return
         }
 
@@ -200,11 +203,21 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
             fileURL = components?.url ?? htmlURL
         }
 
-        Self.log("loadBundledOnboarding: \(fileURL.absoluteString)")
+        Self.log("loadBundledPage(\(name)): \(fileURL.absoluteString)")
         webView.loadFileURL(
             fileURL,
             allowingReadAccessTo: htmlURL.deletingLastPathComponent()
         )
+    }
+
+    /// Load the bundled onboarding HTML page from the app bundle.
+    ///
+    /// Convenience wrapper around `loadBundledPage(_:queryString:)`.
+    ///
+    /// - Parameter queryString: Optional query string without the
+    ///   leading `?`, e.g. `"token=abc"` or `"skip=connect"`.
+    func loadBundledOnboarding(queryString: String? = nil) {
+        loadBundledPage("onboarding", queryString: queryString)
     }
 
     // MARK: - Presentation

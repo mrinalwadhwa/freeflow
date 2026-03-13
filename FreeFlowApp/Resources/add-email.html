@@ -1,12 +1,141 @@
-{% set app_name = "FreeFlow" %}
 <!doctype html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Add your email – {{ app_name }}</title>
-        <link rel="stylesheet" href="/static/styles.css" />
+        <title>Add your email – FreeFlow</title>
         <style>
+            /* --- Base styles (from styles.css) --- */
+
+            :root {
+                --color-bg: #eeeceb;
+                --color-surface: #f9f9f9;
+                --color-text: #292929;
+                --color-muted: #7a7775;
+                --color-light: #a8a4a1;
+                --color-border: #ddd9d6;
+                --color-border-light: #e8e5e3;
+                --color-accent: #292929;
+                --color-accent-hover: #3d3d3d;
+                --color-white: #ffffff;
+                --color-green: #3a8a5c;
+                --color-green-bg: #e9f3ed;
+                --color-yellow: #9e7c1a;
+                --color-yellow-bg: #f8f2e0;
+                --color-red: #b8383d;
+                --color-red-bg: #f8e8e9;
+                --color-blue: #3a6fa8;
+                --color-blue-bg: #e5eef6;
+
+                --baseline: 1.5rem;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            html {
+                font-size: 16px;
+                -webkit-text-size-adjust: 100%;
+            }
+
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
+                    "Apple Color Emoji", "Segoe UI Emoji";
+                font-size: 1rem;
+                line-height: 1.5;
+                color: var(--color-text);
+                background: var(--color-bg);
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1.25rem;
+                font-size: 0.875rem;
+                font-weight: 500;
+                line-height: 1.714286;
+                border: 1px solid transparent;
+                border-radius: 9999px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    border-color 0.15s,
+                    color 0.15s,
+                    box-shadow 0.15s;
+                text-decoration: none;
+                white-space: nowrap;
+                letter-spacing: -0.005em;
+            }
+
+            .btn:hover {
+                text-decoration: none;
+            }
+
+            .btn-primary {
+                background: var(--color-accent);
+                color: var(--color-white);
+                border-color: var(--color-accent);
+            }
+
+            .btn-primary:hover {
+                background: var(--color-accent-hover);
+                border-color: var(--color-accent-hover);
+                color: var(--color-white);
+            }
+
+            .btn-secondary {
+                background: var(--color-white);
+                color: var(--color-text);
+                border-color: var(--color-border);
+            }
+
+            .btn-secondary:hover {
+                background: var(--color-surface);
+                border-color: var(--color-light);
+            }
+
+            .btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            .form-input {
+                width: 100%;
+                padding: 0.5rem 0.875rem;
+                font-size: 1rem;
+                line-height: 1.5;
+                color: var(--color-text);
+                background: var(--color-white);
+                border: 1px solid var(--color-border);
+                border-radius: 8px;
+                outline: none;
+                font-family: inherit;
+                transition:
+                    border-color 0.15s,
+                    box-shadow 0.15s;
+            }
+
+            .form-input:focus {
+                border-color: var(--color-text);
+                box-shadow: 0 0 0 3px rgba(41, 41, 41, 0.08);
+            }
+
+            /* --- Page-specific styles (from add-email template) --- */
+
             body {
                 background: var(--color-bg);
                 overflow: hidden;
@@ -375,7 +504,134 @@
             </div>
         </div>
 
-        <script src="/static/bridge.js"></script>
+        <script>
+            /**
+             * Bridge between web pages and the native macOS app (WKWebView).
+             *
+             * When running inside the app's WKWebView, messages are sent via
+             * window.webkit.messageHandlers.freeflow.postMessage(). The native side
+             * pushes events back by calling window.freeflowbridge.onEvent(data).
+             *
+             * When running in a normal browser (for development/testing), send()
+             * is a no-op that logs to the console, and onEvent can be called
+             * manually from the browser console to simulate native responses.
+             */
+            (function () {
+              "use strict";
+
+              var inWebView = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow);
+
+              /**
+               * Send an action to the native side.
+               *
+               * @param {string} action - The action name (e.g. "redeemInvite").
+               * @param {Object} [data] - Optional payload data.
+               */
+              function send(action, data) {
+                var message = { action: action };
+                if (data !== undefined && data !== null) {
+                  message.data = data;
+                }
+
+                if (inWebView) {
+                  window.webkit.messageHandlers.freeflow.postMessage(message);
+                } else {
+                  console.log("[bridge] send:", JSON.stringify(message));
+                }
+              }
+
+              /**
+               * Whether we are running inside a WKWebView with the native bridge.
+               *
+               * @returns {boolean}
+               */
+              function isNative() {
+                return inWebView;
+              }
+
+              // Event listeners registered via bridge.on().
+              var listeners = {};
+
+              /**
+               * Register a listener for a specific event type.
+               *
+               * @param {string} eventName - The event name (e.g. "inviteRedeemed").
+               * @param {Function} callback - Called with the event data object.
+               */
+              function on(eventName, callback) {
+                if (!listeners[eventName]) {
+                  listeners[eventName] = [];
+                }
+                listeners[eventName].push(callback);
+              }
+
+              /**
+               * Remove a previously registered listener.
+               *
+               * @param {string} eventName - The event name.
+               * @param {Function} callback - The exact function reference to remove.
+               */
+              function off(eventName, callback) {
+                if (!listeners[eventName]) return;
+                listeners[eventName] = listeners[eventName].filter(function (fn) {
+                  return fn !== callback;
+                });
+              }
+
+              /**
+               * Remove all listeners for an event, or all listeners entirely.
+               *
+               * @param {string} [eventName] - If omitted, clears all listeners.
+               */
+              function clear(eventName) {
+                if (eventName) {
+                  delete listeners[eventName];
+                } else {
+                  listeners = {};
+                }
+              }
+
+              /**
+               * Called by the native side to deliver an event.
+               * Also callable from the browser console for testing:
+               *   window.freeflowbridge.onEvent({ event: "inviteRedeemed", user: { name: "Alice" } })
+               *
+               * @param {Object} data - Event payload. Must include an "event" field.
+               */
+              function onEvent(data) {
+                if (!data || !data.event) {
+                  console.warn("[bridge] onEvent called without event field:", data);
+                  return;
+                }
+
+                if (!inWebView) {
+                  console.log("[bridge] onEvent:", JSON.stringify(data));
+                }
+
+                var eventName = data.event;
+                var cbs = listeners[eventName];
+                if (cbs && cbs.length > 0) {
+                  for (var i = 0; i < cbs.length; i++) {
+                    try {
+                      cbs[i](data);
+                    } catch (err) {
+                      console.error("[bridge] Error in listener for " + eventName + ":", err);
+                    }
+                  }
+                }
+              }
+
+              // Public API exposed as window.freeflowbridge.
+              window.freeflowbridge = {
+                send: send,
+                on: on,
+                off: off,
+                clear: clear,
+                onEvent: onEvent,
+                isNative: isNative,
+              };
+            })();
+        </script>
         <script>
             (function () {
                 "use strict";
@@ -400,7 +656,7 @@
                 if (variant === "enforced") {
                     descEl.textContent =
                         "Your admin requires an email address to continue using " +
-                        "{{ app_name }}. Add your email now.";
+                        "FreeFlow. Add your email now.";
                     // No "Later" button in enforced mode.
                     laterBtn.style.display = "none";
                 } else if (variant === "grace") {
@@ -421,6 +677,7 @@
                 var currentStep = "email";
                 var transitioning = false;
                 var resendCooldown = false;
+                var pendingAction = "submit";
 
                 // --------------------------------------------------------
                 // Step navigation
@@ -496,45 +753,57 @@
                     emailSubmit.disabled = true;
                     emailSubmit.textContent = "Sending\u2026";
 
-                    // Call better-auth's change-email endpoint (same origin).
-                    // This triggers the sendVerificationOTP callback in auth.mjs
-                    // which sends the OTP to the user's email.
-                    fetch("/api/auth/change-email", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        credentials: "same-origin",
-                        body: JSON.stringify({
-                            newEmail: email,
-                            callbackURL: "/account/add-email",
-                        }),
-                    })
-                        .then(function (resp) {
-                            if (!resp.ok) {
-                                return resp.json().then(function (data) {
-                                    throw new Error(data.message || data.error || "Failed to send code");
-                                });
-                            }
-                            return resp.json();
-                        })
-                        .then(function () {
-                            // Show the OTP step.
-                            document.getElementById("otp-email-display").textContent = email;
+                    pendingAction = "submit";
+                    bridge.send("changeEmail", {
+                        email: email,
+                        callbackURL: "/account/add-email"
+                    });
+                }
+
+                // Bridge listener for changeEmail results (handles both submit and resend)
+                bridge.on("changeEmailResult", function (data) {
+                    if (pendingAction === "submit") {
+                        if (data.error) {
+                            emailError.textContent = data.error;
+                            emailSubmit.disabled = false;
+                            emailSubmit.textContent = "Send verification code";
+                        } else {
+                            document.getElementById("otp-email-display").textContent = currentEmail;
                             clearOtpInputs();
                             showStep("otp");
-                            // Focus first OTP input after transition.
                             setTimeout(function () {
                                 var first = otpInputs[0];
                                 if (first) first.focus();
                             }, 250);
-                        })
-                        .catch(function (err) {
-                            emailError.textContent = err.message || "Failed to send verification code.";
-                        })
-                        .finally(function () {
                             emailSubmit.disabled = false;
                             emailSubmit.textContent = "Send verification code";
-                        });
-                }
+                        }
+                    } else if (pendingAction === "resend") {
+                        if (data.error) {
+                            otpError.textContent = data.error;
+                            otpResend.textContent = "Resend";
+                        } else {
+                            otpResend.textContent = "Sent!";
+                            clearOtpInputs();
+                            setTimeout(function () {
+                                otpInputs[0].focus();
+                            }, 100);
+                        }
+                        // 30-second cooldown
+                        var seconds = 30;
+                        var timer = setInterval(function () {
+                            seconds--;
+                            if (seconds > 0) {
+                                otpResend.textContent = "Resend (" + seconds + "s)";
+                            } else {
+                                clearInterval(timer);
+                                resendCooldown = false;
+                                otpResend.classList.remove("disabled");
+                                otpResend.textContent = "Resend";
+                            }
+                        }, 1000);
+                    }
+                });
 
                 // --------------------------------------------------------
                 // OTP step
@@ -629,41 +898,27 @@
                     otpVerify.disabled = true;
                     otpVerify.textContent = "Verifying\u2026";
 
-                    // Call better-auth's email-otp verify endpoint (same origin).
-                    fetch("/api/auth/email-otp/verify-email", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        credentials: "same-origin",
-                        body: JSON.stringify({
-                            email: currentEmail,
-                            otp: code,
-                        }),
-                    })
-                        .then(function (resp) {
-                            if (!resp.ok) {
-                                return resp.json().then(function (data) {
-                                    throw new Error(data.message || data.error || "Verification failed");
-                                });
-                            }
-                            return resp.json();
-                        })
-                        .then(function () {
-                            // Notify the native side that email was added.
-                            bridge.send("emailAdded", { email: currentEmail });
-                            showStep("success");
-                        })
-                        .catch(function (err) {
-                            otpError.textContent = err.message || "Invalid code. Please try again.";
-                            for (var j = 0; j < otpInputs.length; j++) {
-                                otpInputs[j].classList.add("otp-error");
-                            }
-                        })
-                        .finally(function () {
-                            otpVerify.disabled = false;
-                            otpVerify.textContent = "Verify";
-                            checkOtpComplete();
-                        });
+                    bridge.send("verifyEmailOtp", {
+                        email: currentEmail,
+                        otp: code
+                    });
                 }
+
+                // Bridge listener for verifyEmailOtp results
+                bridge.on("verifyEmailOtpResult", function (data) {
+                    if (data.error) {
+                        otpError.textContent = data.error;
+                        for (var j = 0; j < otpInputs.length; j++) {
+                            otpInputs[j].classList.add("otp-error");
+                        }
+                    } else {
+                        bridge.send("emailAdded", { email: currentEmail });
+                        showStep("success");
+                    }
+                    otpVerify.disabled = false;
+                    otpVerify.textContent = "Verify";
+                    checkOtpComplete();
+                });
 
                 // Resend OTP
                 otpResend.addEventListener("click", function (e) {
@@ -674,46 +929,11 @@
                     otpResend.classList.add("disabled");
                     otpResend.textContent = "Sending\u2026";
 
-                    fetch("/api/auth/change-email", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        credentials: "same-origin",
-                        body: JSON.stringify({
-                            newEmail: currentEmail,
-                            callbackURL: "/account/add-email",
-                        }),
-                    })
-                        .then(function (resp) {
-                            if (!resp.ok) {
-                                return resp.json().then(function (data) {
-                                    throw new Error(data.message || "Failed to resend");
-                                });
-                            }
-                            otpResend.textContent = "Sent!";
-                            clearOtpInputs();
-                            setTimeout(function () {
-                                otpInputs[0].focus();
-                            }, 100);
-                        })
-                        .catch(function (err) {
-                            otpError.textContent = err.message;
-                            otpResend.textContent = "Resend";
-                        })
-                        .finally(function () {
-                            // 30-second cooldown
-                            var seconds = 30;
-                            var timer = setInterval(function () {
-                                seconds--;
-                                if (seconds > 0) {
-                                    otpResend.textContent = "Resend (" + seconds + "s)";
-                                } else {
-                                    clearInterval(timer);
-                                    resendCooldown = false;
-                                    otpResend.classList.remove("disabled");
-                                    otpResend.textContent = "Resend";
-                                }
-                            }, 1000);
-                        });
+                    pendingAction = "resend";
+                    bridge.send("changeEmail", {
+                        email: currentEmail,
+                        callbackURL: "/account/add-email"
+                    });
                 });
 
                 // --------------------------------------------------------

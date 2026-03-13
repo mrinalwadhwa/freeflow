@@ -1,15 +1,151 @@
-{% set app_name = "FreeFlow" %}
 <!doctype html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{{ app_name }} Settings</title>
-        <link rel="stylesheet" href="/static/styles.css" />
+        <title>FreeFlow Settings</title>
         <style>
-            /* ---------------------------------------------------------- */
-            /* Settings layout                                             */
-            /* ---------------------------------------------------------- */
+            /* --- Base styles (from styles.css) --- */
+
+            :root {
+                --color-bg: #eeeceb;
+                --color-surface: #f9f9f9;
+                --color-text: #292929;
+                --color-muted: #7a7775;
+                --color-light: #a8a4a1;
+                --color-border: #ddd9d6;
+                --color-border-light: #e8e5e3;
+                --color-accent: #292929;
+                --color-accent-hover: #3d3d3d;
+                --color-white: #ffffff;
+                --color-green: #3a8a5c;
+                --color-green-bg: #e9f3ed;
+                --color-yellow: #9e7c1a;
+                --color-yellow-bg: #f8f2e0;
+                --color-red: #b8383d;
+                --color-red-bg: #f8e8e9;
+                --color-blue: #3a6fa8;
+                --color-blue-bg: #e5eef6;
+
+                --baseline: 1.5rem;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            html {
+                font-size: 16px;
+                -webkit-text-size-adjust: 100%;
+            }
+
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
+                    "Apple Color Emoji", "Segoe UI Emoji";
+                font-size: 1rem;
+                line-height: 1.5;
+                color: var(--color-text);
+                background: var(--color-bg);
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1.25rem;
+                font-size: 0.875rem;
+                font-weight: 500;
+                line-height: 1.714286;
+                border: 1px solid transparent;
+                border-radius: 9999px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    border-color 0.15s,
+                    color 0.15s,
+                    box-shadow 0.15s;
+                text-decoration: none;
+                white-space: nowrap;
+                letter-spacing: -0.005em;
+            }
+
+            .btn:hover {
+                text-decoration: none;
+            }
+
+            .btn-primary {
+                background: var(--color-accent);
+                color: var(--color-white);
+                border-color: var(--color-accent);
+            }
+
+            .btn-primary:hover {
+                background: var(--color-accent-hover);
+                border-color: var(--color-accent-hover);
+                color: var(--color-white);
+            }
+
+            .btn-secondary {
+                background: var(--color-white);
+                color: var(--color-text);
+                border-color: var(--color-border);
+            }
+
+            .btn-secondary:hover {
+                background: var(--color-surface);
+                border-color: var(--color-light);
+            }
+
+            .btn-danger {
+                background: var(--color-white);
+                color: var(--color-red);
+                border-color: var(--color-border);
+            }
+
+            .btn-danger:hover {
+                background: var(--color-red-bg);
+                border-color: var(--color-red);
+            }
+
+            .btn-small {
+                padding: 0.25rem 0.75rem;
+                font-size: 0.8125rem;
+            }
+
+            .btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+
+            .spinner {
+                display: inline-block;
+                width: 1.25rem;
+                height: 1.25rem;
+                border: 2px solid var(--color-border);
+                border-top-color: var(--color-text);
+                border-radius: 50%;
+                animation: spin 0.6s linear infinite;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            /* --- Page-specific styles (settings) --- */
 
             html,
             body {
@@ -496,8 +632,389 @@
             </div>
         </div>
 
-        <script src="/static/bridge.js"></script>
-        <script src="/static/settings.js"></script>
+        <script>
+            /**
+             * Bridge between web pages and the native macOS app (WKWebView).
+             *
+             * When running inside the app's WKWebView, messages are sent via
+             * window.webkit.messageHandlers.freeflow.postMessage(). The native side
+             * pushes events back by calling window.freeflowbridge.onEvent(data).
+             *
+             * When running in a normal browser (for development/testing), send()
+             * is a no-op that logs to the console, and onEvent can be called
+             * manually from the browser console to simulate native responses.
+             */
+            (function () {
+                "use strict";
+
+                var inWebView = !!(
+                    window.webkit &&
+                    window.webkit.messageHandlers &&
+                    window.webkit.messageHandlers.freeflow
+                );
+
+                /**
+                 * Send an action to the native side.
+                 *
+                 * @param {string} action - The action name (e.g. "redeemInvite").
+                 * @param {Object} [data] - Optional payload data.
+                 */
+                function send(action, data) {
+                    var message = { action: action };
+                    if (data !== undefined && data !== null) {
+                        message.data = data;
+                    }
+
+                    if (inWebView) {
+                        window.webkit.messageHandlers.freeflow.postMessage(message);
+                    } else {
+                        console.log("[bridge] send:", JSON.stringify(message));
+                    }
+                }
+
+                /**
+                 * Whether we are running inside a WKWebView with the native bridge.
+                 *
+                 * @returns {boolean}
+                 */
+                function isNative() {
+                    return inWebView;
+                }
+
+                // Event listeners registered via bridge.on().
+                var listeners = {};
+
+                /**
+                 * Register a listener for a specific event type.
+                 *
+                 * @param {string} eventName - The event name (e.g. "inviteRedeemed").
+                 * @param {Function} callback - Called with the event data object.
+                 */
+                function on(eventName, callback) {
+                    if (!listeners[eventName]) {
+                        listeners[eventName] = [];
+                    }
+                    listeners[eventName].push(callback);
+                }
+
+                /**
+                 * Remove a previously registered listener.
+                 *
+                 * @param {string} eventName - The event name.
+                 * @param {Function} callback - The exact function reference to remove.
+                 */
+                function off(eventName, callback) {
+                    if (!listeners[eventName]) return;
+                    listeners[eventName] = listeners[eventName].filter(function (fn) {
+                        return fn !== callback;
+                    });
+                }
+
+                /**
+                 * Remove all listeners for an event, or all listeners entirely.
+                 *
+                 * @param {string} [eventName] - If omitted, clears all listeners.
+                 */
+                function clear(eventName) {
+                    if (eventName) {
+                        delete listeners[eventName];
+                    } else {
+                        listeners = {};
+                    }
+                }
+
+                /**
+                 * Called by the native side to deliver an event.
+                 * Also callable from the browser console for testing:
+                 *   window.freeflowbridge.onEvent({ event: "inviteRedeemed", user: { name: "Alice" } })
+                 *
+                 * @param {Object} data - Event payload. Must include an "event" field.
+                 */
+                function onEvent(data) {
+                    if (!data || !data.event) {
+                        console.warn("[bridge] onEvent called without event field:", data);
+                        return;
+                    }
+
+                    if (!inWebView) {
+                        console.log("[bridge] onEvent:", JSON.stringify(data));
+                    }
+
+                    var eventName = data.event;
+                    var cbs = listeners[eventName];
+                    if (cbs && cbs.length > 0) {
+                        for (var i = 0; i < cbs.length; i++) {
+                            try {
+                                cbs[i](data);
+                            } catch (err) {
+                                console.error("[bridge] Error in listener for " + eventName + ":", err);
+                            }
+                        }
+                    }
+                }
+
+                // Public API exposed as window.freeflowbridge.
+                window.freeflowbridge = {
+                    send: send,
+                    on: on,
+                    off: off,
+                    clear: clear,
+                    onEvent: onEvent,
+                    isNative: isNative,
+                };
+            })();
+        </script>
+
+        <script>
+            /**
+             * Settings page manager.
+             *
+             * Manage the settings UI displayed in the macOS app's WKWebView.
+             * Communicates with native code via the bridge to read/write settings
+             * and stream live microphone levels.
+             *
+             * Bridge actions (settings -> native):
+             *   - getSettings        — request current settings state
+             *   - setSoundFeedback   — { enabled: bool }
+             *   - setHotkey          — { modifierKey: string }
+             *   - setLanguage        — { code: string }
+             *   - listMicrophones    — request available input devices
+             *   - selectMicrophone   — { id: number }
+             *   - startMicPreview    — start streaming audio levels
+             *   - stopMicPreview     — stop streaming audio levels
+             *   - closeSettings      — dismiss the settings window
+             *
+             * Bridge events (native -> settings):
+             *   - settingsState      — { soundFeedback, hotkey, language, languages }
+             *   - microphoneList     — { devices: [...], currentId }
+             *   - microphoneSelected — { id }
+             *   - audioLevel         — { level }
+             *
+             * Depends on bridge.js (window.freeflowbridge).
+             */
+            (function () {
+                "use strict";
+
+                var bridge = window.freeflowbridge;
+
+                // Track whether mic preview is active so we can clean up.
+                var micPreviewActive = false;
+
+                // ----------------------------------------------------------------
+                // Initialization
+                // ----------------------------------------------------------------
+
+                function init() {
+                    // Register bridge event listeners.
+                    bridge.on("settingsState", handleSettingsState);
+                    bridge.on("microphoneList", handleMicrophoneList);
+                    bridge.on("microphoneSelected", handleMicrophoneSelected);
+                    bridge.on("audioLevel", handleAudioLevel);
+
+                    // Wire up UI event handlers.
+                    bindControls();
+
+                    // Request current settings from native side.
+                    bridge.send("getSettings");
+
+                    // Request mic list and start preview.
+                    bridge.send("listMicrophones");
+                    bridge.send("startMicPreview");
+                    micPreviewActive = true;
+                }
+
+                // ----------------------------------------------------------------
+                // Settings state
+                // ----------------------------------------------------------------
+
+                function handleSettingsState(data) {
+                    // Sound toggle
+                    if (data.soundFeedback !== undefined) {
+                        var toggle = document.getElementById("sound-toggle");
+                        if (toggle) {
+                            toggle.checked = !!data.soundFeedback;
+                        }
+                    }
+
+                    // Shortcut labels
+                    if (data.shortcuts && window._setShortcutLabel) {
+                        var s = data.shortcuts;
+                        if (s.dictate) window._setShortcutLabel("dictate", s.dictate);
+                        if (s.handsfree) window._setShortcutLabel("handsfree", s.handsfree);
+                        if (s.paste) window._setShortcutLabel("paste", s.paste);
+                        if (s.cancel) window._setShortcutLabel("cancel", s.cancel);
+                    }
+
+                    // Language select — populate options if provided
+                    if (data.languages && data.languages.length > 0) {
+                        populateLanguages(data.languages, data.language);
+                    } else if (data.language) {
+                        // Just select the current language if options already exist
+                        var langSelect = document.getElementById("language-select");
+                        if (langSelect) {
+                            langSelect.value = data.language;
+                        }
+                    }
+                }
+
+                function populateLanguages(languages, currentCode) {
+                    var select = document.getElementById("language-select");
+                    if (!select) return;
+
+                    select.innerHTML = "";
+
+                    for (var i = 0; i < languages.length; i++) {
+                        var lang = languages[i];
+                        var opt = document.createElement("option");
+                        opt.value = lang.code;
+                        opt.textContent = lang.name;
+                        if (lang.code === currentCode) {
+                            opt.selected = true;
+                        }
+                        select.appendChild(opt);
+                    }
+                }
+
+                // ----------------------------------------------------------------
+                // Microphone list
+                // ----------------------------------------------------------------
+
+                function handleMicrophoneList(data) {
+                    var select = document.getElementById("mic-select");
+                    if (!select) return;
+
+                    var devices = (data && data.devices) || [];
+                    var currentId = data && data.currentId;
+
+                    select.innerHTML = "";
+
+                    for (var i = 0; i < devices.length; i++) {
+                        var d = devices[i];
+                        var opt = document.createElement("option");
+                        opt.value = d.id;
+                        opt.textContent = d.name + (d.isDefault ? " (default)" : "");
+                        if (d.id === currentId) {
+                            opt.selected = true;
+                        }
+                        select.appendChild(opt);
+                    }
+
+                    if (devices.length === 0) {
+                        var empty = document.createElement("option");
+                        empty.textContent = "No microphones found";
+                        empty.disabled = true;
+                        select.appendChild(empty);
+                    }
+                }
+
+                function handleMicrophoneSelected() {
+                    // Selection confirmed by native side. The dropdown already
+                    // reflects the choice from the user's interaction.
+                }
+
+                // ----------------------------------------------------------------
+                // Audio level
+                // ----------------------------------------------------------------
+
+                function handleAudioLevel(data) {
+                    var level = (data && data.level) || 0;
+                    var bar = document.getElementById("mic-level-bar");
+                    if (!bar) return;
+
+                    // The level is already scaled by AudioCaptureProvider using
+                    // sqrt(rms * 25), so it is 0-1 and display-ready.
+                    var percent = Math.round(level * 100);
+                    bar.style.width = percent + "%";
+
+                    if (level > 0.05) {
+                        bar.classList.add("active");
+                    } else {
+                        bar.classList.remove("active");
+                    }
+                }
+
+                function resetMicLevel() {
+                    var bar = document.getElementById("mic-level-bar");
+                    if (bar) {
+                        bar.style.width = "0%";
+                        bar.classList.remove("active");
+                    }
+                }
+
+                // ----------------------------------------------------------------
+                // Control bindings
+                // ----------------------------------------------------------------
+
+                function bindControls() {
+                    // Sound toggle
+                    var soundToggle = document.getElementById("sound-toggle");
+                    if (soundToggle) {
+                        soundToggle.addEventListener("change", function () {
+                            bridge.send("setSoundFeedback", { enabled: soundToggle.checked });
+                        });
+                    }
+
+                    // Hotkey recorder is wired in the inline script block via
+                    // window._setHotkeyLabel and direct bridge.send calls.
+
+                    // Language select
+                    var langSelect = document.getElementById("language-select");
+                    if (langSelect) {
+                        langSelect.addEventListener("change", function () {
+                            bridge.send("setLanguage", { code: langSelect.value });
+                        });
+                    }
+
+                    // Mic select
+                    var micSelect = document.getElementById("mic-select");
+                    if (micSelect) {
+                        micSelect.addEventListener("change", function () {
+                            var id = parseInt(micSelect.value, 10);
+                            if (!isNaN(id)) {
+                                bridge.send("selectMicrophone", { id: id });
+                            }
+                        });
+                    }
+
+                    // Done button
+                    var doneBtn = document.getElementById("done-btn");
+                    if (doneBtn) {
+                        doneBtn.addEventListener("click", function (e) {
+                            e.preventDefault();
+                            cleanup();
+                            bridge.send("closeSettings");
+                        });
+                    }
+                }
+
+                // ----------------------------------------------------------------
+                // Cleanup
+                // ----------------------------------------------------------------
+
+                function cleanup() {
+                    if (micPreviewActive) {
+                        bridge.send("stopMicPreview");
+                        micPreviewActive = false;
+                        resetMicLevel();
+                    }
+                }
+
+                // Stop mic preview if the page is unloaded (window closed, etc.).
+                window.addEventListener("beforeunload", function () {
+                    cleanup();
+                });
+
+                // ----------------------------------------------------------------
+                // Start
+                // ----------------------------------------------------------------
+
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", init);
+                } else {
+                    init();
+                }
+            })();
+        </script>
 
         <script>
             /**

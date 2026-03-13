@@ -57,11 +57,11 @@ final class PeopleController {
 
     /// Show the People window, creating it if necessary.
     ///
-    /// Navigates to the `/people/` page on the zone. If the window
+    /// Loads the bundled people page from the app bundle. If the window
     /// already exists, it brings it to the front and refreshes state.
     func showWindow() {
         if let existingWindow = window {
-            existingWindow.navigate(baseURL: config.baseURL)
+            existingWindow.loadBundledPeople()
             existingWindow.present()
             return
         }
@@ -70,7 +70,7 @@ final class PeopleController {
         bridge.webView = win.webView
         window = win
 
-        win.navigate(baseURL: config.baseURL)
+        win.loadBundledPeople()
         win.present()
     }
 

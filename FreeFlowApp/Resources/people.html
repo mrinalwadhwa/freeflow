@@ -1,0 +1,1558 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>FreeFlow People</title>
+        <style>
+            /* --- Base styles (from styles.css) --- */
+
+            :root {
+                --color-bg: #eeeceb;
+                --color-surface: #f9f9f9;
+                --color-text: #292929;
+                --color-muted: #7a7775;
+                --color-light: #a8a4a1;
+                --color-border: #ddd9d6;
+                --color-border-light: #e8e5e3;
+                --color-accent: #292929;
+                --color-accent-hover: #3d3d3d;
+                --color-white: #ffffff;
+                --color-green: #3a8a5c;
+                --color-green-bg: #e9f3ed;
+                --color-yellow: #9e7c1a;
+                --color-yellow-bg: #f8f2e0;
+                --color-red: #b8383d;
+                --color-red-bg: #f8e8e9;
+                --color-blue: #3a6fa8;
+                --color-blue-bg: #e5eef6;
+
+                --baseline: 1.5rem;
+            }
+
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            html {
+                font-size: 16px;
+                -webkit-text-size-adjust: 100%;
+            }
+
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
+                    "Apple Color Emoji", "Segoe UI Emoji";
+                font-size: 1rem;
+                line-height: 1.5;
+                color: var(--color-text);
+                background: var(--color-bg);
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.5rem 1.25rem;
+                font-size: 0.875rem;
+                font-weight: 500;
+                line-height: 1.714286;
+                border: 1px solid transparent;
+                border-radius: 9999px;
+                cursor: pointer;
+                transition:
+                    background 0.15s,
+                    border-color 0.15s,
+                    color 0.15s,
+                    box-shadow 0.15s;
+                text-decoration: none;
+                white-space: nowrap;
+                letter-spacing: -0.005em;
+            }
+
+            .btn:hover {
+                text-decoration: none;
+            }
+
+            .btn-primary {
+                background: var(--color-accent);
+                color: var(--color-white);
+                border-color: var(--color-accent);
+            }
+
+            .btn-primary:hover {
+                background: var(--color-accent-hover);
+                border-color: var(--color-accent-hover);
+                color: var(--color-white);
+            }
+
+            .btn-secondary {
+                background: var(--color-white);
+                color: var(--color-text);
+                border-color: var(--color-border);
+            }
+
+            .btn-secondary:hover {
+                background: var(--color-surface);
+                border-color: var(--color-light);
+            }
+
+            .btn-danger {
+                background: var(--color-white);
+                color: var(--color-red);
+                border-color: var(--color-border);
+            }
+
+            .btn-danger:hover {
+                background: var(--color-red-bg);
+                border-color: var(--color-red);
+            }
+
+            .btn-small {
+                padding: 0.25rem 0.75rem;
+                font-size: 0.8125rem;
+            }
+
+            .btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+
+            .spinner {
+                display: inline-block;
+                width: 1.25rem;
+                height: 1.25rem;
+                border: 2px solid var(--color-border);
+                border-top-color: var(--color-text);
+                border-radius: 50%;
+                animation: spin 0.6s linear infinite;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            /* --- Page-specific styles (from people template) --- */
+
+            /* ---------------------------------------------------------- */
+            /* People layout                                               */
+            /* ---------------------------------------------------------- */
+
+            html,
+            body {
+                overflow-x: hidden;
+            }
+
+            body {
+                background: var(--color-bg);
+                overflow-y: hidden;
+            }
+
+            .people {
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                max-width: 520px;
+                margin: 0 auto;
+                padding: 2.5rem 1.5rem 1rem;
+                -webkit-user-select: none;
+                user-select: none;
+                box-sizing: border-box;
+            }
+
+            .people-header {
+                text-align: center;
+                margin-bottom: 1.5rem;
+                flex-shrink: 0;
+            }
+
+            .people-header h1 {
+                font-size: 1.625rem;
+                font-weight: 700;
+                line-height: 1.384615;
+                margin: 0;
+                letter-spacing: -0.025em;
+            }
+
+            .people-header p {
+                font-size: 0.875rem;
+                color: var(--color-muted);
+                margin-top: 0.25rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Scrollable body                                             */
+            /* ---------------------------------------------------------- */
+
+            .people-body {
+                flex: 1;
+                overflow-y: auto;
+                overflow-x: hidden;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .people-body::-webkit-scrollbar {
+                width: 0;
+                height: 0;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Sections (card panels)                                      */
+            /* ---------------------------------------------------------- */
+
+            .people-section {
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 0.75rem 1.25rem;
+                margin-bottom: 0.375rem;
+            }
+
+            .people-section-label {
+                font-size: 0.6875rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--color-light);
+                margin-bottom: 0.375rem;
+                line-height: 1.5rem;
+                display: flex;
+                align-items: center;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Count badge                                                 */
+            /* ---------------------------------------------------------- */
+
+            .count-badge {
+                display: inline-block;
+                background: var(--color-border-light);
+                color: var(--color-muted);
+                font-size: 0.75rem;
+                padding: 0.125rem 0.5rem;
+                border-radius: 10px;
+                margin-left: 0.5rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Admin badge                                                 */
+            /* ---------------------------------------------------------- */
+
+            .admin-badge {
+                display: inline-block;
+                background: var(--color-green-bg);
+                color: var(--color-green);
+                font-size: 0.6875rem;
+                font-weight: 600;
+                padding: 0.125rem 0.5rem;
+                border-radius: 6px;
+                text-transform: uppercase;
+                letter-spacing: 0.02em;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Inputs                                                      */
+            /* ---------------------------------------------------------- */
+
+            .people-input {
+                width: 100%;
+                padding: 0.625rem 0.875rem;
+                font-size: 0.875rem;
+                border: 1px solid var(--color-border);
+                border-radius: 10px;
+                background: var(--color-white);
+                color: var(--color-text);
+                outline: none;
+                font-family: inherit;
+                box-sizing: border-box;
+            }
+
+            .people-input:focus {
+                border-color: var(--color-accent);
+                box-shadow: 0 0 0 2px rgba(41, 41, 41, 0.1);
+            }
+
+            .people-input::placeholder {
+                color: var(--color-light);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Invite form                                                 */
+            /* ---------------------------------------------------------- */
+
+            .invite-form-row {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 0.75rem;
+            }
+
+            .invite-form-row .people-input {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .invite-form-actions {
+                display: flex;
+                justify-content: flex-end;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Invite success                                              */
+            /* ---------------------------------------------------------- */
+
+            .invite-success {
+                background: var(--color-green-bg);
+                color: var(--color-green);
+                font-size: 0.8125rem;
+                font-weight: 500;
+                padding: 0.625rem 1rem;
+                border-radius: 10px;
+                margin-top: 0.75rem;
+            }
+
+            .invite-success-label {
+                margin-bottom: 0.375rem;
+            }
+
+            .invite-success .copy-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                margin-top: 0.375rem;
+            }
+
+            .invite-success .copy-input {
+                flex: 1;
+                min-width: 0;
+                padding: 0.375rem 0.625rem;
+                font-size: 0.75rem;
+                font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+                background: var(--color-white);
+                border: 1px solid var(--color-border-light);
+                border-radius: 8px;
+                color: var(--color-text);
+                outline: none;
+                user-select: all;
+                -webkit-user-select: all;
+            }
+
+            .invite-success .copy-input:focus {
+                border-color: var(--color-accent);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Invite & people rows                                        */
+            /* ---------------------------------------------------------- */
+
+            .invite-row,
+            .person-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0.625rem 0;
+                border-bottom: 1px solid var(--color-border-light);
+            }
+
+            .invite-row:last-child,
+            .person-row:last-child {
+                border-bottom: none;
+            }
+
+            .invite-info,
+            .person-info {
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+                flex: 1;
+                margin-right: 0.75rem;
+            }
+
+            .invite-name,
+            .person-name {
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: var(--color-text);
+                line-height: 1.5;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .invite-meta,
+            .person-meta {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                line-height: 1.5;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .invite-actions,
+            .person-badges,
+            .person-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.375rem;
+                flex-shrink: 0;
+            }
+
+            .person-actions .btn {
+                min-width: 0;
+            }
+
+            .person-actions .btn:disabled {
+                opacity: 0.5;
+                cursor: default;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Locked state                                                */
+            /* ---------------------------------------------------------- */
+
+            .locked-card {
+                text-align: center;
+                padding: 1.5rem 1.25rem;
+            }
+
+            .locked-icon {
+                font-size: 1.625rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .locked-card h2 {
+                font-size: 1rem;
+                font-weight: 600;
+                margin: 0 0 0.375rem;
+                color: var(--color-text);
+            }
+
+            .locked-card p {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                margin: 0 0 1rem;
+                line-height: 1.5;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Loading state                                               */
+            /* ---------------------------------------------------------- */
+
+            .loading-state {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 3rem 1rem;
+                gap: 0.75rem;
+            }
+
+            .loading-state .spinner {
+                width: 24px;
+                height: 24px;
+                border: 2.5px solid var(--color-border);
+                border-top-color: var(--color-accent);
+                border-radius: 50%;
+                animation: spin 0.7s linear infinite;
+            }
+
+            .loading-state p {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Error state                                                 */
+            /* ---------------------------------------------------------- */
+
+            .error-state {
+                text-align: center;
+                padding: 2rem 1rem;
+            }
+
+            .error-state p {
+                font-size: 0.875rem;
+                color: var(--color-red);
+                margin-bottom: 1rem;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Empty state                                                 */
+            /* ---------------------------------------------------------- */
+
+            .empty-text {
+                font-size: 0.8125rem;
+                color: var(--color-muted);
+                text-align: center;
+                padding: 1rem 0;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Toast                                                       */
+            /* ---------------------------------------------------------- */
+
+            .toast {
+                position: fixed;
+                bottom: 1.5rem;
+                left: 50%;
+                transform: translateX(-50%) translateY(100%);
+                background: var(--color-text);
+                color: var(--color-white);
+                padding: 0.625rem 1.25rem;
+                border-radius: 10px;
+                font-size: 0.8125rem;
+                opacity: 0;
+                transition:
+                    transform 0.3s ease,
+                    opacity 0.3s ease;
+                z-index: 1000;
+                pointer-events: none;
+                white-space: nowrap;
+            }
+
+            .toast.visible {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+
+            /* ---------------------------------------------------------- */
+            /* Connection section                                          */
+            /* ---------------------------------------------------------- */
+
+            .connection-section {
+                background: var(--color-surface);
+                border: 1px solid var(--color-border-light);
+                border-radius: 16px;
+                padding: 0.75rem 1.25rem;
+                margin-bottom: 0.375rem;
+            }
+
+            .connection-status {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 0.75rem;
+            }
+
+            .connection-info {
+                min-width: 0;
+                flex: 1;
+                text-align: left;
+            }
+
+            .connection-title {
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: var(--color-text);
+                line-height: 1.5;
+            }
+
+            .connection-meta {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                line-height: 1.5;
+                margin-top: 0.125rem;
+                word-break: break-word;
+            }
+
+            .people-footer {
+                flex-shrink: 0;
+                text-align: center;
+                padding-top: 1rem;
+            }
+
+            .people-footer .btn-row {
+                display: flex;
+                justify-content: center;
+                margin-top: 0.375rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="people">
+            <!-- Header -->
+            <div class="people-header">
+                <h1>People</h1>
+                <p>Manage your team and invites</p>
+            </div>
+
+            <!-- Scrollable body -->
+            <div class="people-body">
+                <!-- Loading state -->
+                <div id="loading-state" class="loading-state">
+                    <div class="spinner"></div>
+                    <p>Loading...</p>
+                </div>
+
+                <!-- Error state -->
+                <div id="error-state" class="hidden">
+                    <div class="people-section">
+                        <div class="error-state">
+                            <p id="error-message">Something went wrong.</p>
+                            <button id="retry-btn" class="btn btn-secondary">Try Again</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Locked state (no credit card) -->
+                <div id="locked-state" class="hidden">
+                    <div class="people-section">
+                        <div class="locked-card">
+                            <div class="locked-icon">🔒</div>
+                            <h2>Invites are locked</h2>
+                            <p>Add a credit card to unlock invites for your team.</p>
+                            <button id="add-card-btn" class="btn btn-primary">Add credit card</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invite section -->
+                <div id="invite-section" class="hidden">
+                    <div class="people-section">
+                        <div class="people-section-label">Invite someone</div>
+                        <div class="invite-form-row">
+                            <input
+                                type="text"
+                                id="invite-name"
+                                class="people-input"
+                                placeholder="Name (optional)"
+                                autocomplete="off"
+                                autocorrect="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                            />
+                            <input
+                                type="email"
+                                id="invite-email"
+                                class="people-input"
+                                placeholder="Email"
+                                autocomplete="off"
+                                autocorrect="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                                required
+                            />
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--color-muted); margin: 0.5rem 0 0">
+                            Email is required so this person has a durable identity on your FreeFlow server. You can
+                            still copy the link and send it manually.
+                        </p>
+                        <div class="invite-form-actions">
+                            <button id="create-invite-btn" class="btn btn-primary">Create invite</button>
+                        </div>
+                        <div id="invite-success" class="invite-success hidden">
+                            <div class="invite-success-label">Invite created! Link copied.</div>
+                            <div class="copy-row">
+                                <input type="text" id="invite-url-display" class="copy-input" readonly />
+                                <button id="copy-invite-btn" class="btn btn-small btn-secondary">Copy link</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending invites section -->
+                <div id="invites-section" class="hidden">
+                    <div class="people-section">
+                        <div class="people-section-label">
+                            Pending invites
+                            <span id="invites-count" class="count-badge">0</span>
+                        </div>
+                        <div id="invites-empty" class="empty-text">No pending invites yet.</div>
+                        <div id="invites-list"></div>
+                    </div>
+                </div>
+
+                <!-- People section -->
+                <div id="people-section" class="hidden">
+                    <div class="people-section">
+                        <div class="people-section-label">
+                            People
+                            <span id="people-count" class="count-badge">0</span>
+                        </div>
+                        <div id="people-empty" class="empty-text hidden">No people yet.</div>
+                        <div id="people-list"></div>
+                    </div>
+                </div>
+
+                <!-- Connection section -->
+                <div id="connection-section" class="hidden">
+                    <div class="connection-section">
+                        <div class="people-section-label">Connection</div>
+                        <div class="connection-status">
+                            <div class="connection-info">
+                                <div class="connection-title">Connected to this FreeFlow server</div>
+                                <div id="connected-server" class="connection-meta">freeflow.example.com</div>
+                                <div id="disconnect-help" class="connection-meta"></div>
+                            </div>
+                            <button id="disconnect-btn" class="btn btn-small btn-danger" type="button">
+                                Disconnect
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="people-footer">
+                <div class="btn-row">
+                    <button id="done-btn" class="btn btn-primary" style="min-width: 120px">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast notification -->
+        <div id="toast" class="toast"></div>
+
+        <script>
+/**
+ * Bridge between web pages and the native macOS app (WKWebView).
+ *
+ * When running inside the app's WKWebView, messages are sent via
+ * window.webkit.messageHandlers.freeflow.postMessage(). The native side
+ * pushes events back by calling window.freeflowbridge.onEvent(data).
+ *
+ * When running in a normal browser (for development/testing), send()
+ * is a no-op that logs to the console, and onEvent can be called
+ * manually from the browser console to simulate native responses.
+ */
+(function () {
+  "use strict";
+
+  var inWebView = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.freeflow);
+
+  /**
+   * Send an action to the native side.
+   *
+   * @param {string} action - The action name (e.g. "redeemInvite").
+   * @param {Object} [data] - Optional payload data.
+   */
+  function send(action, data) {
+    var message = { action: action };
+    if (data !== undefined && data !== null) {
+      message.data = data;
+    }
+
+    if (inWebView) {
+      window.webkit.messageHandlers.freeflow.postMessage(message);
+    } else {
+      console.log("[bridge] send:", JSON.stringify(message));
+    }
+  }
+
+  /**
+   * Whether we are running inside a WKWebView with the native bridge.
+   *
+   * @returns {boolean}
+   */
+  function isNative() {
+    return inWebView;
+  }
+
+  // Event listeners registered via bridge.on().
+  var listeners = {};
+
+  /**
+   * Register a listener for a specific event type.
+   *
+   * @param {string} eventName - The event name (e.g. "inviteRedeemed").
+   * @param {Function} callback - Called with the event data object.
+   */
+  function on(eventName, callback) {
+    if (!listeners[eventName]) {
+      listeners[eventName] = [];
+    }
+    listeners[eventName].push(callback);
+  }
+
+  /**
+   * Remove a previously registered listener.
+   *
+   * @param {string} eventName - The event name.
+   * @param {Function} callback - The exact function reference to remove.
+   */
+  function off(eventName, callback) {
+    if (!listeners[eventName]) return;
+    listeners[eventName] = listeners[eventName].filter(function (fn) {
+      return fn !== callback;
+    });
+  }
+
+  /**
+   * Remove all listeners for an event, or all listeners entirely.
+   *
+   * @param {string} [eventName] - If omitted, clears all listeners.
+   */
+  function clear(eventName) {
+    if (eventName) {
+      delete listeners[eventName];
+    } else {
+      listeners = {};
+    }
+  }
+
+  /**
+   * Called by the native side to deliver an event.
+   * Also callable from the browser console for testing:
+   *   window.freeflowbridge.onEvent({ event: "inviteRedeemed", user: { name: "Alice" } })
+   *
+   * @param {Object} data - Event payload. Must include an "event" field.
+   */
+  function onEvent(data) {
+    if (!data || !data.event) {
+      console.warn("[bridge] onEvent called without event field:", data);
+      return;
+    }
+
+    if (!inWebView) {
+      console.log("[bridge] onEvent:", JSON.stringify(data));
+    }
+
+    var eventName = data.event;
+    var cbs = listeners[eventName];
+    if (cbs && cbs.length > 0) {
+      for (var i = 0; i < cbs.length; i++) {
+        try {
+          cbs[i](data);
+        } catch (err) {
+          console.error("[bridge] Error in listener for " + eventName + ":", err);
+        }
+      }
+    }
+  }
+
+  // Public API exposed as window.freeflowbridge.
+  window.freeflowbridge = {
+    send: send,
+    on: on,
+    off: off,
+    clear: clear,
+    onEvent: onEvent,
+    isNative: isNative,
+  };
+})();
+        </script>
+        <script>
+/**
+ * People page manager.
+ *
+ * Manage the people/invites UI displayed in the macOS app's WKWebView.
+ * Communicates with native code via the bridge to create/revoke invites
+ * and display the list of people in the user's network.
+ *
+ * Bridge actions (people -> native):
+ *   - getPeopleState — request current people state
+ *   - createInvite   — { name: string|null, email: string }
+ *   - revokeInvite   — { id: number }
+ *   - copyText       — { text: string }
+ *   - removePerson   — { id: string }
+ *   - openBilling    — open billing flow
+ *   - disconnectFromServer — disconnect this device from the current FreeFlow server
+ *   - closePeople    — close the window
+ *
+ * Bridge events (native -> people):
+ *   - peopleState    — { hasCreditCard, invites, people, isAdmin, connectedServer, canDisconnect }
+ *   - inviteCreated  — { invite: { id, name, email, inviteUrl, createdAt } }
+ *   - inviteRevoked  — { id }
+ *   - personRemoved  — { id }
+ *   - actionError    — { message }
+ *   - pageError      — { message }
+ *   - toast          — { message }
+ *
+ * Depends on bridge.js (window.freeflowbridge).
+ */
+(function () {
+  "use strict";
+
+  var bridge = window.freeflowbridge;
+
+  var state = {
+    loading: true,
+    hasCreditCard: false,
+    invites: [],
+    people: [],
+    creatingInvite: false,
+    removingPersonId: null,
+    lastCreatedInvite: null,
+    isAdmin: false,
+    connectedServer: "",
+    canDisconnect: false,
+  };
+
+  // ----------------------------------------------------------------
+  // Initialization
+  // ----------------------------------------------------------------
+
+  function init() {
+    // Register bridge event listeners.
+    bridge.on("peopleState", handlePeopleState);
+    bridge.on("inviteCreated", handleInviteCreated);
+    bridge.on("inviteRevoked", handleInviteRevoked);
+    bridge.on("personRemoved", handlePersonRemoved);
+    bridge.on("actionError", handleActionError);
+    bridge.on("pageError", handlePageError);
+    bridge.on("toast", handleToast);
+
+    // Wire up UI event handlers.
+    bindControls();
+
+    // Request current people state from native side.
+    bridge.send("getPeopleState");
+  }
+
+  // ----------------------------------------------------------------
+  // People state
+  // ----------------------------------------------------------------
+
+  function handlePeopleState(data) {
+    state.hasCreditCard = !!(data && data.hasCreditCard);
+    state.invites = (data && data.invites) || [];
+    state.people = (data && data.people) || [];
+    state.isAdmin = !!(data && data.isAdmin);
+    state.connectedServer = (data && data.connectedServer) || "";
+    state.canDisconnect = !!(data && data.canDisconnect);
+    state.loading = false;
+    render();
+  }
+
+  // ----------------------------------------------------------------
+  // Render
+  // ----------------------------------------------------------------
+
+  function render() {
+    var loadingState = document.getElementById("loading-state");
+    var errorState = document.getElementById("error-state");
+    var lockedState = document.getElementById("locked-state");
+    var inviteSection = document.getElementById("invite-section");
+    var invitesSection = document.getElementById("invites-section");
+    var peopleSection = document.getElementById("people-section");
+    var connectionSection = document.getElementById("connection-section");
+
+    // Hide loading
+    if (loadingState) {
+      loadingState.classList.add("hidden");
+    }
+
+    // Make sure error state is hidden during normal render
+    if (errorState) {
+      errorState.classList.add("hidden");
+    }
+
+    if (state.hasCreditCard) {
+      // Unlocked: show invite form, hide locked state
+      if (lockedState) {
+        lockedState.classList.add("hidden");
+      }
+      if (inviteSection) {
+        inviteSection.classList.remove("hidden");
+      }
+    } else {
+      // Locked: show locked state, hide invite form
+      if (lockedState) {
+        lockedState.classList.remove("hidden");
+      }
+      if (inviteSection) {
+        inviteSection.classList.add("hidden");
+      }
+    }
+
+    // Always show invites and people sections after loading
+    if (invitesSection) {
+      invitesSection.classList.remove("hidden");
+    }
+    if (peopleSection) {
+      peopleSection.classList.remove("hidden");
+    }
+    if (connectionSection) {
+      connectionSection.classList.remove("hidden");
+    }
+
+    renderInvites();
+    renderPeople();
+    renderConnection();
+  }
+
+  // ----------------------------------------------------------------
+  // Render invites
+  // ----------------------------------------------------------------
+
+  function renderInvites() {
+    var invitesList = document.getElementById("invites-list");
+    var invitesCount = document.getElementById("invites-count");
+    var invitesEmpty = document.getElementById("invites-empty");
+
+    // Filter to pending invites only
+    var pending = [];
+    for (var i = 0; i < state.invites.length; i++) {
+      var inv = state.invites[i];
+      if (!inv.revoked && inv.useCount < inv.maxUses) {
+        pending.push(inv);
+      }
+    }
+
+    // Update count badge
+    if (invitesCount) {
+      invitesCount.textContent = String(pending.length);
+    }
+
+    if (pending.length === 0) {
+      // Show empty state
+      if (invitesEmpty) {
+        invitesEmpty.classList.remove("hidden");
+      }
+      if (invitesList) {
+        invitesList.innerHTML = "";
+      }
+      return;
+    }
+
+    // Hide empty state
+    if (invitesEmpty) {
+      invitesEmpty.classList.add("hidden");
+    }
+
+    // Build invite rows
+    var html = "";
+    for (var j = 0; j < pending.length; j++) {
+      var invite = pending[j];
+      // Use name, fall back to label (API field), then email
+      var name = invite.name || invite.label || invite.email || "Unnamed invite";
+      var metaParts = [];
+      if (invite.email) {
+        metaParts.push(escapeHtml(invite.email));
+      }
+      if (invite.createdAt) {
+        metaParts.push(formatDate(invite.createdAt));
+      }
+      var meta = metaParts.join(" &middot; ");
+      var url = invite.inviteUrl || "";
+      var hasUrl = url && url.length > 0;
+
+      html += '<div class="invite-row">';
+      html += '<div class="invite-info">';
+      html += '<div class="invite-name">' + escapeHtml(name) + "</div>";
+      html += '<div class="invite-meta">' + meta + "</div>";
+      html += "</div>";
+      html += '<div class="invite-actions">';
+      // Disable copy button if no URL available
+      html +=
+        '<button class="btn btn-small' +
+        (hasUrl ? "" : " disabled") +
+        '" data-copy-url="' +
+        escapeAttr(url) +
+        '"' +
+        (hasUrl ? "" : " disabled") +
+        ">Copy link</button>";
+      html += '<button class="btn btn-small btn-danger" data-revoke-id="' + invite.id + '">Revoke</button>';
+      html += "</div>";
+      html += "</div>";
+    }
+
+    if (invitesList) {
+      invitesList.innerHTML = html;
+      wireInviteButtons(invitesList);
+    }
+  }
+
+  function wireInviteButtons(container) {
+    // Copy link buttons
+    var copyBtns = container.querySelectorAll("[data-copy-url]");
+    for (var i = 0; i < copyBtns.length; i++) {
+      (function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          if (btn.disabled) return;
+          var url = btn.getAttribute("data-copy-url");
+          if (url && url.length > 0) {
+            bridge.send("copyText", { text: url });
+            btn.textContent = "Copied!";
+            setTimeout(function () {
+              btn.textContent = "Copy link";
+            }, 2000);
+          }
+        });
+      })(copyBtns[i]);
+    }
+
+    // Revoke buttons
+    var revokeBtns = container.querySelectorAll("[data-revoke-id]");
+    for (var j = 0; j < revokeBtns.length; j++) {
+      (function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          var id = parseInt(btn.getAttribute("data-revoke-id"), 10);
+          if (!isNaN(id)) {
+            bridge.send("revokeInvite", { id: id });
+          }
+        });
+      })(revokeBtns[j]);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Render people
+  // ----------------------------------------------------------------
+
+  function renderPeople() {
+    var peopleList = document.getElementById("people-list");
+    var peopleCount = document.getElementById("people-count");
+    var peopleEmpty = document.getElementById("people-empty");
+
+    var count = state.people.length;
+
+    // Update count badge
+    if (peopleCount) {
+      peopleCount.textContent = String(count);
+    }
+
+    if (count <= 1) {
+      // Only admin (or nobody), show empty state
+      if (peopleEmpty) {
+        peopleEmpty.classList.remove("hidden");
+        peopleEmpty.textContent = "You're the only person here.";
+      }
+      if (peopleList) {
+        peopleList.innerHTML = "";
+      }
+      // Still render the single admin row if there is one
+      if (count === 1) {
+        if (peopleList) {
+          peopleList.innerHTML = buildPersonRow(state.people[0]);
+        }
+      }
+      return;
+    }
+
+    // Hide empty state
+    if (peopleEmpty) {
+      peopleEmpty.classList.add("hidden");
+    }
+
+    // Build person rows
+    var html = "";
+    for (var i = 0; i < state.people.length; i++) {
+      html += buildPersonRow(state.people[i]);
+    }
+
+    if (peopleList) {
+      peopleList.innerHTML = html;
+      wirePeopleButtons(peopleList);
+    }
+  }
+
+  function buildPersonRow(person) {
+    var name = person.name || "Unnamed";
+    var email = person.email || "No email on file";
+    var adminBadge = person.isAdmin ? ' <span class="admin-badge">Admin</span>' : "";
+    var canRemove = !person.isAdmin;
+    var isRemoving = state.removingPersonId === person.id;
+
+    var html = '<div class="person-row">';
+    html += '<div class="person-info">';
+    html += '<div class="person-name">' + escapeHtml(name) + adminBadge + "</div>";
+    html += '<div class="person-meta">' + escapeHtml(email) + "</div>";
+    html += "</div>";
+    if (canRemove) {
+      html += '<div class="person-badges">';
+      html +=
+        '<button class="btn btn-small btn-danger" data-remove-person-id="' +
+        escapeAttr(String(person.id)) +
+        '"' +
+        (isRemoving ? " disabled" : "") +
+        ">" +
+        (isRemoving ? "Removing..." : "Remove") +
+        "</button>";
+      html += "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
+  // ----------------------------------------------------------------
+  // Connection
+  // ----------------------------------------------------------------
+
+  function renderConnection() {
+    var connectionSection = document.getElementById("connection-section");
+    var connectedServer = document.getElementById("connected-server");
+    var disconnectHelp = document.getElementById("disconnect-help");
+    var disconnectBtn = document.getElementById("disconnect-btn");
+
+    if (!connectionSection) return;
+
+    if (connectedServer) {
+      connectedServer.textContent = state.connectedServer || "Unknown server";
+    }
+
+    if (disconnectHelp) {
+      if (state.canDisconnect) {
+        disconnectHelp.textContent =
+          "Disconnecting removes this server from this Mac only. Your server-side account stays intact.";
+      } else if (state.isAdmin) {
+        disconnectHelp.textContent =
+          "As the admin, use Sign Out from the menu bar if you want to switch accounts or reprovision this Mac.";
+      } else {
+        disconnectHelp.textContent = "";
+      }
+    }
+
+    if (disconnectBtn) {
+      if (state.canDisconnect) {
+        disconnectBtn.classList.remove("hidden");
+        disconnectBtn.disabled = false;
+      } else {
+        disconnectBtn.classList.add("hidden");
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Invite created
+  // ----------------------------------------------------------------
+
+  function handleInviteCreated(data) {
+    var invite = data && data.invite;
+    if (!invite) return;
+
+    // Add to the beginning of the invites list
+    state.invites.unshift(invite);
+    state.lastCreatedInvite = invite;
+
+    // Show success message with invite URL
+    var inviteSuccess = document.getElementById("invite-success");
+    var inviteUrlDisplay = document.getElementById("invite-url-display");
+    var copyInviteBtn = document.getElementById("copy-invite-btn");
+
+    if (inviteSuccess) {
+      inviteSuccess.classList.remove("hidden");
+    }
+    if (inviteUrlDisplay) {
+      inviteUrlDisplay.textContent = invite.inviteUrl || "";
+    }
+    if (copyInviteBtn) {
+      copyInviteBtn.onclick = function (e) {
+        e.preventDefault();
+        if (invite.inviteUrl) {
+          bridge.send("copyText", { text: invite.inviteUrl });
+          copyInviteBtn.textContent = "Copied!";
+          setTimeout(function () {
+            copyInviteBtn.textContent = "Copy link";
+          }, 2000);
+        }
+      };
+    }
+
+    // Clear input fields
+    var nameInput = document.getElementById("invite-name");
+    var emailInput = document.getElementById("invite-email");
+    if (nameInput) {
+      nameInput.value = "";
+    }
+    if (emailInput) {
+      emailInput.value = "";
+      emailInput.setCustomValidity("");
+    }
+
+    // Re-enable create button
+    var createBtn = document.getElementById("create-invite-btn");
+    if (createBtn) {
+      createBtn.disabled = false;
+      createBtn.textContent = "Create invite";
+    }
+    state.creatingInvite = false;
+
+    // Update the invites list
+    renderInvites();
+  }
+
+  // ----------------------------------------------------------------
+  // Invite revoked
+  // ----------------------------------------------------------------
+
+  function handleInviteRevoked(data) {
+    var id = data && data.id;
+    if (id === undefined || id === null) return;
+
+    // Mark the invite as revoked in state
+    for (var i = 0; i < state.invites.length; i++) {
+      if (state.invites[i].id === id) {
+        state.invites[i].revoked = true;
+        break;
+      }
+    }
+
+    renderInvites();
+    showToast("Invite revoked");
+  }
+
+  function wirePeopleButtons(container) {
+    var removeBtns = container.querySelectorAll("[data-remove-person-id]");
+    for (var i = 0; i < removeBtns.length; i++) {
+      (function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          if (btn.disabled) return;
+          var id = btn.getAttribute("data-remove-person-id");
+          if (!id) return;
+          state.removingPersonId = id;
+          renderPeople();
+          bridge.send("removePerson", { id: id });
+        });
+      })(removeBtns[i]);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Person removed
+  // ----------------------------------------------------------------
+
+  function handlePersonRemoved(data) {
+    var id = data && data.id;
+    if (id === undefined || id === null) return;
+
+    var normalizedId = String(id);
+    var nextPeople = [];
+    for (var i = 0; i < state.people.length; i++) {
+      if (String(state.people[i].id) !== normalizedId) {
+        nextPeople.push(state.people[i]);
+      }
+    }
+    state.people = nextPeople;
+    state.removingPersonId = null;
+
+    renderPeople();
+    showToast("Person removed");
+  }
+
+  // ----------------------------------------------------------------
+  // Action error
+  // ----------------------------------------------------------------
+
+  function handleActionError(data) {
+    var message = (data && data.message) || "An error occurred";
+
+    if (state.creatingInvite) {
+      var createBtn = document.getElementById("create-invite-btn");
+      if (createBtn) {
+        createBtn.disabled = false;
+        createBtn.textContent = "Create invite";
+      }
+    }
+    state.creatingInvite = false;
+    state.removingPersonId = null;
+    renderPeople();
+
+    showToast(message);
+  }
+
+  // ----------------------------------------------------------------
+  // Page error
+  // ----------------------------------------------------------------
+
+  function handlePageError(data) {
+    var message = (data && data.message) || "An unexpected error occurred";
+
+    var errorState = document.getElementById("error-state");
+    var errorMessage = document.getElementById("error-message");
+    var loadingState = document.getElementById("loading-state");
+    var lockedState = document.getElementById("locked-state");
+    var inviteSection = document.getElementById("invite-section");
+    var invitesSection = document.getElementById("invites-section");
+    var peopleSection = document.getElementById("people-section");
+
+    // Show error state
+    if (errorState) {
+      errorState.classList.remove("hidden");
+    }
+    if (errorMessage) {
+      errorMessage.textContent = message;
+    }
+
+    // Hide everything else
+    if (loadingState) {
+      loadingState.classList.add("hidden");
+    }
+    if (lockedState) {
+      lockedState.classList.add("hidden");
+    }
+    if (inviteSection) {
+      inviteSection.classList.add("hidden");
+    }
+    if (invitesSection) {
+      invitesSection.classList.add("hidden");
+    }
+    if (peopleSection) {
+      peopleSection.classList.add("hidden");
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Toast
+  // ----------------------------------------------------------------
+
+  function handleToast(data) {
+    var message = (data && data.message) || "";
+    showToast(message);
+  }
+
+  function showToast(message) {
+    var toast = document.getElementById("toast");
+    if (!toast) return;
+
+    toast.textContent = message;
+    toast.classList.add("visible");
+
+    setTimeout(function () {
+      toast.classList.remove("visible");
+    }, 3000);
+  }
+
+  // ----------------------------------------------------------------
+  // Control bindings
+  // ----------------------------------------------------------------
+
+  function bindControls() {
+    // Create invite button
+    var createBtn = document.getElementById("create-invite-btn");
+    if (createBtn) {
+      createBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (state.creatingInvite) return;
+
+        var nameInput = document.getElementById("invite-name");
+        var emailInput = document.getElementById("invite-email");
+        var name = nameInput ? nameInput.value.trim() : "";
+        var email = emailInput ? emailInput.value.trim() : "";
+
+        if (!email) {
+          if (emailInput) {
+            emailInput.setCustomValidity("Email is required");
+            emailInput.reportValidity();
+          }
+          return;
+        }
+
+        if (emailInput) {
+          emailInput.setCustomValidity("");
+        }
+
+        // Hide previous success message
+        var inviteSuccess = document.getElementById("invite-success");
+        if (inviteSuccess) {
+          inviteSuccess.classList.add("hidden");
+        }
+
+        state.creatingInvite = true;
+        createBtn.disabled = true;
+        createBtn.textContent = "Creating...";
+
+        bridge.send("createInvite", {
+          name: name || null,
+          email: email,
+        });
+      });
+    }
+
+    // Done button
+    var doneBtn = document.getElementById("done-btn");
+    if (doneBtn) {
+      doneBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        bridge.send("closePeople");
+      });
+    }
+
+    // Add card button
+    var addCardBtn = document.getElementById("add-card-btn");
+    if (addCardBtn) {
+      addCardBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        bridge.send("openBilling");
+      });
+    }
+
+    // Disconnect button
+    var disconnectBtn = document.getElementById("disconnect-btn");
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (disconnectBtn.disabled) return;
+        bridge.send("disconnectFromServer");
+      });
+    }
+
+    // Retry button
+    var retryBtn = document.getElementById("retry-btn");
+    if (retryBtn) {
+      retryBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        var errorState = document.getElementById("error-state");
+        var loadingState = document.getElementById("loading-state");
+
+        if (errorState) {
+          errorState.classList.add("hidden");
+        }
+        if (loadingState) {
+          loadingState.classList.remove("hidden");
+        }
+
+        state.loading = true;
+        bridge.send("getPeopleState");
+      });
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Utilities
+  // ----------------------------------------------------------------
+
+  function formatDate(isoString) {
+    if (!isoString) return "";
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
+    return months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+  }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function escapeAttr(str) {
+    if (!str) return "";
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // Start when the DOM is ready.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+        </script>
+    </body>
+</html>

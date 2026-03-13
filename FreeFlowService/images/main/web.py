@@ -1,23 +1,18 @@
 """Serve zone web pages via Jinja2 templates.
 
-Provide routes for the public homepage, invite landing page, and admin
-dashboard pages. Templates live in the templates/ directory. Static
-files (CSS, JS) are served from static/.
-
-Admin pages require an authenticated admin session. The homepage shows
-a public view for visitors and a dashboard view for signed-in admins.
+Provide routes for the invite landing page and a redirect from the
+zone root to the project repository.
 """
 
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 import admin
 import auth
-import db
 import invite
 
 
@@ -30,11 +25,8 @@ _env = Environment(
     enable_async=True,
 )
 
-# Public routes (homepage, invite landing).
+# Public routes (redirect, invite landing).
 public_router = APIRouter()
-
-# Admin routes (dashboard, invites, users, settings).
-admin_router = APIRouter(prefix="/admin")
 
 
 def _zone_base_url(request: Request) -> str:
@@ -81,155 +73,17 @@ async def _get_session_user(request: Request) -> Optional[auth.AuthUser]:
     return user
 
 
-async def _require_admin_web(request: Request) -> auth.AuthUser:
-    """Require an authenticated admin for web page access.
-
-    Redirect to / if not authenticated or not an admin.
-    """
-    user = await _get_session_user(request)
-    if user is None:
-        raise HTTPException(status_code=303, headers={"Location": "/"})
-
-    if not await admin.is_admin(user.user_id):
-        raise HTTPException(status_code=303, headers={"Location": "/"})
-
-    return user
-
-
 # ------------------------------------------------------------------
 # Public routes
 # ------------------------------------------------------------------
 
 
-@public_router.get("/account/add-email", response_class=HTMLResponse)
-async def account_add_email(request: Request):
-    """Add email page for Tier 2 email recovery.
-
-    Displayed in the macOS app's WKWebView when the admin enables email
-    and the user has no email on file. Single-page multi-step flow:
-    enter email, receive OTP, verify. The variant query parameter
-    controls the messaging: voluntary, grace, or enforced.
-
-    Requires a valid session (the user is already signed in).
-    """
-    return await _render("account/add-email.html")
-
-
-@public_router.get("/account/sign-in", response_class=HTMLResponse)
-async def account_sign_in(request: Request):
-    """Email OTP sign-in page for session recovery.
-
-    Displayed in the macOS app's WKWebView when the user's session has
-    expired and they have an email on file. Single-page multi-step flow:
-    email input, OTP input, success. The email query parameter pre-fills
-    the email field. The has_email query parameter controls whether to
-    show the sign-in form or a fallback message.
-
-    No session required (the user's session has expired).
-    """
-    return await _render("account/sign-in.html")
-
-
-@public_router.get("/settings/", response_class=HTMLResponse)
-async def settings_page(request: Request):
-    """Settings page for the macOS app WKWebView.
-
-    Displays sound, hotkey, language, and microphone settings. All state
-    is local to the app (read/written via the native bridge), so no
-    server-side auth or data is needed. The page is a UI shell that
-    delegates all reads and writes to the native side.
-    """
-    return await _render("settings/index.html")
-
-
-@public_router.get("/people/", response_class=HTMLResponse)
-async def people_page(request: Request):
-    """People page for the macOS app WKWebView.
-
-    Displays team management: pending invites and people using the
-    FreeFlow. All data is fetched by the native side and pushed to
-    the page via the bridge. No server-side auth or data rendering
-    is needed here; the page is a pure UI shell.
-    """
-    return await _render("people/index.html")
-
-
-@public_router.get("/onboarding/", response_class=HTMLResponse)
-async def onboarding(request: Request):
-    """Single-page onboarding flow for the macOS app WKWebView.
-
-    All 6 screens are rendered in one HTML document. JavaScript manages
-    step transitions without page refreshes. The token query parameter
-    is passed through for invite redemption on screen 1.
-
-    No authentication required. The onboarding page is a UI shell that
-    delegates sensitive operations (token redemption, Keychain writes,
-    permission grants) to the native bridge.
-    """
-    base_url = _zone_base_url(request)
-
-    # Check if the visitor has an admin session (used to show the
-    # "Share with your team" section on the done screen).
-    is_admin_user = False
-    user = await _get_session_user(request)
-    if user is not None:
-        is_admin_user = await admin.is_admin(user.user_id)
-
-    return await _render(
-        "onboarding/index.html",
-        base_url=base_url,
-        is_admin=is_admin_user,
-    )
-
-
-@public_router.get("/", response_class=HTMLResponse)
-async def homepage(request: Request):
-    """Zone homepage.
-
-    Show a public page for visitors (download link, invite prompt).
-    Show an admin dashboard when signed in with an admin session.
-    """
-    user = await _get_session_user(request)
-    admin_user = None
-
-    if user is not None and await admin.is_admin(user.user_id):
-        admin_user = user
-
-        # Gather stats for the admin dashboard view.
-        try:
-            invite_list = await invite.list_invites()
-            active_invites = [
-                i for i in invite_list
-                if not i.revoked and i.use_count < i.max_uses
-            ]
-        except Exception:
-            invite_list = []
-            active_invites = []
-
-        try:
-            pool = db.get_pool()
-            async with pool.connection() as conn:
-                result = await conn.execute(
-                    'SELECT COUNT(*) FROM auth_user'
-                )
-                row = await result.fetchone()
-                user_count = row[0] if row else 0
-        except Exception:
-            user_count = 0
-
-        return await _render(
-            "index.html",
-            admin_user=admin_user,
-            user_count=user_count,
-            invite_count=len(active_invites),
-            total_invites=len(invite_list),
-            base_url=_zone_base_url(request),
-        )
-
-    return await _render(
-        "index.html",
-        admin_user=None,
-        base_url=_zone_base_url(request),
+@public_router.get("/")
+async def homepage():
+    """Redirect the zone root to the project repository."""
+    return RedirectResponse(
+        url="https://github.com/build-trust/freeflow",
+        status_code=302,
     )
 
 
@@ -264,135 +118,4 @@ async def invite_landing(request: Request, token: str):
         connect_url=connect_url,
         base_url=base_url,
         admin_user=is_admin_user,
-    )
-
-
-# ------------------------------------------------------------------
-# Admin routes
-# ------------------------------------------------------------------
-
-
-@admin_router.get("/", response_class=HTMLResponse)
-async def admin_dashboard(request: Request):
-    """Admin dashboard with overview and quick links."""
-    user = await _require_admin_web(request)
-
-    try:
-        invite_list = await invite.list_invites()
-        active_invites = [
-            i for i in invite_list
-            if not i.revoked and i.use_count < i.max_uses
-        ]
-        used_invites = [
-            i for i in invite_list
-            if i.use_count >= i.max_uses and not i.revoked
-        ]
-        revoked_invites = [i for i in invite_list if i.revoked]
-    except Exception:
-        invite_list = []
-        active_invites = []
-        used_invites = []
-        revoked_invites = []
-
-    try:
-        pool = db.get_pool()
-        async with pool.connection() as conn:
-            result = await conn.execute(
-                'SELECT COUNT(*) FROM auth_user'
-            )
-            row = await result.fetchone()
-            user_count = row[0] if row else 0
-
-            result = await conn.execute(
-                """SELECT COUNT(*) FROM auth_user
-                   WHERE email NOT LIKE '%%@placeholder.freeflow.local'"""
-            )
-            row = await result.fetchone()
-            with_email_count = row[0] if row else 0
-    except Exception:
-        user_count = 0
-        with_email_count = 0
-
-    return await _render(
-        "admin/dashboard.html",
-        admin_user=user,
-        nav_active="dashboard",
-        user_count=user_count,
-        with_email_count=with_email_count,
-        invite_count=len(active_invites),
-        used_invite_count=len(used_invites),
-        revoked_invite_count=len(revoked_invites),
-        base_url=_zone_base_url(request),
-    )
-
-
-@admin_router.get("/invites", response_class=HTMLResponse)
-async def admin_invites_page(request: Request):
-    """Invite management page with generator and list."""
-    user = await _require_admin_web(request)
-
-    try:
-        invite_list = await invite.list_invites()
-    except Exception:
-        invite_list = []
-
-    base_url = _zone_base_url(request)
-
-    return await _render(
-        "admin/invites.html",
-        admin_user=user,
-        nav_active="invites",
-        invites=invite_list,
-        base_url=base_url,
-    )
-
-
-@admin_router.get("/users", response_class=HTMLResponse)
-async def admin_users_page(request: Request):
-    """User management page with user list and email status."""
-    user = await _require_admin_web(request)
-
-    try:
-        pool = db.get_pool()
-        async with pool.connection() as conn:
-            result = await conn.execute(
-                """SELECT id, name, email, "emailVerified", "createdAt"
-                   FROM auth_user
-                   ORDER BY "createdAt" DESC"""
-            )
-            rows = await result.fetchall()
-
-        users = []
-        for row in rows:
-            user_id, name, email, email_verified, created_at = row
-            is_placeholder = email and email.endswith("@placeholder.freeflow.local")
-            is_admin_user = await admin.is_admin(user_id)
-            users.append({
-                "id": user_id,
-                "name": name,
-                "email": email if not is_placeholder else None,
-                "has_email": not is_placeholder and bool(email_verified),
-                "is_admin": is_admin_user,
-                "created_at": created_at,
-            })
-    except Exception:
-        users = []
-
-    return await _render(
-        "admin/users.html",
-        admin_user=user,
-        nav_active="users",
-        users=users,
-    )
-
-
-@admin_router.get("/settings", response_class=HTMLResponse)
-async def admin_settings_page(request: Request):
-    """Settings page. Email configuration is a placeholder for Phase 1.6."""
-    user = await _require_admin_web(request)
-
-    return await _render(
-        "admin/settings.html",
-        admin_user=user,
-        nav_active="settings",
     )

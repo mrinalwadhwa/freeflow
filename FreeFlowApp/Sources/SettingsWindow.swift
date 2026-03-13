@@ -4,8 +4,8 @@ import WebKit
 /// A window that hosts a WKWebView for the settings page.
 ///
 /// Follows the same pattern as `OnboardingWindow` but with a smaller
-/// size appropriate for settings. The web view loads the settings page
-/// from the user's FreeFlowService zone and communicates with native code
+/// size appropriate for settings. The web view loads a self-contained
+/// settings page from the app bundle and communicates with native code
 /// via the same bridge message handler protocol.
 ///
 /// The window is reused across open/close cycles. Call `present()` to
@@ -155,6 +155,31 @@ final class SettingsWindow: NSWindow, WKNavigationDelegate {
         Self.log("navigate(to: \(url.absoluteString))")
         let request = URLRequest(url: url)
         webView.load(request)
+    }
+
+    // MARK: - Bundled settings
+
+    /// Load the bundled settings HTML page from the app bundle.
+    ///
+    /// The settings page is self-contained (all CSS and JS inlined)
+    /// and does not depend on a zone server. All data flows through
+    /// the native bridge.
+    func loadBundledSettings() {
+        guard
+            let htmlURL = Bundle.main.url(
+                forResource: "settings",
+                withExtension: "html"
+            )
+        else {
+            Self.log("settings.html not found in bundle")
+            return
+        }
+
+        Self.log("loadBundledSettings: \(htmlURL.absoluteString)")
+        webView.loadFileURL(
+            htmlURL,
+            allowingReadAccessTo: htmlURL.deletingLastPathComponent()
+        )
     }
 
     // MARK: - Presentation
