@@ -38,6 +38,11 @@ final class SettingsController {
     /// Task for streaming audio levels during mic preview.
     private var audioLevelTask: Task<Void, Never>?
 
+    /// Task for the most recent stop-preview operation. Stored so that
+    /// `startMicPreviewAsync` can await it before starting a new preview,
+    /// preventing a race where start executes before stop completes.
+    private var stopPreviewTask: Task<Void, Never>?
+
     // MARK: - Initialization
 
     init(config: ServiceConfig = .shared) {
@@ -57,10 +62,12 @@ final class SettingsController {
     func showWindow() {
         if let existingWindow = window {
             // Reload bundled page to refresh state, then present.
+            // The JS init() will send startMicPreview via the bridge
+            // once the page loads, so we don't start it here — doing
+            // both causes a race where the second stop/start kills
+            // the first preview mid-stream.
             existingWindow.loadBundledSettings()
             existingWindow.present()
-            // Restart mic preview for fresh level display.
-            handleStartMicPreview()
             return
         }
 
@@ -182,20 +189,47 @@ final class SettingsController {
                 Settings.shared.hotkeySetting = HotkeySetting(
                     modifierFlags: flags, keyCode: keyCode, keyName: keyName)
                 onHotkeyChanged?()
+            } else if type == "modifiers" {
+                // Multi-modifier-only shortcuts are not supported for
+                // hold-to-talk dictation. The JS side should prevent
+                // this from being sent, but log a warning just in case.
+                NSLog(
+                    "[SettingsController] Ignoring unsupported 'modifiers' type for dictate shortcut (label: %@)",
+                    label)
             }
 
         case "handsfree":
-            Settings.shared.handsfreeShortcutLabel = label
+            let binding = shortcutBindingFromData(data, label: label)
+            Settings.shared.handsfreeShortcutBinding = binding
 
         case "paste":
-            Settings.shared.pasteShortcutLabel = label
+            let binding = shortcutBindingFromData(data, label: label)
+            Settings.shared.pasteShortcutBinding = binding
 
         case "cancel":
-            Settings.shared.cancelShortcutLabel = label
+            let binding = shortcutBindingFromData(data, label: label)
+            Settings.shared.cancelShortcutBinding = binding
 
         default:
             break
         }
+    }
+
+    /// Build a `ShortcutBinding` from bridge shortcut data.
+    ///
+    /// For combo shortcuts (modifier + key), extracts modifier flags and
+    /// key code. For modifier-only shortcuts, stores the modifier flags
+    /// with key code 0.
+    private func shortcutBindingFromData(_ data: [String: Any], label: String) -> ShortcutBinding {
+        let type = data["type"] as? String ?? ""
+        let flags = modifierFlagsFromData(data)
+        let keyCode: UInt16
+        if type == "combo" {
+            keyCode = keyCodeFromData(data)
+        } else {
+            keyCode = 0
+        }
+        return ShortcutBinding(modifierFlags: flags, keyCode: keyCode, label: label)
     }
 
     /// Build device-independent modifier flags from bridge shortcut data.
@@ -317,6 +351,14 @@ final class SettingsController {
     private func startMicPreviewAsync() async {
         guard let audioPreviewProvider else { return }
 
+        // Await any in-flight stop task from stopMicPreviewSync before
+        // starting a new preview. This prevents the race where a quick
+        // close-then-reopen causes start to execute before stop completes.
+        if let pending = stopPreviewTask {
+            await pending.value
+            stopPreviewTask = nil
+        }
+
         // Stop any existing preview first.
         await stopMicPreviewAsync()
 
@@ -351,14 +393,16 @@ final class SettingsController {
         }
     }
 
-    /// Synchronous stop for use in closeWindow (no await needed).
+    /// Fire-and-forget stop for use in closeWindow. The spawned task is
+    /// stored in `stopPreviewTask` so that a subsequent
+    /// `startMicPreviewAsync` can await it before starting a new preview.
     private func stopMicPreviewSync() {
         audioLevelTask?.cancel()
         audioLevelTask = nil
 
         guard let audioPreviewProvider else { return }
         let provider = soundFeedbackProvider
-        Task {
+        stopPreviewTask = Task {
             _ = try? await audioPreviewProvider.stopRecording()
             // Restore sound feedback after preview stops.
             if let provider, let capture = audioPreviewProvider as? AudioCaptureProvider {

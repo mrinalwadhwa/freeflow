@@ -23,6 +23,9 @@ public final class Settings: @unchecked Sendable {
         case handsfreeShortcutLabel = "handsfreeShortcutLabel"
         case pasteShortcutLabel = "pasteShortcutLabel"
         case cancelShortcutLabel = "cancelShortcutLabel"
+        case handsfreeShortcutBinding = "handsfreeShortcutBinding"
+        case pasteShortcutBinding = "pasteShortcutBinding"
+        case cancelShortcutBinding = "cancelShortcutBinding"
     }
 
     // MARK: - Init
@@ -83,7 +86,8 @@ public final class Settings: @unchecked Sendable {
     /// Defaults to "⌘⇧H" (Command+Shift+H).
     public var handsfreeShortcutLabel: String {
         get {
-            defaults.string(forKey: Key.handsfreeShortcutLabel.rawValue) ?? "⌘⇧H"
+            defaults.string(forKey: Key.handsfreeShortcutLabel.rawValue)
+                ?? handsfreeShortcutBinding.label
         }
         set {
             defaults.set(newValue, forKey: Key.handsfreeShortcutLabel.rawValue)
@@ -99,7 +103,8 @@ public final class Settings: @unchecked Sendable {
     /// Defaults to "⌃⌥V" (Control+Option+V).
     public var pasteShortcutLabel: String {
         get {
-            defaults.string(forKey: Key.pasteShortcutLabel.rawValue) ?? "⌃⌥V"
+            defaults.string(forKey: Key.pasteShortcutLabel.rawValue)
+                ?? pasteShortcutBinding.label
         }
         set {
             defaults.set(newValue, forKey: Key.pasteShortcutLabel.rawValue)
@@ -115,7 +120,8 @@ public final class Settings: @unchecked Sendable {
     /// Defaults to "Escape".
     public var cancelShortcutLabel: String {
         get {
-            defaults.string(forKey: Key.cancelShortcutLabel.rawValue) ?? "Escape"
+            defaults.string(forKey: Key.cancelShortcutLabel.rawValue)
+                ?? cancelShortcutBinding.label
         }
         set {
             defaults.set(newValue, forKey: Key.cancelShortcutLabel.rawValue)
@@ -124,6 +130,68 @@ public final class Settings: @unchecked Sendable {
                 object: self,
                 userInfo: ["key": Key.cancelShortcutLabel.rawValue]
             )
+        }
+    }
+
+    // MARK: - Shortcut Bindings
+
+    /// The key binding for the hands-free mode shortcut.
+    /// Defaults to ⌘⇧H (Command+Shift+H, key code 4).
+    public var handsfreeShortcutBinding: ShortcutBinding {
+        get {
+            guard let data = defaults.data(forKey: Key.handsfreeShortcutBinding.rawValue),
+                let binding = try? JSONDecoder().decode(ShortcutBinding.self, from: data)
+            else {
+                return .defaultHandsfree
+            }
+            return binding
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.handsfreeShortcutBinding.rawValue)
+            }
+            // Also update the label to stay in sync.
+            handsfreeShortcutLabel = newValue.label
+        }
+    }
+
+    /// The key binding for the paste-last-transcript shortcut.
+    /// Defaults to ⌃⌥V (Control+Option+V, key code 9).
+    public var pasteShortcutBinding: ShortcutBinding {
+        get {
+            guard let data = defaults.data(forKey: Key.pasteShortcutBinding.rawValue),
+                let binding = try? JSONDecoder().decode(ShortcutBinding.self, from: data)
+            else {
+                return .defaultPaste
+            }
+            return binding
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.pasteShortcutBinding.rawValue)
+            }
+            // Also update the label to stay in sync.
+            pasteShortcutLabel = newValue.label
+        }
+    }
+
+    /// The key binding for the cancel shortcut.
+    /// Defaults to Escape (no modifiers, key code 53).
+    public var cancelShortcutBinding: ShortcutBinding {
+        get {
+            guard let data = defaults.data(forKey: Key.cancelShortcutBinding.rawValue),
+                let binding = try? JSONDecoder().decode(ShortcutBinding.self, from: data)
+            else {
+                return .defaultCancel
+            }
+            return binding
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.cancelShortcutBinding.rawValue)
+            }
+            // Also update the label to stay in sync.
+            cancelShortcutLabel = newValue.label
         }
     }
 

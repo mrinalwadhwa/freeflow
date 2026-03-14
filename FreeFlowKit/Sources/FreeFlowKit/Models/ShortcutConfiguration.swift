@@ -3,26 +3,31 @@ import Foundation
 /// Key bindings for hotkeys and shortcut hints displayed in the HUD and menu bar.
 ///
 /// All UI components read from this struct to render shortcut hints dynamically.
-/// The hold-to-record key name is read from `HotkeySetting.current` so it updates
-/// automatically when the user changes their hotkey in Settings.
+/// The hold-to-record key name is read from `HotkeySetting.current` and the paste
+/// shortcut name is read from `Settings.shared` so they update automatically when
+/// the user changes shortcuts in Settings.
 public struct ShortcutConfiguration: Sendable, Equatable {
-
-    /// Display name of the paste-last-transcript shortcut (e.g. "⌃⌥V").
-    public let pasteShortcutName: String
 
     /// Display name of the dismiss key (e.g. "Escape").
     public let dismissKeyName: String
 
     public init(
-        pasteShortcutName: String = "⌃⌥V",
         dismissKeyName: String = "Escape"
     ) {
-        self.pasteShortcutName = pasteShortcutName
         self.dismissKeyName = dismissKeyName
     }
 
     /// Default configuration with standard key bindings.
     public static let `default` = ShortcutConfiguration()
+
+    /// Display name of the paste-last-transcript shortcut, read dynamically
+    /// from settings.
+    ///
+    /// This is a computed property so it always reflects the current shortcut
+    /// configuration, even after the user changes it in Settings.
+    public var pasteShortcutName: String {
+        Settings.shared.pasteShortcutBinding.label
+    }
 
     /// Display name of the hold-to-record key, read dynamically from settings.
     ///

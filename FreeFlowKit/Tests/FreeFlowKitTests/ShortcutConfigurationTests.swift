@@ -13,7 +13,9 @@ struct ShortcutConfigurationTests {
         // holdToRecordKeyName is now dynamic, read from HotkeySetting.current.
         // With default settings it should reflect Right Option.
         #expect(config.holdToRecordKeyName == HotkeySetting.current.displayName)
-        #expect(config.pasteShortcutName == "⌃⌥V")
+        // pasteShortcutName is now dynamic, read from Settings.shared.
+        // With default settings it should reflect ⌃⌥V.
+        #expect(config.pasteShortcutName == Settings.shared.pasteShortcutBinding.label)
         #expect(config.dismissKeyName == "Escape")
     }
 
@@ -23,14 +25,12 @@ struct ShortcutConfigurationTests {
         #expect(config == .default)
     }
 
-    @Test("Custom configuration preserves paste and dismiss values")
+    @Test("Custom configuration preserves dismiss value")
     func customValues() {
         let config = ShortcutConfiguration(
-            pasteShortcutName: "⌘⇧V",
             dismissKeyName: "Esc"
         )
 
-        #expect(config.pasteShortcutName == "⌘⇧V")
         #expect(config.dismissKeyName == "Esc")
     }
 
@@ -41,22 +41,24 @@ struct ShortcutConfigurationTests {
         #expect(config.holdToRecordHint == expected)
     }
 
-    @Test("No-target hint includes paste shortcut")
+    @Test("No-target hint includes paste shortcut from Settings")
     func noTargetHint() {
         let config = ShortcutConfiguration.default
-        #expect(config.noTargetHint == "Select a text field, then ⌃⌥V to paste")
+        let pasteLabel = Settings.shared.pasteShortcutBinding.label
+        #expect(config.noTargetHint == "Select a text field, then \(pasteLabel) to paste")
     }
 
-    @Test("No-target hint reflects custom paste shortcut")
-    func noTargetHintCustom() {
-        let config = ShortcutConfiguration(pasteShortcutName: "⌘⇧V")
-        #expect(config.noTargetHint == "Select a text field, then ⌘⇧V to paste")
+    @Test("Paste shortcut name reflects current Settings binding")
+    func pasteShortcutNameDynamic() {
+        let config = ShortcutConfiguration.default
+        // The paste shortcut name should always match what Settings reports.
+        #expect(config.pasteShortcutName == Settings.shared.pasteShortcutBinding.label)
     }
 
-    @Test("Equatable compares paste and dismiss fields")
+    @Test("Equatable compares dismiss field")
     func equatable() {
         let a = ShortcutConfiguration.default
-        let b = ShortcutConfiguration(pasteShortcutName: "⌘⇧V")
+        let b = ShortcutConfiguration(dismissKeyName: "Esc")
         #expect(a != b)
     }
 }

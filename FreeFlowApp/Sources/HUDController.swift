@@ -246,17 +246,17 @@ final class HUDController {
         }
     }
 
-    // MARK: - Paste shortcut (⌃⌥V) handling
+    // MARK: - Paste shortcut handling
 
-    /// Virtual key code for 'V'.
-    private static let vKeyCode: UInt16 = 9
-
-    /// Install local and global key event monitors to handle ⌃⌥V.
+    /// Install local and global key event monitors for the paste shortcut.
     ///
-    /// When the HUD is in the no-target state, ⌃⌥V lets the user select a
-    /// text field and paste the buffered transcript without re-dictating.
-    /// The shortcut also works when no-target is not showing, as a general
-    /// "paste last transcript" action.
+    /// The shortcut binding is read from Settings so it updates when the
+    /// user changes it in the settings screen. Default is ⌃⌥V.
+    ///
+    /// When the HUD is in the no-target state, the paste shortcut lets the
+    /// user select a text field and paste the buffered transcript without
+    /// re-dictating. The shortcut also works when no-target is not showing,
+    /// as a general "paste last transcript" action.
     private func installPasteShortcutMonitors() {
         localPasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
@@ -286,11 +286,14 @@ final class HUDController {
         }
     }
 
-    /// Check whether a key event is the ⌃⌥V paste shortcut.
+    /// Check whether a key event matches the configured paste shortcut.
+    ///
+    /// Reads the current binding from Settings so changes made in the
+    /// settings screen take effect immediately without restarting.
     private func isPasteShortcut(_ event: NSEvent) -> Bool {
-        guard event.keyCode == Self.vKeyCode else { return false }
+        let binding = Settings.shared.pasteShortcutBinding
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return flags == [.control, .option]
+        return binding.matches(keyCode: event.keyCode, modifierFlags: flags.rawValue)
     }
 
     /// Paste the buffered transcript into the currently focused text field.

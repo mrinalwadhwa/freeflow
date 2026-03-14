@@ -153,24 +153,6 @@ final class SettingsWindow: NSWindow, WKNavigationDelegate {
         )
     }
 
-    // MARK: - Navigation
-
-    /// Load the settings page from the zone.
-    ///
-    /// - Parameters:
-    ///   - baseURL: The zone base URL (e.g. `https://zone.example.com`).
-    ///   - path: The path to load (defaults to `/settings/`).
-    func navigate(baseURL: String, path: String = "/settings/") {
-        let combined = "\(baseURL)\(path)"
-        guard let url = URL(string: combined) else {
-            Self.log("navigate failed to create URL from: \(combined)")
-            return
-        }
-        Self.log("navigate(to: \(url.absoluteString))")
-        let request = URLRequest(url: url)
-        webView.load(request)
-    }
-
     // MARK: - Bundled settings
 
     /// Load the bundled settings HTML page from the app bundle.
@@ -204,14 +186,12 @@ final class SettingsWindow: NSWindow, WKNavigationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Hide the window and remove the bridge handler to break any
-    /// reference cycles.
-    func dismiss() {
-        webConfig.userContentController.removeScriptMessageHandler(
-            forName: Self.bridgeHandlerName
-        )
-        orderOut(nil)
-    }
+    // Note: the bridge handler is intentionally retained for the lifetime
+    // of the window. The window is reused across open/close cycles (close
+    // hides via orderOut, it does not deallocate). Removing the handler
+    // on close would break bridge messaging when the window is reopened.
+    // On app termination, the entire process exits so explicit cleanup
+    // is unnecessary.
 }
 
 // MARK: - Drag Handle

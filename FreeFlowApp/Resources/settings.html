@@ -886,6 +886,18 @@
                     var devices = (data && data.devices) || [];
                     var currentId = data && data.currentId;
 
+                    // When currentId is null/undefined, fall back to the
+                    // device marked as default so the dropdown doesn't
+                    // misleadingly highlight the first entry.
+                    if (currentId == null && devices.length > 0) {
+                        for (var j = 0; j < devices.length; j++) {
+                            if (devices[j].isDefault) {
+                                currentId = devices[j].id;
+                                break;
+                            }
+                        }
+                    }
+
                     select.innerHTML = "";
 
                     for (var i = 0; i < devices.length; i++) {
@@ -1321,6 +1333,12 @@
                 // -- Recording lifecycle --------------------------------
 
                 function startRecording(btn) {
+                    // Defense-in-depth: never allow readonly recorders
+                    // into recording mode, even if called from an
+                    // unexpected code path.
+                    if (btn.getAttribute("data-readonly") === "true") {
+                        return;
+                    }
                     if (activeBtn && activeBtn !== btn) {
                         resetToDefault(activeBtn);
                     }
@@ -1445,6 +1463,21 @@
                         }
 
                         if (remaining === 0) {
+                            // For the dictate shortcut, only single-modifier
+                            // bindings are valid (hold-to-talk needs one key).
+                            // Reject multi-modifier-only combos with a brief
+                            // flash and reset to default.
+                            var codes = Object.keys(heldModCodes);
+                            if (activeBtn.getAttribute("data-shortcut") === "dictate" && codes.length > 1) {
+                                activeBtn.textContent = "Use one modifier key";
+                                var btnRef = activeBtn;
+                                setTimeout(function () {
+                                    resetToDefault(btnRef);
+                                }, 1200);
+                                activeBtn = null;
+                                heldModCodes = {};
+                                return;
+                            }
                             var label = modifierOnlyLabel();
                             commit(activeBtn, label, null);
                         } else {
