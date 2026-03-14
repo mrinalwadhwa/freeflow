@@ -482,7 +482,7 @@ struct BreathingBarView: View {
                 height: barHeight
             )
             .animation(
-                .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
                 value: isAnimating
             )
             .onAppear { isAnimating = true }

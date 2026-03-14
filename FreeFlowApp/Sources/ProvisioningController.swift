@@ -67,6 +67,11 @@ final class ProvisioningController {
     /// Returns the setupIntentId if the user added a card, or nil if skipped.
     private var paymentContinuation: CheckedContinuation<String?, Never>?
 
+    /// Whether the user added a credit card during provisioning.
+    /// Read by AppDelegate to pass to onboarding so the done screen
+    /// can show the invite prompt.
+    private(set) var addedCard = false
+
     // MARK: - Init
 
     /// Create a provisioning controller.
@@ -292,6 +297,8 @@ final class ProvisioningController {
                         #if DEBUG
                             Log.debug("[Provisioning] User skipped card from credit card screen")
                         #endif
+                    } else {
+                        addedCard = true
                     }
                 } else {
                     // User chose "Start free trial" — skip card entirely.

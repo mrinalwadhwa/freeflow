@@ -809,6 +809,211 @@
                 color: var(--color-text);
             }
 
+            /* HUD introduction on done screen */
+            .hud-intro {
+                width: 100%;
+                max-width: 340px;
+                margin-top: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .hud-intro-label {
+                font-size: 0.75rem;
+                font-weight: 500;
+                color: var(--color-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 1rem;
+            }
+
+            /* Static illustration: three HUD states side by side */
+            .hud-static {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 1.5rem;
+                padding: 1.5rem 1rem;
+                background: #1a1a1a;
+                border-radius: 16px;
+                margin-bottom: 0.75rem;
+            }
+
+            .hud-static-step {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .hud-static-pill {
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 999px;
+                border: 2px solid rgba(255, 255, 255, 0.45);
+                background: rgba(0, 0, 0, 0.3);
+            }
+
+            .hud-pill-minimized {
+                width: 46px;
+                height: 8px;
+            }
+
+            .hud-pill-listening {
+                width: 80px;
+                height: 32px;
+            }
+
+            .hud-pill-processing {
+                width: 46px;
+                height: 8px;
+            }
+
+            .hud-static-bars {
+                display: flex;
+                align-items: center;
+                gap: 3px;
+            }
+
+            .hud-static-bar {
+                width: 3px;
+                border-radius: 1.5px;
+                background: rgba(255, 255, 255, 0.9);
+            }
+
+            .hud-static-label {
+                font-size: 0.6875rem;
+                color: rgba(255, 255, 255, 0.5);
+                white-space: nowrap;
+            }
+
+            .hud-static-arrow {
+                color: rgba(255, 255, 255, 0.25);
+                font-size: 0.875rem;
+                margin-bottom: 1.25rem;
+            }
+
+            /* Live demo: animated HUD cycling through states */
+            .hud-demo {
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 2.5rem 1rem;
+                background: #1a1a1a;
+                border-radius: 16px;
+                margin-bottom: 0.75rem;
+                height: 168px;
+            }
+
+            .hud-demo-stage {
+                position: relative;
+                width: 100%;
+                height: 32px;
+                margin-top: auto;
+            }
+
+            .hud-demo-pill {
+                position: absolute;
+                bottom: 0;
+                left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 999px;
+                border: 2px solid rgba(255, 255, 255, 0.45);
+                background: rgba(0, 0, 0, 0.3);
+                transition:
+                    width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+                    height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+                    background 0.3s ease,
+                    border-color 0.3s ease;
+                overflow: hidden;
+            }
+
+            .hud-demo-pill[data-state="minimized"] {
+                width: 46px;
+                height: 8px;
+                border-color: rgba(255, 255, 255, 0.45);
+                background: rgba(0, 0, 0, 0.3);
+            }
+
+            .hud-demo-pill[data-state="listening"] {
+                width: 80px;
+                height: 32px;
+                border-color: rgba(255, 255, 255, 0.7);
+                background: rgba(0, 0, 0, 0.5);
+            }
+
+            .hud-demo-pill[data-state="processing"] {
+                width: 46px;
+                height: 8px;
+                border-color: rgba(255, 255, 255, 0.45);
+                background: rgba(0, 0, 0, 0.3);
+            }
+
+            .hud-demo-bars {
+                display: flex;
+                align-items: center;
+                gap: 3px;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            }
+
+            .hud-demo-pill[data-state="listening"] .hud-demo-bars {
+                opacity: 1;
+            }
+
+            .hud-demo-bar {
+                width: 3px;
+                border-radius: 1.5px;
+                background: rgba(255, 255, 255, 0.9);
+                transition: height 0.1s ease;
+            }
+
+            .hud-demo-breathing {
+                position: absolute;
+                inset: 0;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.05);
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+
+            .hud-demo-pill[data-state="processing"] .hud-demo-breathing {
+                opacity: 1;
+                animation: hud-breathe 0.7s ease-in-out infinite alternate;
+            }
+
+            @keyframes hud-breathe {
+                0% {
+                    background: rgba(255, 255, 255, 0.05);
+                    transform: scaleX(1);
+                }
+                100% {
+                    background: rgba(255, 255, 255, 0.35);
+                    transform: scaleX(1.15);
+                }
+            }
+
+            .hud-demo-caption {
+                font-size: 0.75rem;
+                color: rgba(255, 255, 255, 0.5);
+                margin-top: auto;
+                padding-top: 0.75rem;
+                height: 1.125rem;
+                transition: opacity 0.2s ease;
+            }
+
+            .hud-intro-hint {
+                font-size: 0.75rem;
+                color: var(--color-muted);
+                text-align: center;
+                line-height: 1.5;
+            }
+
             /* ---------------------------------------------------------- */
             /* Button row                                                  */
             /* ---------------------------------------------------------- */
@@ -823,7 +1028,7 @@
             .btn-link {
                 background: none;
                 border: none;
-                color: var(--color-light);
+                color: var(--color-muted);
                 font-size: 0.8125rem;
                 cursor: pointer;
                 padding: 0.375rem 0.5rem;
@@ -911,14 +1116,15 @@
                     <div class="step-icon step-icon-warm">&#128279;</div>
                     <h1 id="connect-waiting-title">Open your invite link</h1>
                     <p id="connect-waiting-copy">
-                        Open the invite link that a person sent you in your browser. FreeFlow will connect automatically
-                        on this Mac.
+                        Open your invite link in a browser. FreeFlow will automatically connect your Mac to the server.
                     </p>
 
                     <div style="height: 6rem"></div>
 
                     <div class="btn-row">
-                        <button id="waiting-setup-admin" class="btn-link">Create my own server instead</button>
+                        <button id="waiting-setup-admin" class="btn-link">
+                            Don't have an invite? Create your own server
+                        </button>
                     </div>
                 </div>
 
@@ -938,7 +1144,7 @@
                     </div>
                     <h1 id="connect-success-title">You&#8217;re connected</h1>
                     <p id="connect-success-copy">
-                        Welcome<span id="connect-user-name"></span>! FreeFlow is ready on this Mac.
+                        Welcome<span id="connect-user-name"></span>! Now let&#8217;s set up FreeFlow on this Mac.
                     </p>
                 </div>
 
@@ -962,7 +1168,7 @@
             <section class="step-section step-hidden" data-step="accessibility">
                 <div class="step-icon step-icon-warm">&#9881;</div>
                 <h1>Accessibility access</h1>
-                <p>FreeFlow needs accessibility access to detect which app you are in and type text for you.</p>
+                <p>FreeFlow needs accessibility access to place dictated text into your apps.</p>
 
                 <div id="accessibility-status" class="permission-status"></div>
 
@@ -980,7 +1186,7 @@
             <section class="step-section step-hidden" data-step="microphone">
                 <div class="step-icon step-icon-warm">&#127908;</div>
                 <h1>Microphone access</h1>
-                <p>FreeFlow uses your microphone to hear what you say and convert it to text.</p>
+                <p>FreeFlow needs microphone access to listen when you dictate.</p>
 
                 <div id="microphone-status" class="permission-status"></div>
 
@@ -1069,11 +1275,73 @@
                     <svg viewBox="0 0 24 24"><polyline points="5 13 10 18 19 6"></polyline></svg>
                 </div>
                 <h1 id="done-title">You&#8217;re all set</h1>
-                <p id="done-copy">FreeFlow lives in your menu bar. Hold Right Option any time to dictate.</p>
+                <p id="done-copy">
+                    FreeFlow lives in your menu bar
+                    <svg
+                        style="display: inline-block; vertical-align: -0.1em; width: 0.9em; height: 0.9em"
+                        viewBox="0 0 28 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                    >
+                        <line x1="4" y1="9" x2="4" y2="15" />
+                        <line x1="8" y1="6" x2="8" y2="18" />
+                        <line x1="12" y1="3" x2="12" y2="21" />
+                        <line x1="16" y1="7" x2="16" y2="17" />
+                        <line x1="20" y1="5" x2="20" y2="19" />
+                        <line x1="24" y1="8" x2="24" y2="16" />
+                    </svg>
+                    and in a small indicator at the bottom of your screen.
+                </p>
 
-                <div class="done-menu-bar">
-                    <span class="done-menu-bar-icon">&#9776;</span>
-                    <span>Look for FreeFlow in your menu bar at the top of the screen.</span>
+                <!-- HUD introduction: static illustration -->
+                <div id="done-hud-static" class="hud-intro hidden">
+                    <div class="hud-static">
+                        <div class="hud-static-step">
+                            <div class="hud-static-pill hud-pill-minimized"></div>
+                            <div class="hud-static-label">Idle</div>
+                        </div>
+                        <div class="hud-static-arrow">&#8594;</div>
+                        <div class="hud-static-step">
+                            <div class="hud-static-pill hud-pill-listening">
+                                <div class="hud-static-bars">
+                                    <div class="hud-static-bar" style="height: 6px"></div>
+                                    <div class="hud-static-bar" style="height: 12px"></div>
+                                    <div class="hud-static-bar" style="height: 16px"></div>
+                                    <div class="hud-static-bar" style="height: 10px"></div>
+                                    <div class="hud-static-bar" style="height: 4px"></div>
+                                </div>
+                            </div>
+                            <div class="hud-static-label">Listening</div>
+                        </div>
+                        <div class="hud-static-arrow">&#8594;</div>
+                        <div class="hud-static-step">
+                            <div class="hud-static-pill hud-pill-processing"></div>
+                            <div class="hud-static-label">Processing</div>
+                        </div>
+                    </div>
+                    <div class="hud-intro-hint">A small indicator appears on screen when you dictate.</div>
+                </div>
+
+                <!-- HUD introduction: live animated demo -->
+                <div id="done-hud-demo" class="hud-intro hidden">
+                    <div class="hud-demo">
+                        <div class="hud-demo-stage">
+                            <div id="hud-demo-pill" class="hud-demo-pill" data-state="minimized">
+                                <div class="hud-demo-breathing"></div>
+                                <div class="hud-demo-bars">
+                                    <div class="hud-demo-bar" style="height: 3px"></div>
+                                    <div class="hud-demo-bar" style="height: 3px"></div>
+                                    <div class="hud-demo-bar" style="height: 3px"></div>
+                                    <div class="hud-demo-bar" style="height: 3px"></div>
+                                    <div class="hud-demo-bar" style="height: 3px"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="hud-demo-caption" class="hud-demo-caption">Idle</div>
+                    </div>
+                    <div class="hud-intro-hint">Hold the Right Option key at any time to dictate.</div>
                 </div>
 
                 <div id="done-share-section" class="share-section hidden">
@@ -1082,7 +1350,7 @@
                 </div>
 
                 <div class="btn-row" style="margin-top: 1.5rem">
-                    <button id="done-finish" class="btn btn-primary">Finish</button>
+                    <button id="done-finish" class="btn btn-primary">Start Dictating</button>
                 </div>
             </section>
         </div>
@@ -1250,6 +1518,7 @@
                     mode: "chooser", // chooser | invite | admin
                     hasToken: false,
                     skipConnect: false,
+                    addedCard: false,
                 };
 
                 // Permission state tracked across events.
@@ -1293,6 +1562,7 @@
                     // Determine entry path.
                     flow.hasToken = !!getQueryParam("token");
                     flow.skipConnect = getQueryParam("skip") === "connect";
+                    flow.addedCard = getQueryParam("addedCard") === "true";
 
                     if (flow.hasToken) {
                         flow.mode = "invite";
@@ -1491,26 +1761,112 @@
                     }
                 }
 
+                // ── HUD demo on done screen ──────────────────────────
+                var hudDemoTimer = null;
+                var hudDemoBarTimers = [];
+
+                function showHudIntro() {
+                    // Show both variants: static and live demo.
+                    // To show only one, hide the other.
+                    var staticEl = document.getElementById("done-hud-static");
+                    var demoEl = document.getElementById("done-hud-demo");
+                    // Show the live demo by default; static is available for comparison.
+                    if (staticEl) staticEl.classList.add("hidden");
+                    if (demoEl) demoEl.classList.remove("hidden");
+                    startHudDemo();
+                }
+
+                function startHudDemo() {
+                    stopHudDemo();
+                    var pill = document.getElementById("hud-demo-pill");
+                    var caption = document.getElementById("hud-demo-caption");
+                    if (!pill || !caption) return;
+
+                    var bars = pill.querySelectorAll(".hud-demo-bar");
+                    var states = [
+                        { state: "minimized", label: "Idle", duration: 2000 },
+                        { state: "listening", label: "Listening", duration: 3000 },
+                    ];
+                    var idx = 0;
+
+                    function applyState() {
+                        var s = states[idx];
+                        pill.setAttribute("data-state", s.state);
+                        caption.textContent = s.label;
+
+                        // Animate bars during listening state
+                        stopBarAnimation();
+                        if (s.state === "listening") {
+                            startBarAnimation(bars);
+                        } else {
+                            for (var i = 0; i < bars.length; i++) {
+                                bars[i].style.height = "3px";
+                            }
+                        }
+
+                        idx = (idx + 1) % states.length;
+                        hudDemoTimer = setTimeout(applyState, s.duration);
+                    }
+
+                    applyState();
+                }
+
+                function startBarAnimation(bars) {
+                    var minH = [4, 6, 8, 5, 3];
+                    var maxH = [8, 14, 16, 12, 6];
+
+                    function animateBars() {
+                        for (var i = 0; i < bars.length; i++) {
+                            var h = minH[i] + Math.random() * (maxH[i] - minH[i]);
+                            bars[i].style.height = h + "px";
+                        }
+                        var id = setTimeout(animateBars, 100 + Math.random() * 50);
+                        hudDemoBarTimers.push(id);
+                    }
+                    animateBars();
+                }
+
+                function stopBarAnimation() {
+                    for (var i = 0; i < hudDemoBarTimers.length; i++) {
+                        clearTimeout(hudDemoBarTimers[i]);
+                    }
+                    hudDemoBarTimers = [];
+                }
+
+                function stopHudDemo() {
+                    if (hudDemoTimer) {
+                        clearTimeout(hudDemoTimer);
+                        hudDemoTimer = null;
+                    }
+                    stopBarAnimation();
+                }
+
                 function configureFlowUI() {
                     updateStepLabels();
 
+                    // Invite waiting copy is the same for all non-admin flows.
+                    setText("connect-waiting-title", "Open your invite link");
+                    setText(
+                        "connect-waiting-copy",
+                        "Open your invite link in a browser. FreeFlow will automatically connect your Mac to the server.",
+                    );
+                    setText("waiting-setup-admin", "Don\u2019t have an invite? Create your own server");
+
                     if (flow.mode === "invite") {
-                        setText("connect-waiting-title", "Open your invite link");
-                        setText(
-                            "connect-waiting-copy",
-                            "Open the invite link that a person sent you in your browser. FreeFlow will connect automatically on this Mac.",
-                        );
-                        setText("waiting-setup-admin", "Create my own server instead");
                         setText("connect-loading-title", "Connecting you to FreeFlow");
                         setText("connect-loading-copy", "Setting up FreeFlow on this Mac\u2026");
                         setText("connect-success-title", "You\u2019re connected");
                         setText(
                             "connect-success-copy",
-                            'Welcome<span id="connect-user-name"></span>! FreeFlow is ready on this Mac.',
+                            'Welcome<span id="connect-user-name"></span>! Now let\u2019s set up FreeFlow on this Mac.',
                         );
                         setText("connect-error-title", "Couldn\u2019t connect");
                         setText("done-title", "You\u2019re all set");
-                        setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
+                        setText(
+                            "done-copy",
+                            'FreeFlow lives in your menu bar <svg style="display:inline-block;vertical-align:-0.1em;width:0.9em;height:0.9em" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="9" x2="4" y2="15"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="5" x2="20" y2="19"/><line x1="24" y1="8" x2="24" y2="16"/></svg> and in a small indicator at the bottom of your screen.',
+                        );
+                        showHudIntro();
                         var shareEl = document.getElementById("done-share-section");
                         if (shareEl) shareEl.classList.add("hidden");
                     } else if (flow.mode === "admin") {
@@ -1522,33 +1878,36 @@
                         setText("connect-success-title", "Your FreeFlow server is ready");
                         setText(
                             "connect-success-copy",
-                            'Welcome<span id="connect-user-name"></span>! Your FreeFlow server is ready.',
+                            'Welcome<span id="connect-user-name"></span>! Now let\u2019s set up FreeFlow on this Mac.',
                         );
                         setText("connect-error-title", "Setup couldn\u2019t continue");
-                        setText("done-title", "Your FreeFlow server is ready");
+                        setText("done-title", "You\u2019re all set");
                         setText(
                             "done-copy",
-                            "FreeFlow lives in your menu bar. You can invite others anytime from People.",
+                            'FreeFlow lives in your menu bar <svg style="display:inline-block;vertical-align:-0.1em;width:0.9em;height:0.9em" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="9" x2="4" y2="15"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="5" x2="20" y2="19"/><line x1="24" y1="8" x2="24" y2="16"/></svg> and in a small indicator at the bottom of your screen.',
                         );
+                        showHudIntro();
                         var shareEl = document.getElementById("done-share-section");
-                        if (shareEl) shareEl.classList.remove("hidden");
+                        if (flow.addedCard && shareEl) {
+                            shareEl.classList.remove("hidden");
+                        } else if (shareEl) {
+                            shareEl.classList.add("hidden");
+                        }
                     } else {
-                        setText("connect-waiting-title", "Open your invite link");
-                        setText(
-                            "connect-waiting-copy",
-                            "Open the invite link that a person sent you in your browser. FreeFlow will connect automatically on this Mac.",
-                        );
-                        setText("waiting-setup-admin", "Create my own server instead");
                         setText("connect-loading-title", "Connecting you to FreeFlow");
-                        setText("connect-loading-copy", "Setting things up on this Mac\u2026");
+                        setText("connect-loading-copy", "Setting up FreeFlow on this Mac\u2026");
                         setText("connect-success-title", "You\u2019re connected");
                         setText(
                             "connect-success-copy",
-                            'Welcome<span id="connect-user-name"></span>! FreeFlow is ready on this Mac.',
+                            'Welcome<span id="connect-user-name"></span>! Now let\u2019s set up FreeFlow on this Mac.',
                         );
                         setText("connect-error-title", "Couldn\u2019t connect");
                         setText("done-title", "You\u2019re all set");
-                        setText("done-copy", "FreeFlow lives in your menu bar. Hold Right Option any time to dictate.");
+                        setText(
+                            "done-copy",
+                            'FreeFlow lives in your menu bar <svg style="display:inline-block;vertical-align:-0.1em;width:0.9em;height:0.9em" viewBox="0 0 28 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="9" x2="4" y2="15"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="5" x2="20" y2="19"/><line x1="24" y1="8" x2="24" y2="16"/></svg> and in a small indicator at the bottom of your screen.',
+                        );
+                        showHudIntro();
                         var shareEl = document.getElementById("done-share-section");
                         if (shareEl) shareEl.classList.add("hidden");
                     }
@@ -1558,16 +1917,8 @@
                     var tryItSkip = document.getElementById("try-it-skip");
                     var doneFinish = document.getElementById("done-finish");
 
-                    if (flow.mode === "invite") {
-                        if (tryItSkip) tryItSkip.textContent = "Skip for now";
-                        if (doneFinish) doneFinish.textContent = "Finish";
-                    } else if (flow.mode === "admin") {
-                        if (tryItSkip) tryItSkip.textContent = "Skip for now";
-                        if (doneFinish) doneFinish.textContent = "Open FreeFlow";
-                    } else {
-                        if (tryItSkip) tryItSkip.textContent = "Skip for now";
-                        if (doneFinish) doneFinish.textContent = "Finish";
-                    }
+                    if (tryItSkip) tryItSkip.textContent = "Skip for now";
+                    if (doneFinish) doneFinish.textContent = "Start Dictating";
                 }
 
                 function chooseInvitePath() {
@@ -1901,6 +2252,7 @@
 
                     // Done: finish onboarding.
                     bindClick("done-finish", function () {
+                        stopHudDemo();
                         completeOnboarding();
                     });
                 }
