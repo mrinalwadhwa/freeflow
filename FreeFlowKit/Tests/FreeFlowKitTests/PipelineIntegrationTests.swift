@@ -147,6 +147,7 @@ struct PipelineIntegrationTests {
                     _ = try await audioProvider.stopRecording()
                     try await injector.inject(text: "result", into: .stub)
                     pipelineCompleted = true
+
                 }
             }
         }

@@ -246,21 +246,44 @@ final class SettingsController {
     /// Maps common KeyboardEvent.code values to macOS virtual key codes.
     private func keyCodeFromData(_ data: [String: Any]) -> UInt16 {
         guard let code = data["code"] as? String else { return 0 }
-        // Common mappings from KeyboardEvent.code to macOS virtual key codes.
+        // Mappings from KeyboardEvent.code to macOS virtual key codes.
+        // Must cover every key the JS recorder's CODE_TO_KEY_NAME map
+        // can produce, otherwise the key code defaults to 0 and the
+        // shortcut never matches at runtime.
         let map: [String: UInt16] = [
+            // Letters
             "KeyA": 0, "KeyS": 1, "KeyD": 2, "KeyF": 3, "KeyH": 4,
             "KeyG": 5, "KeyZ": 6, "KeyX": 7, "KeyC": 8, "KeyV": 9,
             "KeyB": 11, "KeyQ": 12, "KeyW": 13, "KeyE": 14, "KeyR": 15,
             "KeyY": 16, "KeyT": 17, "KeyO": 31, "KeyU": 32, "KeyI": 34,
             "KeyP": 35, "KeyL": 37, "KeyJ": 38, "KeyK": 40, "KeyN": 45,
-            "KeyM": 46, "Escape": 53, "Space": 49, "Tab": 48,
-            "Backspace": 51, "Enter": 36, "Delete": 117,
-            "ArrowUp": 126, "ArrowDown": 125, "ArrowLeft": 123, "ArrowRight": 124,
-            "F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96, "F6": 97,
-            "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111,
+            "KeyM": 46,
+            // Digits
             "Digit1": 18, "Digit2": 19, "Digit3": 20, "Digit4": 21,
             "Digit5": 23, "Digit6": 22, "Digit7": 26, "Digit8": 28,
             "Digit9": 25, "Digit0": 29,
+            // Punctuation and symbols
+            "Minus": 27, "Equal": 24, "BracketLeft": 33, "BracketRight": 30,
+            "Backslash": 42, "Semicolon": 41, "Quote": 39, "Comma": 43,
+            "Period": 47, "Slash": 44, "Backquote": 50,
+            // Whitespace and editing
+            "Space": 49, "Tab": 48, "Enter": 36, "Backspace": 51,
+            "Delete": 117, "Escape": 53,
+            // Arrow keys
+            "ArrowUp": 126, "ArrowDown": 125, "ArrowLeft": 123, "ArrowRight": 124,
+            // Navigation
+            "Home": 115, "End": 119, "PageUp": 116, "PageDown": 121,
+            // Function keys
+            "F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96, "F6": 97,
+            "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111,
+            "F13": 105, "F14": 107, "F15": 113, "F16": 106, "F17": 64,
+            "F18": 79, "F19": 80, "F20": 90,
+            // Numpad
+            "NumpadEnter": 76, "NumpadAdd": 69, "NumpadSubtract": 78,
+            "NumpadMultiply": 67, "NumpadDivide": 75, "NumpadDecimal": 65,
+            "Numpad0": 82, "Numpad1": 83, "Numpad2": 84, "Numpad3": 85,
+            "Numpad4": 86, "Numpad5": 87, "Numpad6": 88, "Numpad7": 89,
+            "Numpad8": 91, "Numpad9": 92,
         ]
         return map[code] ?? 0
     }

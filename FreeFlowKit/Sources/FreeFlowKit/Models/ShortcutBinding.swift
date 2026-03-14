@@ -92,11 +92,11 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "⌃⌥V"
     )
 
-    /// Default hands-free shortcut: ⌘⇧H (Command+Shift+H, key code 4).
+    /// Default hands-free shortcut: ⌃⌥H (Control+Option+H, key code 4).
     public static let defaultHandsfree = ShortcutBinding(
-        modifierFlags: commandFlag | shiftFlag,
+        modifierFlags: controlFlag | optionFlag,
         keyCode: 4,
-        label: "⌘⇧H"
+        label: "⌃⌥H"
     )
 
     /// Default cancel shortcut: Escape (no modifiers, key code 53).

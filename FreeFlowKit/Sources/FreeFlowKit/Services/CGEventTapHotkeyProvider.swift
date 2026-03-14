@@ -201,12 +201,17 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
         }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-        // Mask to device-independent flags only.
-        let flags = UInt(event.flags.rawValue & Self.deviceIndependentFlagsMask)
+        // Mask to device-independent flags, then isolate the four standard
+        // modifier bits (Control, Option, Shift, Command). This ignores
+        // Caps Lock, Fn, NumericPad, and other flags that vary by keyboard.
+        let standardModifierMask: UInt = 0x001E_0000
+        let flags =
+            UInt(event.flags.rawValue & Self.deviceIndependentFlagsMask) & standardModifierMask
 
-        // Check if this is the configured key with the right modifiers.
+        // Check if this is the configured key with exactly the right modifiers.
+        // Using exact match so that ⌃/ does not fire when ⌃⌥/ is pressed.
         let keyMatches = keyCode == expectedKeyCode
-        let modifiersMatch = (flags & expectedFlags) == expectedFlags
+        let modifiersMatch = flags == (expectedFlags & standardModifierMask)
 
         if isKeyDown && keyMatches && modifiersMatch && !wasDown {
             lock.lock()

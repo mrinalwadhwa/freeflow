@@ -27,6 +27,8 @@ final class HUDController {
     private var globalClickMonitor: Any?
     private var localPasteMonitor: Any?
     private var globalPasteMonitor: Any?
+    private var localHandsfreeMonitor: Any?
+    private var globalHandsfreeMonitor: Any?
 
     // MARK: - Init
 
@@ -73,6 +75,7 @@ final class HUDController {
         installEscapeMonitors()
         installClickMonitor()
         installPasteShortcutMonitors()
+        installHandsfreeShortcutMonitors()
 
         // Watch visual state changes, mouse screen, and hover to animate
         // the window. Hover detection is done here via global mouse
@@ -130,6 +133,7 @@ final class HUDController {
         removeEscapeMonitors()
         removeClickMonitor()
         removePasteShortcutMonitors()
+        removeHandsfreeShortcutMonitors()
         viewModel.stop()
         hudWindow?.orderOut(nil)
         hudWindow = nil
@@ -243,6 +247,73 @@ final class HUDController {
         if let monitor = globalClickMonitor {
             NSEvent.removeMonitor(monitor)
             globalClickMonitor = nil
+        }
+    }
+
+    // MARK: - Hands-free shortcut handling
+
+    /// Install local and global key event monitors for the hands-free
+    /// toggle shortcut. Default is ⌘⇧H.
+    ///
+    /// When idle/minimized/ready, the shortcut starts hands-free dictation.
+    /// When already in hands-free listening, the shortcut stops recording
+    /// (completes the pipeline).
+    private func installHandsfreeShortcutMonitors() {
+        localHandsfreeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if self?.isHandsfreeShortcut(event) == true {
+                self?.handleHandsfreeShortcut()
+                return nil  // Consume the event.
+            }
+            return event
+        }
+
+        globalHandsfreeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if self?.isHandsfreeShortcut(event) == true {
+                self?.handleHandsfreeShortcut()
+            }
+        }
+    }
+
+    private func removeHandsfreeShortcutMonitors() {
+        if let monitor = localHandsfreeMonitor {
+            NSEvent.removeMonitor(monitor)
+            localHandsfreeMonitor = nil
+        }
+        if let monitor = globalHandsfreeMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalHandsfreeMonitor = nil
+        }
+    }
+
+    /// Check whether a key event matches the configured hands-free shortcut.
+    private func isHandsfreeShortcut(_ event: NSEvent) -> Bool {
+        let binding = Settings.shared.handsfreeShortcutBinding
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return binding.matches(keyCode: event.keyCode, modifierFlags: flags.rawValue)
+    }
+
+    /// Toggle hands-free dictation on or off.
+    ///
+    /// Also handles the case where the hotkey provider started
+    /// push-to-talk (listeningHeld) because the handsfree shortcut
+    /// shares a modifier key with the dictate hotkey. In that case
+    /// we switch to hands-free mode so the user doesn't have to
+    /// keep holding.
+    private func handleHandsfreeShortcut() {
+        switch viewModel.visualState {
+        case .minimized, .ready:
+            startHandsFreeFromClick()
+        case .listeningHeld:
+            // The hotkey provider started push-to-talk because the
+            // handsfree combo shares a modifier with the dictate key.
+            // Switch to hands-free so the user can release the keys.
+            viewModel.clickedToStartHandsFree()
+        case .listeningHandsFree:
+            completePipeline()
+        default:
+            break
         }
     }
 

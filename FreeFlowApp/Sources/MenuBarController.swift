@@ -222,11 +222,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // --- Primary actions ---
 
         let paste = NSMenuItem(
-            title: "Paste Last Transcript",
+            title: "Paste Last Dictation",
             action: #selector(pasteLastTranscript),
-            keyEquivalent: "v"
+            keyEquivalent: ""
         )
-        paste.keyEquivalentModifierMask = [.control, .option]
+        // Key equivalent is set dynamically in refreshPasteItem()
+        // from the current paste shortcut binding in Settings.
+        applyPasteKeyEquivalent(to: paste)
         paste.target = self
         paste.isEnabled = false
         paste.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
@@ -361,6 +363,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             pasteItem?.isEnabled = false
             return
         }
+        // Update the displayed key equivalent from the current binding
+        // so changes made in Settings are reflected in the menu.
+        applyPasteKeyEquivalent(to: pasteItem)
         // Check buffer availability synchronously via a detached task that
         // completes before the menu finishes opening. Since TranscriptBuffer
         // is an actor, we fire-and-forget with nonisolated(unsafe) capture.
@@ -369,6 +374,107 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Task {
             let has = await transcriptBuffer.hasTranscript
             item.isEnabled = has
+        }
+    }
+
+    /// Apply the paste shortcut binding from Settings to a menu item's
+    /// key equivalent. Maps the binding's modifier flags and key code
+    /// to NSMenuItem's keyEquivalent and keyEquivalentModifierMask.
+    private func applyPasteKeyEquivalent(to item: NSMenuItem) {
+        let binding = Settings.shared.pasteShortcutBinding
+
+        // Build modifier mask from the binding's flags.
+        var mask: NSEvent.ModifierFlags = []
+        if binding.hasControl { mask.insert(.control) }
+        if binding.hasOption { mask.insert(.option) }
+        if binding.hasShift { mask.insert(.shift) }
+        if binding.hasCommand { mask.insert(.command) }
+        item.keyEquivalentModifierMask = mask
+
+        // Map the key code to a keyEquivalent string.
+        // NSMenuItem expects a lowercase character for letter keys.
+        let keyEquiv = keyEquivalentFromKeyCode(binding.keyCode)
+        item.keyEquivalent = keyEquiv
+    }
+
+    /// Map a macOS virtual key code to an NSMenuItem key equivalent string.
+    private func keyEquivalentFromKeyCode(_ keyCode: UInt16) -> String {
+        switch keyCode {
+        // Letters
+        case 0: return "a"
+        case 1: return "s"
+        case 2: return "d"
+        case 3: return "f"
+        case 4: return "h"
+        case 5: return "g"
+        case 6: return "z"
+        case 7: return "x"
+        case 8: return "c"
+        case 9: return "v"
+        case 11: return "b"
+        case 12: return "q"
+        case 13: return "w"
+        case 14: return "e"
+        case 15: return "r"
+        case 16: return "y"
+        case 17: return "t"
+        case 31: return "o"
+        case 32: return "u"
+        case 34: return "i"
+        case 35: return "p"
+        case 37: return "l"
+        case 38: return "j"
+        case 40: return "k"
+        case 45: return "n"
+        case 46: return "m"
+        // Digits
+        case 18: return "1"
+        case 19: return "2"
+        case 20: return "3"
+        case 21: return "4"
+        case 22: return "6"
+        case 23: return "5"
+        case 24: return "="
+        case 25: return "9"
+        case 26: return "7"
+        case 27: return "-"
+        case 28: return "8"
+        case 29: return "0"
+        // Punctuation
+        case 30: return "]"
+        case 33: return "["
+        case 39: return "'"
+        case 41: return ";"
+        case 42: return "\\"
+        case 43: return ","
+        case 44: return "/"
+        case 47: return "."
+        case 50: return "`"
+        // Special keys
+        case 36: return "\r"  // Return
+        case 48: return "\t"  // Tab
+        case 49: return " "  // Space
+        case 51: return "\u{08}"  // Delete (backspace)
+        case 53: return "\u{1b}"  // Escape
+        // Arrow keys (using Unicode private use area as AppKit expects)
+        case 123: return "\u{F702}"  // Left
+        case 124: return "\u{F703}"  // Right
+        case 125: return "\u{F701}"  // Down
+        case 126: return "\u{F700}"  // Up
+        // Function keys
+        case 122: return "\u{F704}"  // F1
+        case 120: return "\u{F705}"  // F2
+        case 99: return "\u{F706}"  // F3
+        case 118: return "\u{F707}"  // F4
+        case 96: return "\u{F708}"  // F5
+        case 97: return "\u{F709}"  // F6
+        case 98: return "\u{F70A}"  // F7
+        case 100: return "\u{F70B}"  // F8
+        case 101: return "\u{F70C}"  // F9
+        case 109: return "\u{F70D}"  // F10
+        case 103: return "\u{F70E}"  // F11
+        case 111: return "\u{F70F}"  // F12
+        default: return ""
         }
     }
 
