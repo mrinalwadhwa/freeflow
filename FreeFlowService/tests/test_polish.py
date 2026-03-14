@@ -7,8 +7,15 @@ each result against structural validators. Each test case runs N times
 
 Usage:
     # From FreeFlowService/:
+
+    # If you set up FreeFlow via the app, read credentials from Keychain:
+    eval "$(./scripts/dev-token.sh --from-keychain)"
+
+    # Or if you have secrets.yaml (developer workflow):
     export FREEFLOW_SERVICE_URL="https://YOUR-CLUSTER-ID-freeflow.cluster.autonomy.computer"
     export FREEFLOW_SESSION_TOKEN="$(./scripts/dev-token.sh)"
+
+    # Then run:
     python3 tests/test_polish.py
 
     # Run a single category:
@@ -53,7 +60,8 @@ SESSION_TOKEN = os.environ.get("FREEFLOW_SESSION_TOKEN", "")
 # ---------------------------------------------------------------------------
 
 
-def call_polish(text: str, context: Optional[dict] = None) -> str:
+def call_polish(text: str, context: Optional[dict] = None,
+                language: Optional[str] = None) -> str:
     """Call the /polish endpoint and return the polished text."""
     if not BASE_URL:
         print("ERROR: FREEFLOW_SERVICE_URL not set.")
@@ -70,6 +78,8 @@ def call_polish(text: str, context: Optional[dict] = None) -> str:
     body = {"text": text}
     if context:
         body["context"] = context
+    if language:
+        body["language"] = language
 
     resp = requests.post(url, headers=headers, json=body, timeout=30)
     resp.raise_for_status()
@@ -230,6 +240,7 @@ class TestCase:
     validators: list[Callable[[str], tuple[bool, str]]]
     context: Optional[dict] = None
     description: str = ""
+    language: Optional[str] = None
 
 
 @dataclass
@@ -1063,7 +1074,7 @@ def run_test(test: TestCase, reps: int, verbose: bool) -> TestResult:
     for i in range(reps):
         t0 = time.monotonic()
         try:
-            output = call_polish(test.input, test.context)
+            output = call_polish(test.input, test.context, test.language)
         except Exception as e:
             elapsed = time.monotonic() - t0
             result.runs.append(RunResult(
@@ -1129,7 +1140,8 @@ def main():
 
     if not SESSION_TOKEN:
         print("ERROR: FREEFLOW_SESSION_TOKEN not set.")
-        print('  export FREEFLOW_SESSION_TOKEN="$(./dev-token.sh)"')
+        print('  eval "$(./scripts/dev-token.sh --from-keychain)"  # if you set up via the app')
+        print('  export FREEFLOW_SESSION_TOKEN="$(./scripts/dev-token.sh)"  # if you have secrets.yaml')
         sys.exit(1)
 
     # Filter tests
