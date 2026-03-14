@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 #
-# Obtain a session token for dev/test use against the FreeFlow zone.
-#
-# Replaces the old FREEFLOW_API_KEY env-var workflow. Talks to the zone
-# API to redeem tokens and prints a valid session token on stdout.
+# Obtain a valid session token for a FreeFlow zone and print it to
+# stdout. Supports two modes: reading credentials from the macOS
+# Keychain (for users who provisioned via the app) or minting a fresh
+# token via the bootstrap flow (for developers with secrets.yaml).
 #
 # Usage:
 #   # Print a session token (use in test harnesses):
 #   export FREEFLOW_SESSION_TOKEN="$(./scripts/dev-token.sh)"
+#
+#   # If you provisioned your zone via the FreeFlow app, read
+#   # credentials directly from the macOS Keychain:
+#   eval "$(./scripts/dev-token.sh --from-keychain)"
+#   # This prints export commands for both FREEFLOW_SERVICE_URL and
+#   # FREEFLOW_SESSION_TOKEN, ready to eval or copy-paste.
 #
 #   # Write credentials into macOS Keychain so the app can launch
 #   # directly on the normal auth path (skips onboarding):
@@ -22,8 +28,8 @@
 #   # Force a fresh admin session (ignore cached token):
 #   ./scripts/dev-token.sh --fresh
 #
-# How it works:
-#   1. Read zone URL and bootstrap/admin token from secrets.yaml.
+# How it works (default mode):
+#   1. Read zone URL and bootstrap token from secrets.yaml.
 #   2. Try to redeem the bootstrap token via POST /api/auth/redeem-invite.
 #      - If it succeeds, we're the first admin. Cache the admin session.
 #      - If it fails (admin already exists), use the cached admin session.
@@ -31,12 +37,16 @@
 #   4. Redeem the invite to get a fresh session token.
 #   5. Print the session token to stdout (all other output goes to stderr).
 #
+# How it works (--from-keychain mode):
+#   1. Read the zone URL and session token from the macOS Keychain
+#      where the FreeFlow app stored them during provisioning.
+#   2. Validate the session against the zone's /api/auth/session endpoint.
+#   3. Print export commands for FREEFLOW_SERVICE_URL and
+#      FREEFLOW_SESSION_TOKEN to stdout.
+#
 # The admin session token is cached in .dev-admin-token so we don't
 # burn the single-use bootstrap token on every run. If the cached
 # token expires, delete .dev-admin-token and run again.
-#
-# Supports both deployed servers (ADMIN_TOKEN env var) and local code
-# (BOOTSTRAP_TOKEN env var) — the redeem-invite endpoint handles both.
 #
 
 set -euo pipefail
@@ -51,12 +61,14 @@ BUNDLE_ID="computer.autonomy.freeflow"
 write_keychain=false
 set_onboarded=false
 force_fresh=false
+from_keychain=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --keychain)   write_keychain=true; shift ;;
-        --onboarded)  set_onboarded=true; shift ;;
-        --fresh)      force_fresh=true; shift ;;
+        --keychain)       write_keychain=true; shift ;;
+        --onboarded)      set_onboarded=true; shift ;;
+        --fresh)          force_fresh=true; shift ;;
+        --from-keychain)  from_keychain=true; shift ;;
         -h|--help)
             sed -n '2,/^$/{ s/^#//; s/^ //; p }' "$0"
             exit 0
@@ -69,6 +81,82 @@ while [[ $# -gt 0 ]]; do
 done
 
 # -----------------------------------------------------------------------
+# --from-keychain mode: read existing credentials from macOS Keychain
+#
+# When a user provisions a zone via the FreeFlow app, the app stores
+# the zone URL and session token in the macOS Keychain under the
+# service name "computer.autonomy.freeflow". This mode reads those
+# credentials directly, validates the session, and prints export
+# commands ready for eval or copy-paste.
+#
+# This is the recommended path for users who set up FreeFlow via the
+# app and want to run tests or use the API from the command line.
+# -----------------------------------------------------------------------
+
+if [[ "$from_keychain" == true ]]; then
+    echo "Reading credentials from macOS Keychain..." >&2
+
+    kc_url="$(security find-generic-password -s "$BUNDLE_ID" -a "service-url" -w 2>/dev/null)" || {
+        echo "ERROR: No service URL found in Keychain." >&2
+        echo "" >&2
+        echo "The FreeFlow app stores credentials in the Keychain when you" >&2
+        echo "provision a zone. If you haven't set up the app yet, launch" >&2
+        echo "FreeFlow and complete the onboarding flow first." >&2
+        echo "" >&2
+        echo "If you're a developer with secrets.yaml, run without --from-keychain." >&2
+        exit 1
+    }
+
+    kc_token="$(security find-generic-password -s "$BUNDLE_ID" -a "session-token" -w 2>/dev/null)" || {
+        echo "ERROR: No session token found in Keychain." >&2
+        echo "" >&2
+        echo "The zone URL was found ($kc_url) but no session token." >&2
+        echo "Try signing in again via the FreeFlow app." >&2
+        exit 1
+    }
+
+    if [[ -z "$kc_url" ]] || [[ -z "$kc_token" ]]; then
+        echo "ERROR: Keychain returned empty values." >&2
+        exit 1
+    fi
+
+    echo "Zone: $kc_url" >&2
+
+    # Validate the session token against the zone.
+    echo "Validating session..." >&2
+    http_status="$(curl -s -o /dev/null -w "%{http_code}" \
+        "$kc_url/api/auth/session" \
+        -H "Authorization: Bearer $kc_token" \
+        2>/dev/null)" || true
+
+    if [[ "$http_status" == "200" ]]; then
+        echo "Session valid." >&2
+    elif [[ "$http_status" == "401" ]]; then
+        echo "WARNING: Session token may be expired (HTTP 401)." >&2
+        echo "Try signing in again via the FreeFlow app, or use the" >&2
+        echo "People page to create a new invite." >&2
+        echo "Printing credentials anyway (they may not work)." >&2
+    elif [[ "$http_status" == "000" ]]; then
+        echo "WARNING: Could not reach zone at $kc_url" >&2
+        echo "The zone may be down or unreachable." >&2
+        echo "Printing credentials anyway." >&2
+    else
+        echo "WARNING: Session validation returned HTTP $http_status." >&2
+        echo "Printing credentials anyway." >&2
+    fi
+
+    # Print export commands to stdout.
+    echo "export FREEFLOW_SERVICE_URL=\"$kc_url\""
+    echo "export FREEFLOW_SESSION_TOKEN=\"$kc_token\""
+
+    echo "" >&2
+    echo "Run this to set up your shell:" >&2
+    echo "  eval \"\$(./scripts/dev-token.sh --from-keychain)\"" >&2
+
+    exit 0
+fi
+
+# -----------------------------------------------------------------------
 # Read configuration
 # -----------------------------------------------------------------------
 
@@ -78,17 +166,13 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
     exit 1
 fi
 
-# Read the bootstrap/admin token from secrets.yaml.
-# Support both old (ADMIN_TOKEN) and new (BOOTSTRAP_TOKEN) key names.
+# Read the bootstrap token from secrets.yaml.
 BOOTSTRAP_TOKEN=""
 if grep -q 'BOOTSTRAP_TOKEN:' "$SECRETS_FILE" 2>/dev/null; then
     BOOTSTRAP_TOKEN="$(grep 'BOOTSTRAP_TOKEN:' "$SECRETS_FILE" | head -1 | sed 's/.*: *//' | tr -d '[:space:]')"
 fi
-if [[ -z "$BOOTSTRAP_TOKEN" ]] && grep -q 'ADMIN_TOKEN:' "$SECRETS_FILE" 2>/dev/null; then
-    BOOTSTRAP_TOKEN="$(grep 'ADMIN_TOKEN:' "$SECRETS_FILE" | head -1 | sed 's/.*: *//' | tr -d '[:space:]')"
-fi
 if [[ -z "$BOOTSTRAP_TOKEN" ]]; then
-    echo "ERROR: No BOOTSTRAP_TOKEN or ADMIN_TOKEN found in $SECRETS_FILE" >&2
+    echo "ERROR: No BOOTSTRAP_TOKEN found in $SECRETS_FILE" >&2
     exit 1
 fi
 

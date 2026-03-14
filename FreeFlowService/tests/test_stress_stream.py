@@ -12,6 +12,11 @@ have been slow or partially stuck).
 
 Usage:
     cd apps/freeflow/main/FreeFlowService
+
+    # If you set up FreeFlow via the app, read credentials from Keychain:
+    eval "$(./scripts/dev-token.sh --from-keychain)"
+
+    # Or if you have secrets.yaml (developer workflow):
     export FREEFLOW_SERVICE_URL="https://YOUR-CLUSTER-ID-freeflow.cluster.autonomy.computer"
     export FREEFLOW_SESSION_TOKEN="$(./scripts/dev-token.sh)"
 
