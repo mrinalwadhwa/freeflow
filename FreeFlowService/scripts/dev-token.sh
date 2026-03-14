@@ -125,7 +125,7 @@ if [[ "$from_keychain" == true ]]; then
     # Validate the session token against the zone.
     echo "Validating session..." >&2
     http_status="$(curl -s -o /dev/null -w "%{http_code}" \
-        "$kc_url/api/auth/session" \
+        "$kc_url/api/auth/get-session" \
         -H "Authorization: Bearer $kc_token" \
         2>/dev/null)" || true
 
