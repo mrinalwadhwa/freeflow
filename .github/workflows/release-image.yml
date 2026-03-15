@@ -1,10 +1,6 @@
-name: Build FreeFlowService Image
+name: Release FreeFlowService Image
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "FreeFlowService/**"
   workflow_dispatch:
 
 env:
