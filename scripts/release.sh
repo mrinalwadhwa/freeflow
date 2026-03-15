@@ -4,20 +4,49 @@ set -euo pipefail
 # Release FreeFlow: tag, push, wait for CI, update Homebrew Cask.
 #
 # Usage:
-#   ./scripts/release.sh           # uses version from Info.plist
-#   ./scripts/release.sh 0.2.0     # explicit version
+#   ./scripts/release.sh                  # release current Info.plist version
+#   ./scripts/release.sh --bump 0.2.0     # set version in Info.plist first
 #
 # Expects:
 #   - Working directory is the freeflow repo root
 #   - ../homebrew is the homebrew-freeflow repo checkout
 #   - gh CLI is authenticated
-#   - No uncommitted changes
+#   - No uncommitted changes (before --bump; the bump commit is made by the script)
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOMEBREW_ROOT="$REPO_ROOT/../homebrew"
 CASK_FILE="$HOMEBREW_ROOT/Casks/freeflow.rb"
+PLIST="$REPO_ROOT/FreeFlowApp/Info.plist"
 
 cd "$REPO_ROOT"
+
+# ── Parse arguments ────────────────────────────────────────────────
+
+BUMP_VERSION=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --bump)
+      if [ $# -lt 2 ]; then
+        echo "Error: --bump requires a version argument (e.g., --bump 0.2.0)" >&2
+        exit 1
+      fi
+      BUMP_VERSION="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: ./scripts/release.sh [--bump VERSION]"
+      echo ""
+      echo "Options:"
+      echo "  --bump VERSION   Set version in Info.plist, commit, then release"
+      echo "  -h, --help       Show this help"
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # ── Preflight ──────────────────────────────────────────────────────
 
@@ -42,13 +71,20 @@ if ! command -v gh &>/dev/null; then
   exit 1
 fi
 
+# ── Bump version ───────────────────────────────────────────────────
+
+if [ -n "$BUMP_VERSION" ]; then
+  echo "── Bumping version to ${BUMP_VERSION} ──"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${BUMP_VERSION}" "$PLIST"
+  git add "$PLIST"
+  git commit -m "Bump version to ${BUMP_VERSION}"
+  git push
+  echo ""
+fi
+
 # ── Version ────────────────────────────────────────────────────────
 
-if [ $# -ge 1 ]; then
-  VERSION="$1"
-else
-  VERSION=$(make version)
-fi
+VERSION=$(make version)
 TAG="v${VERSION}"
 
 echo "Releasing FreeFlow ${VERSION} (tag: ${TAG})"
