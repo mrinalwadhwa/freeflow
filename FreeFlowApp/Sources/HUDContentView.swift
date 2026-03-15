@@ -170,7 +170,7 @@ struct HUDContentView: View {
         .onChange(of: viewModel.visualState) { newState in
             if newState == .processingBreathing {
                 withAnimation(
-                    .easeInOut(duration: 1.6)
+                    .easeInOut(duration: 0.7)
                         .repeatForever(autoreverses: true)
                 ) {
                     breathingExpanded = true
@@ -451,7 +451,7 @@ struct BreathingPillOverlay: View {
         Capsule()
             .fill(Color.white.opacity(isAnimating ? 0.35 : 0.05))
             .animation(
-                .easeInOut(duration: 1.6).repeatForever(autoreverses: true),
+                .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
                 value: isAnimating
             )
             .onAppear { isAnimating = true }

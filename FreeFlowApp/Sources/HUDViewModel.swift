@@ -269,8 +269,8 @@ final class HUDViewModel: ObservableObject {
             self?.breathingFired = true
             self?.recalculate()
 
-            // 5s — if still processing, show "Still working…".
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            // 8s — if still processing, show "Still working…".
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
             guard !Task.isCancelled else { return }
             self?.slowProcessingFired = true
             self?.recalculate()
