@@ -5,14 +5,11 @@ zone root to the project repository.
 """
 
 import os
-from typing import Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-import admin
-import auth
 import invite
 
 
@@ -49,30 +46,6 @@ async def _render(template_name: str, **context) -> HTMLResponse:
     return HTMLResponse(html)
 
 
-async def _get_session_user(request: Request) -> Optional[auth.AuthUser]:
-    """Extract and validate a session from the request cookie or header.
-
-    Return an AuthUser on success, None if no valid session. This does
-    not raise on failure (used for pages that show different content
-    based on auth state).
-    """
-    # Check for session cookie first (browser sessions).
-    token = request.cookies.get("auth_token")
-
-    # Fall back to Authorization header.
-    if not token:
-        authorization = request.headers.get("authorization", "")
-        if authorization.lower().startswith("bearer "):
-            token = authorization[7:]
-
-    if not token:
-        return None
-
-    # Validate via better-auth.
-    user = await auth._validate_session_token(token)
-    return user
-
-
 # ------------------------------------------------------------------
 # Public routes
 # ------------------------------------------------------------------
@@ -106,10 +79,6 @@ async def invite_landing(request: Request, token: str):
         token_valid = False
         token_error = str(e)
 
-    # Check if the visitor is already a signed-in admin.
-    user = await _get_session_user(request)
-    is_admin_user = user is not None and await admin.is_admin(user.user_id)
-
     return await _render(
         "invite.html",
         token=token,
@@ -117,5 +86,4 @@ async def invite_landing(request: Request, token: str):
         token_error=token_error,
         connect_url=connect_url,
         base_url=base_url,
-        admin_user=is_admin_user,
     )

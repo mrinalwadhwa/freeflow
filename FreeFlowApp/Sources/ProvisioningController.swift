@@ -338,6 +338,16 @@ final class ProvisioningController {
                 #endif
                 bridge?.pushAuthError(message: "Login was cancelled. Tap Get Started to try again.")
 
+            } catch AutonomyError.unauthorized {
+                #if DEBUG
+                    Log.debug("[Provisioning] Autonomy token expired, restarting login")
+                #endif
+                keychain.deleteAutonomyToken()
+                self.autonomyToken = nil
+                self.autonomyClient = nil
+                bridge?.pushAuthError(
+                    message: "Your session has expired. Tap Get Started to sign in again.")
+
             } catch {
                 #if DEBUG
                     Log.debug("[Provisioning] Error: \(error.localizedDescription)")
@@ -518,6 +528,16 @@ final class ProvisioningController {
                 bridge?.pushProvisioningProgress(message: "Resuming setup…")
                 let result = try await pollUntilReady(client: autonomyClient!)
                 try await completeProvisioning(status: result)
+            } catch AutonomyError.unauthorized {
+                #if DEBUG
+                    Log.debug("[Provisioning] Autonomy token expired during resume")
+                #endif
+                keychain.deleteAutonomyToken()
+                self.autonomyToken = nil
+                self.autonomyClient = nil
+                bridge?.pushAuthError(
+                    message: "Your session has expired. Tap Get Started to sign in again.")
+
             } catch {
                 #if DEBUG
                     Log.debug("[Provisioning] Resume failed: \(error.localizedDescription)")

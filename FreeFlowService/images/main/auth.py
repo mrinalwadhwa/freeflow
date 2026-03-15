@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 AUTH_SESSION_URL = "http://localhost:3456/api/auth/get-session"
@@ -36,7 +36,7 @@ class AuthUser:
     user_id: str
 
 
-async def _validate_session_token(token: str) -> Optional[AuthUser]:
+async def validate_session_token(token: str) -> Optional[AuthUser]:
     """Validate a session token via the better-auth service.
 
     Call GET http://localhost:3456/api/auth/get-session with the token
@@ -73,30 +73,17 @@ async def _validate_session_token(token: str) -> Optional[AuthUser]:
 
 
 async def require_auth(
-    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),
 ) -> AuthUser:
-    """FastAPI dependency that authenticates via session token.
+    """FastAPI dependency that authenticates via Bearer token.
 
-    Check order:
-    1. If a Bearer token is present, validate as a better-auth session
-       token.
-    2. If no Bearer token, check for an auth_token cookie (web
-       dashboard sessions).
-    3. If all fail, raise 401.
+    Requires a valid better-auth session token in the Authorization
+    header.
     """
-    token = None
-    if credentials is not None:
-        token = credentials.credentials
-    else:
-        # Fall back to session cookie for browser-based admin pages.
-        token = request.cookies.get("auth_token")
-
-    if not token:
+    if credentials is None:
         raise HTTPException(status_code=401, detail="Missing authentication")
 
-    # Session token validation via better-auth.
-    user = await _validate_session_token(token)
+    user = await validate_session_token(credentials.credentials)
     if user is not None:
         return user
 
@@ -120,7 +107,7 @@ async def verify_ws_auth(authorization: Optional[str]) -> Optional[AuthUser]:
         token = parts[1]
 
     # Session token validation.
-    return await _validate_session_token(token)
+    return await validate_session_token(token)
 
 
 async def check_auth_health() -> bool:
