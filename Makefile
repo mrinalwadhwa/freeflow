@@ -212,16 +212,26 @@ notarize:
 	spctl --assess --type execute --verbose=2 /Volumes/FreeFlow/FreeFlow.app
 	hdiutil detach /Volumes/FreeFlow -quiet
 
-# Generate or update appcast.xml from the release DMG
+# Generate or update appcast.xml from the release DMG.
+# Locally, generate_appcast reads the EdDSA key from the Keychain.
+# In CI, set SPARKLE_KEY env var and the key is piped via --ed-key-file -.
 appcast:
 ifeq ($(SPARKLE_BIN),)
 	$(error "Sparkle tools not found. Run 'make build' first to fetch the Sparkle package.")
 endif
 	@echo "── Generating appcast ──"
-	"$(SPARKLE_BIN)/generate_appcast" \
-		--download-url-prefix "$(DOWNLOAD_URL)" \
-		-o $(RELEASE_DIR)/appcast.xml \
-		$(RELEASE_DIR)
+	@if [ -n "$$SPARKLE_KEY" ]; then \
+		echo "$$SPARKLE_KEY" | "$(SPARKLE_BIN)/generate_appcast" \
+			--ed-key-file - \
+			--download-url-prefix "$(DOWNLOAD_URL)" \
+			-o $(RELEASE_DIR)/appcast.xml \
+			$(RELEASE_DIR); \
+	else \
+		"$(SPARKLE_BIN)/generate_appcast" \
+			--download-url-prefix "$(DOWNLOAD_URL)" \
+			-o $(RELEASE_DIR)/appcast.xml \
+			$(RELEASE_DIR); \
+	fi
 	@echo "  $(RELEASE_DIR)/appcast.xml"
 
 # Print the version from Info.plist (used by CI)
