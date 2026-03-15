@@ -37,6 +37,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when an invited user clicks "Disconnect".
     var onDisconnect: (() -> Void)?
 
+    /// Callback invoked when the user clicks "Add credit card…" from
+    /// the trial status section in the menu.
+    var onAddCreditCard: (() -> Void)?
+
     /// Whether the current signed-in user is an admin (provisioned the
     /// server) or an invitee. Admins see "Sign Out"; invitees see
     /// "Disconnect". Defaults to true so the menu shows "Sign Out"
@@ -63,9 +67,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var accountMenuItem: NSMenuItem?
     private var signOutItem: NSMenuItem?
     private var disconnectItem: NSMenuItem?
+    private var trialStatusItem: NSMenuItem?
+    private var addCardItem: NSMenuItem?
+    private var trialSeparatorItem: NSMenuItem?
 
     /// The email address shown in the menu bar for the signed-in user.
     private var signedInEmail: String?
+
+    /// The current trial state from the TrialStatusService.
+    private var trialState: TrialState?
 
     // MARK: - State tracking
 
@@ -217,6 +227,35 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(account)
         accountMenuItem = account
 
+        // --- Trial status ---
+
+        let trialSep = NSMenuItem.separator()
+        trialSep.isHidden = true
+        menu.addItem(trialSep)
+        trialSeparatorItem = trialSep
+
+        let trial = NSMenuItem(
+            title: "",
+            action: nil,
+            keyEquivalent: ""
+        )
+        trial.isEnabled = false
+        trial.isHidden = true
+        menu.addItem(trial)
+        trialStatusItem = trial
+
+        let addCard = NSMenuItem(
+            title: "Add Credit Card\u{2026}",
+            action: #selector(addCreditCardAction),
+            keyEquivalent: ""
+        )
+        addCard.target = self
+        addCard.image = NSImage(systemSymbolName: "creditcard", accessibilityDescription: nil)
+        addCard.isHidden = true
+        addCard.indentationLevel = 1
+        menu.addItem(addCard)
+        addCardItem = addCard
+
         menu.addItem(.separator())
 
         // --- Primary actions ---
@@ -354,6 +393,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshMicSubmenu()
         refreshLanguageSubmenu()
         refreshCheckForUpdatesItem()
+        refreshTrialStatus()
     }
 
     // MARK: - Dynamic refresh
@@ -539,7 +579,43 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         checkForUpdatesItem?.isEnabled = updaterService?.canCheckForUpdates ?? false
     }
 
+    private func refreshTrialStatus() {
+        guard let trialStatusItem, let addCardItem, let trialSeparatorItem else { return }
+
+        guard let state = trialState, let label = state.menuLabel else {
+            trialSeparatorItem.isHidden = true
+            trialStatusItem.isHidden = true
+            addCardItem.isHidden = true
+            return
+        }
+
+        trialSeparatorItem.isHidden = false
+        trialStatusItem.isHidden = false
+
+        if state.isUrgent {
+            trialStatusItem.title = "\u{26A0} \(label)"
+        } else {
+            trialStatusItem.title = label
+        }
+
+        addCardItem.isHidden = !state.isUrgent
+    }
+
+    // MARK: - Trial state
+
+    /// Update the trial state shown in the menu bar.
+    ///
+    /// Called by the AppDelegate when the TrialStatusService delivers
+    /// a new state. The menu items update in place on next open.
+    func setTrialState(_ state: TrialState?) {
+        trialState = state
+    }
+
     // MARK: - Actions
+
+    @objc private func addCreditCardAction() {
+        onAddCreditCard?()
+    }
 
     @objc private func pasteLastTranscript() {
         guard let transcriptBuffer, let textInjector else {

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let authClient = AuthClient()
     private let capabilitiesService = CapabilitiesService()
     private var updaterService: UpdaterService?
+    private let trialStatusService = TrialStatusService()
 
     // MARK: - Controllers
 
@@ -32,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var peopleController: PeopleController?
     private var billingController: BillingController?
     private var provisioningController: ProvisioningController?
+    private var trialExpiredWindow: TrialExpiredWindow?
+    private var trialObservationTask: Task<Void, Never>?
 
     /// URLs received before applicationDidFinishLaunching completes.
     private var pendingURLs: [URL] = []
@@ -66,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionController?.stop()
         audioProvider.shutdown()
         soundFeedbackProvider.shutdown()
+        trialStatusService.stopPolling()
+        trialObservationTask?.cancel()
+        trialObservationTask = nil
+        trialExpiredWindow?.dismiss()
         provisioningController?.dismissWindow()
         onboardingController?.dismissWindow()
         settingsController?.closeWindow()
@@ -187,6 +194,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Check capabilities in the background, then start the
                 // updater once the appcast URL is cached.
                 checkCapabilitiesInBackground()
+
+                // Start trial status monitoring for admin users.
+                startTrialMonitoring()
 
             } catch let error as AuthClient.AuthError where error.isSessionExpired {
                 Log.debug("[AppDelegate] Session expired, entering recovery flow")
@@ -586,6 +596,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.disconnectFromCurrentServer()
         }
 
+        // Wire "Add credit card…" from the trial status menu item.
+        controller.onAddCreditCard = { [weak self] in
+            self?.showBillingForTrial()
+        }
+
         // Set admin/invitee role based on whether an Autonomy token
         // exists. Admins provisioned the server and signed in via
         // Auth0; invitees redeemed an invite link and have no
@@ -623,6 +638,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hudController?.stop()
         hudController = nil
 
+        // Stop trial monitoring.
+        trialStatusService.stopPolling()
+        trialObservationTask?.cancel()
+        trialObservationTask = nil
+        trialExpiredWindow?.dismiss()
+        trialExpiredWindow = nil
+
         // Reset the coordinator so stale pipeline state is cleared.
         Task { await coordinator.reset() }
 
@@ -639,8 +661,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
         UserDefaults.standard.removeObject(forKey: "hasEmailOnFile")
 
-        // Clear the menu bar email.
+        // Clear the menu bar email and trial state.
         menuBarController?.setSignedInEmail(nil)
+        menuBarController?.setTrialState(nil)
 
         // Return to the provisioning flow.
         showProvisioningFlow()
@@ -713,6 +736,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Close billing window
                 self?.billingController?.dismissWindow()
                 self?.billingController = nil
+                // Refresh trial state immediately.
+                self?.refreshTrialState()
                 // Re-show People page so it reloads with updated state
                 self?.peopleController?.showWindow()
             }
@@ -722,6 +747,154 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             billingController = controller
         }
         billingController?.showWindow()
+    }
+
+    /// Show the billing window for adding a credit card from the trial
+    /// status menu item or the trial expired modal.
+    ///
+    /// On success, refreshes trial state and, if the trial had expired,
+    /// re-provisions the zone to restore service.
+    private func showBillingForTrial() {
+        let wasExpired = trialStatusService.current?.isExpired ?? false
+
+        if billingController == nil {
+            let controller = BillingController()
+            controller.onComplete = { [weak self] in
+                guard let self else { return }
+                Log.debug("[AppDelegate] Billing (trial) complete")
+                self.billingController?.dismissWindow()
+                self.billingController = nil
+                self.trialExpiredWindow?.dismiss()
+                self.trialExpiredWindow = nil
+
+                if wasExpired {
+                    // Zone was deleted on trial expiry. Re-provision it.
+                    self.reProvisionAfterTrialRecovery()
+                } else {
+                    // Still in trial, card added. Just refresh state.
+                    self.refreshTrialState()
+                }
+            }
+            controller.onCancel = { [weak self] in
+                self?.billingController = nil
+            }
+            billingController = controller
+        }
+        billingController?.showWindow()
+    }
+
+    // MARK: - Trial Monitoring
+
+    /// Start observing trial status from the Autonomy orchestrator.
+    ///
+    /// Only meaningful for admin users (those with an Autonomy token).
+    /// Does an immediate check, then polls on a schedule. Updates the
+    /// menu bar trial indicator and handles trial expiry.
+    private func startTrialMonitoring() {
+        // Only admins have trial state. Guests have no Autonomy token.
+        guard keychain.autonomyToken() != nil else { return }
+
+        trialObservationTask?.cancel()
+        trialObservationTask = Task { [weak self] in
+            guard let self else { return }
+            for await state in self.trialStatusService.stateStream {
+                guard !Task.isCancelled else { break }
+                self.menuBarController?.setTrialState(state)
+
+                if state.isExpired {
+                    self.handleTrialExpired()
+                }
+            }
+        }
+
+        trialStatusService.startPolling()
+    }
+
+    /// Refresh trial state immediately (e.g. after adding a card).
+    private func refreshTrialState() {
+        Task {
+            let state = await trialStatusService.checkNow()
+            menuBarController?.setTrialState(state)
+        }
+    }
+
+    /// Handle trial expiry: disable dictation and show the expired modal.
+    private func handleTrialExpired() {
+        Log.debug("[AppDelegate] Trial expired, disabling dictation")
+
+        // Disable dictation so the user doesn't get confusing errors.
+        hotkeyProvider.unregister()
+        menuBarController?.setHotkeyRegistered(false)
+
+        // Show the trial expired modal if not already showing.
+        guard trialExpiredWindow == nil else { return }
+
+        let window = TrialExpiredWindow()
+        window.onAddCard = { [weak self] in
+            self?.showBillingForTrial()
+        }
+        window.onDismiss = { [weak self] in
+            self?.trialExpiredWindow?.dismiss()
+            self?.trialExpiredWindow = nil
+        }
+        trialExpiredWindow = window
+        window.present()
+    }
+
+    /// Re-provision the zone after the user adds a card to recover from
+    /// trial expiry.
+    ///
+    /// The orchestrator's `card_configured` has already moved the user
+    /// from `trial_expired` to `active`. Now we need to re-create the
+    /// zone (it was deleted on expiry) and restore service.
+    private func reProvisionAfterTrialRecovery() {
+        Log.debug("[AppDelegate] Re-provisioning zone after trial recovery")
+
+        guard let token = keychain.autonomyToken() else {
+            Log.debug("[AppDelegate] No Autonomy token for re-provisioning")
+            return
+        }
+
+        // Show a simple provisioning flow. Reuse the provisioning
+        // controller which handles the full provision → poll → redeem
+        // → ready cycle.
+        let controller = ProvisioningController(
+            keychain: keychain,
+            authClient: authClient
+        )
+
+        controller.onComplete = { [weak self] zoneUrl, _ in
+            guard let self else { return }
+            Log.debug("[AppDelegate] Re-provisioning complete, resuming")
+            self.provisioningController?.dismissWindow()
+            self.provisioningController = nil
+            self.updateMenuBarEmail()
+            self.refreshTrialState()
+
+            // Re-register the hotkey so dictation works again.
+            self.checkPermissions()
+        }
+
+        controller.onError = { error in
+            Log.debug("[AppDelegate] Re-provisioning failed: \(error.localizedDescription)")
+        }
+
+        provisioningController = controller
+
+        // Instead of showing the full provisioning window with Get Started,
+        // directly trigger re-provisioning using the existing token.
+        controller.showWindow()
+        // The provisioning window will show the spinner. The controller's
+        // resumeIfNeeded won't work here because we DO have a serviceURL
+        // (stale). Clear it so the resume path kicks in, or call start
+        // which will use the existing Autonomy token.
+        //
+        // Actually, the zone was deleted so we need a fresh provision.
+        // Clear the stale zone URL so resumeIfNeeded triggers correctly.
+        keychain.deleteServiceURL()
+        keychain.deleteSessionToken()
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        controller.resumeIfNeeded()
     }
 
     /// Show the People window.
