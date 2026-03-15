@@ -1,4 +1,5 @@
 import AppKit
+import FreeFlowKit
 import WebKit
 
 /// A window that hosts a WKWebView for the settings page.
@@ -13,7 +14,9 @@ import WebKit
 final class SettingsWindow: NSWindow, WKNavigationDelegate {
 
     private static func log(_ msg: String) {
-        NSLog("[SettingsWindow] %@", msg)
+        #if DEBUG
+            Log.debug("[SettingsWindow] \(msg)")
+        #endif
     }
 
     /// The web view that displays the settings page.

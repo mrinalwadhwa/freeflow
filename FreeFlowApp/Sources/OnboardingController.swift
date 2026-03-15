@@ -545,7 +545,9 @@ final class OnboardingController {
 
                 // Select the new device.
                 try await audioDeviceProvider.selectDevice(id: id)
-                NSLog("[OnboardingController] Selected mic id=%d", id)
+                #if DEBUG
+                    Log.debug("[OnboardingController] Selected mic id=\(id)")
+                #endif
                 bridge.pushMicrophoneSelected(id: id)
 
                 // Small delay to let the audio system settle after device change.
@@ -554,7 +556,9 @@ final class OnboardingController {
                 // Start preview with the new device.
                 await startMicPreviewAsync()
             } catch {
-                NSLog("[OnboardingController] selectMicrophone failed: %@", "\(error)")
+                #if DEBUG
+                    Log.debug("[OnboardingController] selectMicrophone failed: \(error)")
+                #endif
             }
         }
     }
@@ -569,7 +573,9 @@ final class OnboardingController {
 
     private func startMicPreviewAsync() async {
         guard let audioPreviewProvider else {
-            NSLog("[OnboardingController] startMicPreview: no audioPreviewProvider")
+            #if DEBUG
+                Log.debug("[OnboardingController] startMicPreview: no audioPreviewProvider")
+            #endif
             return
         }
 
@@ -583,27 +589,39 @@ final class OnboardingController {
                 capture.setSoundFeedbackProvider(nil)
             }
 
-            NSLog("[OnboardingController] Starting mic preview")
+            #if DEBUG
+                Log.debug("[OnboardingController] Starting mic preview")
+            #endif
             try await audioPreviewProvider.startRecording()
-            NSLog("[OnboardingController] Mic preview started, setting up level stream")
+            #if DEBUG
+                Log.debug("[OnboardingController] Mic preview started, setting up level stream")
+            #endif
 
             // Stream audio levels to the bridge.
             audioLevelTask = Task { [weak self] in
                 guard let stream = audioPreviewProvider.audioLevelStream else {
-                    NSLog("[OnboardingController] No audio level stream available")
+                    #if DEBUG
+                        Log.debug("[OnboardingController] No audio level stream available")
+                    #endif
                     return
                 }
-                NSLog("[OnboardingController] Audio level stream started")
+                #if DEBUG
+                    Log.debug("[OnboardingController] Audio level stream started")
+                #endif
                 for await level in stream {
                     if Task.isCancelled { break }
                     await MainActor.run {
                         self?.bridge.pushAudioLevel(level: level)
                     }
                 }
-                NSLog("[OnboardingController] Audio level stream ended")
+                #if DEBUG
+                    Log.debug("[OnboardingController] Audio level stream ended")
+                #endif
             }
         } catch {
-            NSLog("[OnboardingController] startMicPreview failed: %@", "\(error)")
+            #if DEBUG
+                Log.debug("[OnboardingController] startMicPreview failed: \(error)")
+            #endif
         }
     }
 
@@ -620,7 +638,9 @@ final class OnboardingController {
         audioLevelTask = nil
 
         guard let audioPreviewProvider else { return }
-        NSLog("[OnboardingController] Stopping mic preview")
+        #if DEBUG
+            Log.debug("[OnboardingController] Stopping mic preview")
+        #endif
         _ = try? await audioPreviewProvider.stopRecording()
         // Restore sound feedback after preview stops.
         if let soundFeedbackProvider,
@@ -628,7 +648,9 @@ final class OnboardingController {
         {
             capture.setSoundFeedbackProvider(soundFeedbackProvider)
         }
-        NSLog("[OnboardingController] Mic preview stopped")
+        #if DEBUG
+            Log.debug("[OnboardingController] Mic preview stopped")
+        #endif
     }
 
     // MARK: - Action: checkAccessibility
@@ -645,10 +667,11 @@ final class OnboardingController {
             UserDefaults.standard.set(true, forKey: "microphoneGranted")
         }
 
-        NSLog(
-            "[OnboardingController] checkAccessibility: ax=%@, mic=%@",
-            granted ? "granted" : "denied",
-            micGranted ? "granted" : (micStatus == .denied ? "denied" : "unknown"))
+        #if DEBUG
+            Log.debug(
+                "[OnboardingController] checkAccessibility: ax=\(granted ? "granted" : "denied"), mic=\(micGranted ? "granted" : (micStatus == .denied ? "denied" : "unknown"))"
+            )
+        #endif
 
         bridge.pushPermissionStatus(
             accessibility: granted ? "granted" : "denied",
@@ -713,9 +736,11 @@ final class OnboardingController {
                 UserDefaults.standard.set(true, forKey: "microphoneGranted")
             }
 
-            NSLog(
-                "[OnboardingController] requestMicrophone result: %@",
-                granted ? "granted" : "denied")
+            #if DEBUG
+                Log.debug(
+                    "[OnboardingController] requestMicrophone result: \(granted ? "granted" : "denied")"
+                )
+            #endif
 
             let accGranted = permissionProvider?.checkAccessibility() == .granted
             bridge.pushPermissionStatus(

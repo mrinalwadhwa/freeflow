@@ -257,7 +257,9 @@ final class BillingBridge: NSObject, WKScriptMessageHandler {
 final class BillingWindow: NSWindow, WKNavigationDelegate {
 
     private static func log(_ msg: String) {
-        NSLog("[BillingWindow] %@", msg)
+        #if DEBUG
+            Log.debug("[BillingWindow] \(msg)")
+        #endif
     }
 
     let webView: WKWebView

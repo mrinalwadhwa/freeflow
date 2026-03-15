@@ -1,4 +1,5 @@
 import AppKit
+import FreeFlowKit
 import WebKit
 
 /// A window that hosts a WKWebView for the people page.
@@ -13,7 +14,9 @@ import WebKit
 final class PeopleWindow: NSWindow, WKNavigationDelegate {
 
     private static func log(_ msg: String) {
-        NSLog("[PeopleWindow] %@", msg)
+        #if DEBUG
+            Log.debug("[PeopleWindow] \(msg)")
+        #endif
     }
 
     /// The web view that displays the people page.

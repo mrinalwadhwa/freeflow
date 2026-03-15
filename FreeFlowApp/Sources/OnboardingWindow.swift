@@ -1,4 +1,5 @@
 import AppKit
+import FreeFlowKit
 import WebKit
 
 /// A window that hosts a WKWebView for onboarding, account, and
@@ -13,7 +14,9 @@ import WebKit
 final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     private static func log(_ msg: String) {
-        NSLog("[OnboardingWindow] %@", msg)
+        #if DEBUG
+            Log.debug("[OnboardingWindow] \(msg)")
+        #endif
     }
 
     /// The web view that displays zone-hosted pages.
@@ -162,7 +165,6 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     /// base (e.g. `https://zone.example.com/onboarding/?token=abc`).
     func navigate(to url: URL) {
         Self.log("navigate(to: \(url.absoluteString))")
-        NSLog("[OnboardingWindow] navigate(to:) \(url.absoluteString)")
         let request = URLRequest(url: url)
         webView.load(request)
     }
@@ -175,9 +177,6 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     func navigate(baseURL: String, path: String) {
         let combined = "\(baseURL)\(path)"
         Self.log("navigate(baseURL:path:) base=\(baseURL) path=\(path) combined=\(combined)")
-        NSLog(
-            "[OnboardingWindow] navigate(baseURL:path:) base=%@ path=%@ combined=%@", baseURL, path,
-            combined)
         guard let url = URL(string: combined) else {
             Self.log("navigate(baseURL:path:) failed to create URL from: \(combined)")
             return

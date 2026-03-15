@@ -1,5 +1,6 @@
 import AppKit
 import AuthenticationServices
+import FreeFlowKit
 
 /// Manage the Autonomy Account login flow using ASWebAuthenticationSession.
 ///
@@ -46,7 +47,9 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             throw AuthControllerError.authFailed("Invalid Autonomy URL")
         }
 
-        NSLog("[AuthController] Starting sign-in flow: %@", url.absoluteString)
+        #if DEBUG
+            Log.debug("[AuthController] Starting sign-in flow: \(url.absoluteString)")
+        #endif
 
         return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
@@ -113,13 +116,17 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             session.prefersEphemeralWebBrowserSession = true
 
             self.authSession = session
-            NSLog("[AuthController] Presenting sign-in sheet")
+            #if DEBUG
+                Log.debug("[AuthController] Presenting sign-in sheet")
+            #endif
 
             if !session.start() {
                 self.authSession = nil
-                NSLog(
-                    "[AuthController] Failed to start authentication session, opening browser fallback"
-                )
+                #if DEBUG
+                    Log.debug(
+                        "[AuthController] Failed to start authentication session, opening browser fallback"
+                    )
+                #endif
                 NSWorkspace.shared.open(url)
                 continuation.resume(
                     throwing: AuthControllerError.authFailed(
@@ -149,7 +156,10 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             ?? NSApp.windows.first(where: { $0.isVisible })
             ?? NSApp.windows.first
             ?? ASPresentationAnchor()
-        NSLog("[AuthController] Using presentation anchor: %@", String(describing: anchor.title))
+        #if DEBUG
+            Log.debug(
+                "[AuthController] Using presentation anchor: \(String(describing: anchor.title))")
+        #endif
         return anchor
     }
 }

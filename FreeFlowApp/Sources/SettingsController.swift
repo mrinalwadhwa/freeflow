@@ -193,9 +193,11 @@ final class SettingsController {
                 // Multi-modifier-only shortcuts are not supported for
                 // hold-to-talk dictation. The JS side should prevent
                 // this from being sent, but log a warning just in case.
-                NSLog(
-                    "[SettingsController] Ignoring unsupported 'modifiers' type for dictate shortcut (label: %@)",
-                    label)
+                #if DEBUG
+                    Log.debug(
+                        "[SettingsController] Ignoring unsupported 'modifiers' type for dictate shortcut (label: \(label))"
+                    )
+                #endif
             }
 
         case "handsfree":
@@ -358,7 +360,9 @@ final class SettingsController {
                 // Start preview with the new device.
                 await startMicPreviewAsync()
             } catch {
-                NSLog("[SettingsController] selectMicrophone failed: %@", "\(error)")
+                #if DEBUG
+                    Log.debug("[SettingsController] selectMicrophone failed: \(error)")
+                #endif
             }
         }
     }
@@ -404,7 +408,9 @@ final class SettingsController {
                 }
             }
         } catch {
-            NSLog("[SettingsController] startMicPreview failed: %@", "\(error)")
+            #if DEBUG
+                Log.debug("[SettingsController] startMicPreview failed: \(error)")
+            #endif
         }
     }
 
