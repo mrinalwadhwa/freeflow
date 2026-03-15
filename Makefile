@@ -1,4 +1,4 @@
-.PHONY: build run test clean xcode generate release archive sign notarize appcast
+.PHONY: build run test clean xcode generate release archive sign notarize appcast version
 
 # XcodeGen must be installed: brew install xcodegen
 XCODEGEN := $(shell command -v xcodegen 2>/dev/null)
@@ -16,8 +16,21 @@ RELEASE_DIR      := releases
 DMG_NAME         := FreeFlow.dmg
 DMG_PATH         := $(RELEASE_DIR)/$(DMG_NAME)
 DMG_STAGING      := build/dmg_contents
-DOWNLOAD_URL     := https://autonomy.computer/freeflow/
+DOWNLOAD_URL     := https://github.com/build-trust/freeflow/releases/latest/download/
 SPARKLE_BIN      := $(shell find ~/Library/Developer/Xcode/DerivedData/FreeFlow-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)
+
+# Optional: set KEYCHAIN to a keychain path for CI builds.
+# When set, codesign and xcodebuild use --keychain/OTHER_CODE_SIGN_FLAGS
+# to find the signing identity. Leave unset for local builds (uses
+# default keychain search list).
+KEYCHAIN         ?=
+ifdef KEYCHAIN
+  KEYCHAIN_FLAGS := --keychain $(KEYCHAIN)
+  XCODE_SIGN_FLAGS := OTHER_CODE_SIGN_FLAGS="--keychain $(KEYCHAIN)"
+else
+  KEYCHAIN_FLAGS :=
+  XCODE_SIGN_FLAGS :=
+endif
 
 # Generate the Xcode project from project.yml
 generate:
@@ -125,6 +138,7 @@ archive: $(PROJECT)
 		CODE_SIGN_IDENTITY="$(SIGN_IDENTITY)" \
 		DEVELOPMENT_TEAM=$(TEAM_ID) \
 		ENABLE_HARDENED_RUNTIME=YES \
+		$(XCODE_SIGN_FLAGS) \
 		archive
 	@echo "── Extracting app from archive ──"
 	@rm -rf $(APP_PATH)
@@ -141,25 +155,27 @@ sign:
 	           "$$SPARKLE_FW/XPCServices/Downloader.xpc"; do \
 		if [ -d "$$xpc" ]; then \
 			echo "  Signing $$xpc"; \
-			codesign --force --options runtime --sign "$(SIGN_IDENTITY)" --timestamp "$$xpc"; \
+			codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(KEYCHAIN_FLAGS) --timestamp "$$xpc"; \
 		fi; \
 	done; \
 	if [ -d "$$SPARKLE_FW/Updater.app" ]; then \
 		echo "  Signing $$SPARKLE_FW/Updater.app"; \
-		codesign --force --options runtime --sign "$(SIGN_IDENTITY)" --timestamp "$$SPARKLE_FW/Updater.app"; \
+		codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(KEYCHAIN_FLAGS) --timestamp "$$SPARKLE_FW/Updater.app"; \
 	fi; \
 	if [ -f "$$SPARKLE_FW/Autoupdate" ]; then \
 		echo "  Signing $$SPARKLE_FW/Autoupdate"; \
-		codesign --force --options runtime --sign "$(SIGN_IDENTITY)" --timestamp "$$SPARKLE_FW/Autoupdate"; \
+		codesign --force --options runtime --sign "$(SIGN_IDENTITY)" $(KEYCHAIN_FLAGS) --timestamp "$$SPARKLE_FW/Autoupdate"; \
 	fi
 	@echo "── Signing Sparkle framework ──"
 	codesign --force --options runtime \
 		--sign "$(SIGN_IDENTITY)" \
+		$(KEYCHAIN_FLAGS) \
 		--timestamp \
 		"$(APP_PATH)/Contents/Frameworks/Sparkle.framework/Versions/B"
 	@echo "── Signing app bundle ──"
 	codesign --force --options runtime \
 		--sign "$(SIGN_IDENTITY)" \
+		$(KEYCHAIN_FLAGS) \
 		--entitlements FreeFlowApp/FreeFlow.entitlements \
 		--timestamp \
 		$(APP_PATH)
@@ -207,3 +223,7 @@ endif
 		-o $(RELEASE_DIR)/appcast.xml \
 		$(RELEASE_DIR)
 	@echo "  $(RELEASE_DIR)/appcast.xml"
+
+# Print the version from Info.plist (used by CI)
+version:
+	@/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" FreeFlowApp/Info.plist

@@ -232,7 +232,7 @@ async def capabilities():
     """
     appcast_url = os.environ.get(
         "APPCAST_URL",
-        "https://autonomy.computer/freeflow/appcast.xml",
+        "https://github.com/build-trust/freeflow/releases/latest/download/appcast.xml",
     )
     email_caps = await email_config.get_capabilities()
     return {
