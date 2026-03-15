@@ -119,6 +119,24 @@ jobs:
             releases/FreeFlow.dmg \
             releases/appcast.xml
 
+      - name: Update Homebrew Cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          SHA256=$(shasum -a 256 releases/FreeFlow.dmg | awk '{print $1}')
+
+          git clone https://x-access-token:${GH_TOKEN}@github.com/build-trust/homebrew-freeflow.git /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/freeflow.rb
+          sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/freeflow.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/freeflow.rb
+          git diff --cached --quiet || { git commit -m "Update FreeFlow to ${VERSION}" && git push; }
+
       - name: Clean up keychain
         if: always()
         run: |
