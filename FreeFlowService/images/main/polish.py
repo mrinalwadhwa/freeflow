@@ -19,6 +19,7 @@ ready for injection. The pipeline has three stages:
    tags are stripped, leaving only the symbols.
 """
 
+import asyncio
 import os
 import re
 from typing import Optional
@@ -425,11 +426,15 @@ async def _polish_english(text: str, context: AppContext) -> str:
     ]
 
     try:
-        response = await llm.complete_chat(messages, stream=False)
+        response = await asyncio.wait_for(
+            llm.complete_chat(messages, stream=False), timeout=8
+        )
         if hasattr(response, "choices") and len(response.choices) > 0:
             polished = response.choices[0].message.content.strip()
             if polished:
                 return normalize_formatting(strip_keep_tags(polished))
+    except asyncio.TimeoutError:
+        print("[polish] LLM call timed out after 8s, using raw transcription")
     except Exception as e:
         print(f"[polish] LLM call failed, using raw transcription: {e}")
 
@@ -450,11 +455,15 @@ async def _polish_minimal(
     ]
 
     try:
-        response = await llm.complete_chat(messages, stream=False)
+        response = await asyncio.wait_for(
+            llm.complete_chat(messages, stream=False), timeout=8
+        )
         if hasattr(response, "choices") and len(response.choices) > 0:
             polished = response.choices[0].message.content.strip()
             if polished:
                 return normalize_formatting(polished)
+    except asyncio.TimeoutError:
+        print("[polish] LLM call timed out after 8s, using raw transcription")
     except Exception as e:
         print(f"[polish] LLM call failed, using raw transcription: {e}")
 
