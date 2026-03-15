@@ -1,6 +1,6 @@
 # FreeFlow
 
-A macOS app built on Autonomy.
+Press a hotkey, dictate naturally, polished text appears in any app.
 
 ## Install
 
