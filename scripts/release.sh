@@ -4,14 +4,14 @@ set -euo pipefail
 # Release FreeFlow: tag, push, wait for CI, update Homebrew Cask.
 #
 # Usage:
-#   ./scripts/release.sh                  # release current Info.plist version
-#   ./scripts/release.sh --bump 0.2.0     # set version in Info.plist first
+#   ./scripts/release.sh                    # release current Info.plist version
+#   ./scripts/release.sh --version 0.2.0    # set version in Info.plist first
 #
 # Expects:
 #   - Working directory is the freeflow repo root
 #   - ../homebrew is the homebrew-freeflow repo checkout
 #   - gh CLI is authenticated
-#   - No uncommitted changes (before --bump; the bump commit is made by the script)
+#   - No uncommitted changes (before --version; the version commit is made by the script)
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOMEBREW_ROOT="$REPO_ROOT/../homebrew"
@@ -22,22 +22,22 @@ cd "$REPO_ROOT"
 
 # ── Parse arguments ────────────────────────────────────────────────
 
-BUMP_VERSION=""
+NEW_VERSION=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --bump)
+    --version)
       if [ $# -lt 2 ]; then
-        echo "Error: --bump requires a version argument (e.g., --bump 0.2.0)" >&2
+        echo "Error: --version requires a version argument (e.g., --version 0.2.0)" >&2
         exit 1
       fi
-      BUMP_VERSION="$2"
+      NEW_VERSION="$2"
       shift 2
       ;;
     -h|--help)
-      echo "Usage: ./scripts/release.sh [--bump VERSION]"
+      echo "Usage: ./scripts/release.sh [--version VERSION]"
       echo ""
       echo "Options:"
-      echo "  --bump VERSION   Set version in Info.plist, commit, then release"
+      echo "  --version VERSION   Set version in Info.plist, commit, then release"
       echo "  -h, --help       Show this help"
       exit 0
       ;;
@@ -73,11 +73,11 @@ fi
 
 # ── Bump version ───────────────────────────────────────────────────
 
-if [ -n "$BUMP_VERSION" ]; then
-  echo "── Bumping version to ${BUMP_VERSION} ──"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${BUMP_VERSION}" "$PLIST"
+if [ -n "$NEW_VERSION" ]; then
+  echo "── Setting version to ${NEW_VERSION} ──"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NEW_VERSION}" "$PLIST"
   git add "$PLIST"
-  git commit -m "Bump version to ${BUMP_VERSION}"
+  git commit -m "Set version to ${NEW_VERSION}"
   git push
   echo ""
 fi
