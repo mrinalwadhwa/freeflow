@@ -46,3 +46,7 @@ Two independent WebSocket connections are kept warm: a primary that streams
 audio during recording, and a standby that races the primary with the full
 audio buffer when you release the key. If both WebSockets fail, an HTTP batch
 fallback catches it. Whichever path finishes first wins.
+
+<p align="center">
+  <img src=".github/assets/how-it-works.svg" width="100%" alt="How it works: FreeFlow streams audio from your Mac to your private server to a realtime speech model, then returns polished text">
+</p>
