@@ -13,9 +13,10 @@ you control. One deployment serves your entire team with no per-seat fees.
 <p align="center">
   <video src="https://github.com/user-attachments/assets/7e6cfd80-c7a8-4d3c-b31b-727887c94b77" autoplay loop playsinline></video>
 </p>
+<p align="center"><sub>🔊 Watch with sound to hear the messy speech, then see the clean text appear.</sub></p>
 
 ## Fast
 
 <p align="center">
-  <img src=".github/assets/latency.svg" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
+  <img src=".github/assets/latency.svg" width="100%" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
 </p>
