@@ -351,6 +351,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             systemSymbolName: "mic.badge.plus", accessibilityDescription: nil)
         menu.addItem(reportMic)
 
+        let discord = NSMenuItem(
+            title: "Join us on Discord…",
+            action: #selector(openDiscord),
+            keyEquivalent: ""
+        )
+        discord.target = self
+        discord.image = NSImage(
+            systemSymbolName: "bubble.left.and.bubble.right", accessibilityDescription: nil)
+        menu.addItem(discord)
+
         menu.addItem(.separator())
 
         // --- App ---
@@ -759,6 +769,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func openLanguageIssue() {
         if let url = URL(string: "https://github.com/build-trust/freeflow/issues/1") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func openDiscord() {
+        if let url = URL(string: "https://autonomy.computer/discord") {
             NSWorkspace.shared.open(url)
         }
     }
