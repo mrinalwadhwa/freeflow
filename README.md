@@ -22,13 +22,11 @@ In this demo, you'll hear rambling speech with filler words and corrections. Wat
 
 ## Install
 
-Install with Homebrew:
+Install with [Homebrew](https://brew.sh) or download [FreeFlow.dmg](https://github.com/build-trust/freeflow/releases/latest/download/FreeFlow.dmg) directly.
 
 ```
 brew install build-trust/freeflow/freeflow
 ```
-
-Or download [FreeFlow.dmg](https://github.com/build-trust/freeflow/releases/latest/download/FreeFlow.dmg) directly.
 
 ## Fast
 
