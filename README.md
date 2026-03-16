@@ -11,11 +11,11 @@ on a server private to you, so your audio and data flow through infrastructure
 you control. One deployment serves your entire team with no per-seat fees.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/1f930bff-d648-4d94-b5c1-42742d637d2f" autoplay loop playsinline></video>
+  <video src="https://github.com/user-attachments/assets/7e6cfd80-c7a8-4d3c-b31b-727887c94b77" autoplay loop playsinline></video>
 </p>
 
 ## Fast
 
 <p align="center">
-  <img src=".github/assets/latency.svg" width="600" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
+  <img src=".github/assets/latency.svg" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
 </p>
