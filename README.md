@@ -2,59 +2,20 @@
 
 Press a hotkey, dictate naturally, polished text appears in any app.
 
-## Install
+Ramble, use filler words, correct yourself mid-sentence. FreeFlow turns messy
+speech into clean writing and injects it wherever your cursor is: your messaging app,
+your editor, your coding agent, the terminal, email, anything.
 
-```
-brew install build-trust/freeflow/freeflow
-```
+It is open source, so you have the [freedom to customize](CUSTOMIZE.md) it any way you want. You deploy it
+on a server private to you, so your audio and data flow through infrastructure
+you control. One deployment serves your entire team with no per-seat fees.
 
-Existing installs update automatically via Sparkle.
+<p align="center">
+  <video src=".github/assets/demo.mp4" width="720" autoplay loop muted playsinline></video>
+</p>
 
-## Requirements
+## Fast
 
-- macOS 13.0+
-- Xcode 16+ / Swift 6+
-- XcodeGen (`brew install xcodegen`)
-
-## Building
-
-```
-make build
-make run
-make test
-make clean
-```
-
-## Releasing
-
-Releases are coordinated by a single script that handles both the macOS
-app and the service image.
-
-### Release the macOS app
-
-```
-./scripts/release.sh app
-```
-
-This tags the current version from Info.plist, pushes the tag, waits
-for CI to build/sign/notarize, creates a GitHub Release with the DMG
-and appcast, then updates the Homebrew Cask.
-
-To set the version before releasing:
-
-```
-./scripts/release.sh app --version 0.2.0
-```
-
-### Release the service image
-
-```
-./scripts/release.sh image
-```
-
-This triggers the image build workflow, which builds and pushes the
-FreeFlowService Docker image to ECR.
-
-## License
-
-TBD
+<p align="center">
+  <img src=".github/assets/latency.svg" width="600" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
+</p>
