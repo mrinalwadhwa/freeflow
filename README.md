@@ -40,7 +40,7 @@ Audio streams to your private server over a persistent WebSocket while you speak
 The server forwards it to a realtime model, which transcribes incrementally. By the
 time you release the key, the transcript is already done. A skip heuristic
 bypasses the polish step entirely for clean transcripts (roughly 40% of dictations).
-When polish is needed, gpt-4.1-nano handles it in about 0.4 seconds.
+When polish is needed, a fast model handles it in about 0.4 seconds.
 
 Two independent WebSocket connections are kept warm: a primary that streams
 audio during recording, and a standby that races the primary with the full
