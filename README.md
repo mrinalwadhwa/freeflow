@@ -14,7 +14,7 @@ One deployment serves your entire team with no per-seat fees.
 
 ## Demo (sound on 🔊)
 
-In this demo, you'll hear rambling speech with filler words and corrections. Watch what appears at the cursor
+The speech is messy. The text isn't.
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/7e6cfd80-c7a8-4d3c-b31b-727887c94b77" autoplay loop playsinline></video>
