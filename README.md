@@ -28,9 +28,9 @@ brew install build-trust/freeflow/freeflow
 
 On first launch, FreeFlow walks you through setup: create an [Autonomy](https://autonomy.computer) account, deploy your server, and start dictating. About two minutes to your first dictation.
 
-## Fast, polished, and accurate
+## Instant, polished, and accurate
 
-There are some benchmarks in [BENCHMARK.md](BENCHMARK.md). Two thirds of dictations complete in under 0.6 seconds:
+It feels instantaneous. There are some benchmarks in [BENCHMARK.md](BENCHMARK.md). Two thirds of dictations complete in under 0.6 seconds:
 
 <p align="center">
   <img src=".github/assets/latency.svg" width="100%" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
