@@ -23,6 +23,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var textInjector: (any TextInjecting)?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
     private var updaterService: UpdaterService?
+    private var micDiagnosticStore: MicDiagnosticStore?
     private var shortcuts: ShortcutConfiguration = .default
 
     /// Callback invoked when Settings menu item is clicked.
@@ -102,6 +103,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         textInjector: (any TextInjecting)? = nil,
         audioDeviceProvider: (any AudioDeviceProviding)? = nil,
         updaterService: UpdaterService? = nil,
+        micDiagnosticStore: MicDiagnosticStore? = nil,
         shortcuts: ShortcutConfiguration = .default,
         hotkeyRegistered: Bool = false
     ) {
@@ -112,6 +114,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.textInjector = textInjector
         self.audioDeviceProvider = audioDeviceProvider
         self.updaterService = updaterService
+        self.micDiagnosticStore = micDiagnosticStore
         self.shortcuts = shortcuts
         self.hotkeyRegistered = hotkeyRegistered
 
@@ -258,6 +261,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // --- Invite ---
+
+        let people = NSMenuItem(
+            title: "Invite People…",
+            action: #selector(openPeople),
+            keyEquivalent: ""
+        )
+        people.target = self
+        people.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: nil)
+        people.isHidden = signedInEmail == nil
+        menu.addItem(people)
+
+        menu.addItem(.separator())
+
         // --- Primary actions ---
 
         let paste = NSMenuItem(
@@ -302,26 +319,50 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // --- App ---
+        // --- Community ---
 
-        let people = NSMenuItem(
-            title: "People…",
-            action: #selector(openPeople),
+        let customize = NSMenuItem(
+            title: "Customize FreeFlow…",
+            action: #selector(openCustomizeGuide),
             keyEquivalent: ""
         )
-        people.target = self
-        people.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: nil)
-        people.isHidden = signedInEmail == nil
-        menu.addItem(people)
+        customize.target = self
+        customize.image = NSImage(
+            systemSymbolName: "wrench.and.screwdriver", accessibilityDescription: nil)
+        menu.addItem(customize)
 
-        let settings = NSMenuItem(
-            title: "Preferences…",
-            action: #selector(openSettings),
-            keyEquivalent: ","
+        let requestLang = NSMenuItem(
+            title: "Add a Language…",
+            action: #selector(openLanguageIssue),
+            keyEquivalent: ""
         )
-        settings.target = self
-        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
-        menu.addItem(settings)
+        requestLang.target = self
+        requestLang.image = NSImage(
+            systemSymbolName: "globe", accessibilityDescription: nil)
+        menu.addItem(requestLang)
+
+        let reportMic = NSMenuItem(
+            title: "Contribute Mic Data…",
+            action: #selector(contributeMicData),
+            keyEquivalent: ""
+        )
+        reportMic.target = self
+        reportMic.image = NSImage(
+            systemSymbolName: "mic.badge.plus", accessibilityDescription: nil)
+        menu.addItem(reportMic)
+
+        menu.addItem(.separator())
+
+        // --- App ---
+
+        let about = NSMenuItem(
+            title: "About FreeFlow",
+            action: #selector(showAbout),
+            keyEquivalent: ""
+        )
+        about.target = self
+        about.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
+        menu.addItem(about)
 
         let checkForUpdates = NSMenuItem(
             title: "Check for Updates…",
@@ -335,14 +376,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(checkForUpdates)
         checkForUpdatesItem = checkForUpdates
 
-        let about = NSMenuItem(
-            title: "About",
-            action: #selector(showAbout),
-            keyEquivalent: ""
+        let settings = NSMenuItem(
+            title: "Preferences…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
         )
-        about.target = self
-        about.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
-        menu.addItem(about)
+        settings.target = self
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        menu.addItem(settings)
 
         menu.addItem(.separator())
 
@@ -675,6 +716,50 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             } catch {
                 debugPrint("[MenuBar] Failed to select microphone: \(error)")
             }
+        }
+    }
+
+    @objc private func contributeMicData() {
+        guard let store = micDiagnosticStore else { return }
+        Task {
+            let diagnostics = await store.formattedDiagnostics()
+            let body = """
+                > See [Microphone compatibility](https://github.com/build-trust/freeflow/issues/2) for context on what this data is used for.
+
+                **Mic and setup:**
+                <!-- e.g. "Blue Yeti USB on MacBook Pro, desk distance" -->
+
+                **What you observed:**
+                <!-- e.g. "Whispers were transcribed fine but normal speech cut off early" -->
+
+                **Diagnostics (auto-filled):**
+                ```
+                \(diagnostics)
+                ```
+                """
+            var components = URLComponents(
+                string: "https://github.com/build-trust/freeflow/issues/new")!
+            components.queryItems = [
+                URLQueryItem(name: "title", value: "Mic data: "),
+                URLQueryItem(name: "body", value: body),
+                URLQueryItem(name: "labels", value: "mic"),
+            ]
+            if let url = components.url {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    @objc private func openCustomizeGuide() {
+        if let url = URL(string: "https://github.com/build-trust/freeflow/blob/main/CUSTOMIZING.md")
+        {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func openLanguageIssue() {
+        if let url = URL(string: "https://github.com/build-trust/freeflow/issues/1") {
+            NSWorkspace.shared.open(url)
         }
     }
 
