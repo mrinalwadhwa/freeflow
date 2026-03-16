@@ -98,15 +98,15 @@ struct TrialStateTests {
             #expect(state.menuLabel == "2 days left in free trial")
         }
 
-        @Test("Shows days remaining at 14 days")
+        @Test("Shows days remaining at 7 days")
         func fullTrial() {
             let state = TrialState(
                 isTrial: true,
-                daysRemaining: 14,
+                daysRemaining: 7,
                 hasCreditCard: false,
                 isExpired: false
             )
-            #expect(state.menuLabel == "14 days left in free trial")
+            #expect(state.menuLabel == "7 days left in free trial")
         }
     }
 
@@ -203,11 +203,11 @@ struct TrialStateTests {
             #expect(state.isUrgent)
         }
 
-        @Test("Not urgent at 14 days remaining without card")
+        @Test("Not urgent at 7 days remaining without card")
         func fullTrial() {
             let state = TrialState(
                 isTrial: true,
-                daysRemaining: 14,
+                daysRemaining: 7,
                 hasCreditCard: false,
                 isExpired: false
             )
