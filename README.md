@@ -35,3 +35,14 @@ There are some benchmarks in [BENCHMARK.md](BENCHMARK.md). Two thirds of dictati
 <p align="center">
   <img src=".github/assets/latency.svg" width="100%" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
 </p>
+
+Audio streams to your private server over a persistent WebSocket while you speak.
+The server forwards it to a realtime model, which transcribes incrementally. By the
+time you release the key, the transcript is already done. A skip heuristic
+bypasses the polish step entirely for clean transcripts (roughly 40% of dictations).
+When polish is needed, gpt-4.1-nano handles it in about 0.4 seconds.
+
+Two independent WebSocket connections are kept warm: a primary that streams
+audio during recording, and a standby that races the primary with the full
+audio buffer when you release the key. If both WebSockets fail, an HTTP batch
+fallback catches it. Whichever path finishes first wins.
