@@ -28,7 +28,7 @@ Install with [Homebrew](https://brew.sh) or download [FreeFlow.dmg](https://gith
 brew install build-trust/freeflow/freeflow
 ```
 
-## Fast
+## Fast, polished, and accurate
 
 There are some benchmarks in [BENCHMARK.md](BENCHMARK.md). Two thirds of dictations complete in under 0.6 seconds:
 
