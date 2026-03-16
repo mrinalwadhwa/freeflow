@@ -26,7 +26,7 @@ Install the macOS app with [Homebrew](https://brew.sh) or [download the DMG](htt
 brew install build-trust/freeflow/freeflow
 ```
 
-On first launch, FreeFlow deploys the code in this repo to a private server for you in [Autonomy](https://autonomy.computer). You don't need to know anything about servers or cloud infrastructure. The whole setup takes about two minutes. Invite your team from the app and they can start dictating right away.
+On first launch, FreeFlow deploys the code in this repo to a private server for you in [Autonomy](https://autonomy.computer). You don't need to know anything about servers or cloud infrastructure. The whole setup takes about two minutes. Start dictating right away, and invite your team so they can use the same private server.
 
 ## Instant, polished, and accurate
 
