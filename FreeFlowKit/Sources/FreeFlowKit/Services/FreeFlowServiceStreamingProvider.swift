@@ -661,55 +661,42 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
 
     /// Attempt to re-establish the backup connection after teardown.
     ///
-    /// Retries with increasing backoff (2s, 4s, 8s) up to 3 attempts.
-    /// On success, starts a new backup keepalive loop.
+    /// Makes a single attempt after a short delay. If it fails, gives
+    /// up — a fresh backup will be established after the next
+    /// successful dictation session.
     private func reconnectBackup() async {
-        var attempt = 0
-        let maxAttempts = 3
-        var backoff: TimeInterval = 2.0
+        guard !Task.isCancelled else { return }
 
-        while attempt < maxAttempts {
-            guard !Task.isCancelled else { return }
+        let active: Bool = lock.withLock { sessionActive }
+        if active { return }
 
-            let active: Bool = lock.withLock { sessionActive }
-            if active { return }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard !Task.isCancelled else { return }
 
-            try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
-            guard !Task.isCancelled else { return }
+        let stillActive: Bool = lock.withLock { sessionActive }
+        if stillActive { return }
 
-            attempt += 1
-            do {
-                let (task, session) = try self.buildWebSocketTask()
-                task.resume()
+        do {
+            let (task, session) = try self.buildWebSocketTask()
+            task.resume()
 
-                // Verify the connection is actually live before
-                // declaring success.
-                try await verifyConnection(task)
+            try await verifyConnection(task)
 
-                self.lock.withLock {
-                    self.backupWebSocketTask = task
-                    self.backupURLSession = session
-                    self.backupConnectionEstablishedAt = Date()
-                    self.backupConnecting = false
-                }
-
-                Log.debug(
-                    "[StreamingProvider] Reconnected backup (attempt \(attempt))"
-                )
-                startBackupKeepalive()
-                return
-            } catch {
-                Log.debug(
-                    "[StreamingProvider] Backup reconnect failed "
-                        + "(attempt \(attempt)/\(maxAttempts)): \(error)"
-                )
-                backoff *= 2
+            self.lock.withLock {
+                self.backupWebSocketTask = task
+                self.backupURLSession = session
+                self.backupConnectionEstablishedAt = Date()
+                self.backupConnecting = false
             }
-        }
 
-        Log.debug(
-            "[StreamingProvider] Backup reconnect gave up after \(maxAttempts) attempts"
-        )
+            Log.debug("[StreamingProvider] Reconnected backup")
+            startBackupKeepalive()
+        } catch {
+            Log.debug(
+                "[StreamingProvider] Backup reconnect failed: \(error), "
+                    + "will re-establish after next session"
+            )
+        }
     }
 
     /// Stop the backup keepalive task.
@@ -791,62 +778,51 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
 
     /// Attempt to re-establish the primary connection after teardown.
     ///
-    /// Retries with increasing backoff (2s, 4s, 8s) up to 3 attempts.
-    /// On success, starts a new keepalive loop. On failure, gives up
-    /// and lets `ensureConnected()` handle it on the next dictation.
+    /// Makes a single attempt after a short delay. If it fails, gives
+    /// up and lets `ensureConnected()` handle it on the next dictation.
+    /// Only one attempt is made to avoid cycling against infrastructure
+    /// idle timeouts that kill connections after ~60s.
     private func reconnectPrimary() async {
-        var attempt = 0
-        let maxAttempts = 3
-        var backoff: TimeInterval = 2.0
+        guard !Task.isCancelled else { return }
 
-        while attempt < maxAttempts {
-            guard !Task.isCancelled else { return }
+        // Don't reconnect if a session became active while we
+        // were waiting — the dictation path manages its own
+        // connection via ensureConnected().
+        let active: Bool = lock.withLock { sessionActive }
+        if active { return }
 
-            // Don't reconnect if a session became active while we
-            // were waiting — the dictation path manages its own
-            // connection via ensureConnected().
-            let active: Bool = lock.withLock { sessionActive }
-            if active { return }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard !Task.isCancelled else { return }
 
-            try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
-            guard !Task.isCancelled else { return }
+        let stillActive: Bool = lock.withLock { sessionActive }
+        if stillActive { return }
 
-            attempt += 1
-            do {
-                let (task, session) = try buildWebSocketTask()
-                task.resume()
+        do {
+            let (task, session) = try buildWebSocketTask()
+            task.resume()
 
-                // Verify the connection is actually live with a
-                // ping/pong before declaring success. Without this,
-                // resume() can return immediately while the underlying
-                // TCP connection is still dead.
-                try await verifyConnection(task)
+            // Verify the connection is actually live with a
+            // ping/pong before declaring success. Without this,
+            // resume() can return immediately while the underlying
+            // TCP connection is still dead.
+            try await verifyConnection(task)
 
-                lock.withLock {
-                    self.webSocketTask = task
-                    self.urlSession = session
-                    self.sessionCount = 0
-                    self.connectionEstablishedAt = Date()
-                }
-
-                Log.debug(
-                    "[StreamingProvider] Reconnected primary (attempt \(attempt))"
-                )
-                startKeepalive()
-                establishBackupIfNeeded()
-                return
-            } catch {
-                Log.debug(
-                    "[StreamingProvider] Primary reconnect failed "
-                        + "(attempt \(attempt)/\(maxAttempts)): \(error)"
-                )
-                backoff *= 2
+            lock.withLock {
+                self.webSocketTask = task
+                self.urlSession = session
+                self.sessionCount = 0
+                self.connectionEstablishedAt = Date()
             }
-        }
 
-        Log.debug(
-            "[StreamingProvider] Primary reconnect gave up after \(maxAttempts) attempts"
-        )
+            Log.debug("[StreamingProvider] Reconnected primary")
+            startKeepalive()
+            establishBackupIfNeeded()
+        } catch {
+            Log.debug(
+                "[StreamingProvider] Primary reconnect failed: \(error), "
+                    + "will reconnect on next dictation"
+            )
+        }
     }
 
     /// Verify a WebSocket connection is live by sending a ping and
