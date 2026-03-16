@@ -55,7 +55,7 @@ fallback catches it. Whichever path finishes first wins.
 
 Everything is in this repo: the app, the server, the deployment
 configuration. Change the models, rewrite the prompts, add a language, or
-fork the whole thing. Your team's audio, transcripts, and context data flow through your private FreeFlow Server deployed in [Autonomy](https://autonomy.computer).
+fork the whole thing. Your team's audio, transcripts, and context data flow through your private FreeFlow Server deployed in [Autonomy](https://autonomy.computer). This gives you privacy and scale.
 
 One container handles your entire team with no per-seat fees. In our
 [concurrent users benchmark](BENCHMARK.md), 50 people dictating
