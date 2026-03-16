@@ -16,7 +16,7 @@ One deployment serves your entire team with no per-seat fees.
 
 In this demo, you'll hear rambling speech with filler words and corrections. Watch what appears at the cursor.
 
-https://github.com/user-attachments/assets/01540422-c6e1-404d-a86d-fa3a4ac96772
+https://github.com/user-attachments/assets/da62c769-d56b-4c16-be04-148197536dfa
 
 ## Install
 
