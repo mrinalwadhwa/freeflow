@@ -1,4 +1,4 @@
-# FreeFlow
+# FreeFlow – seamless speech to text in any app
 
 Press a hotkey, dictate naturally, polished text appears in any app.
 
@@ -30,7 +30,7 @@ On first launch, FreeFlow walks you through setup: create an [Autonomy](https://
 
 ## Instant, polished, and accurate
 
-It feels instantaneous. There are some benchmarks in [BENCHMARK.md](BENCHMARK.md). Two thirds of dictations complete in under 0.6 seconds:
+It feels instantaneous. Two thirds of dictations complete in under 0.6 seconds ([benchmarks](BENCHMARK.md)):
 
 <p align="center">
   <img src=".github/assets/latency.svg" width="100%" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
