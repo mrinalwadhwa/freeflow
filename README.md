@@ -20,13 +20,13 @@ https://github.com/user-attachments/assets/01540422-c6e1-404d-a86d-fa3a4ac96772
 
 ## Install
 
-Install with [Homebrew](https://brew.sh) or download [FreeFlow.dmg](https://github.com/build-trust/freeflow/releases/latest/download/FreeFlow.dmg) directly.
+Install the macOS app with [Homebrew](https://brew.sh) or [download the DMG](https://github.com/build-trust/freeflow/releases/latest/download/FreeFlow.dmg) directly.
 
 ```
 brew install build-trust/freeflow/freeflow
 ```
 
-On first launch, FreeFlow walks you through setup: create an [Autonomy](https://autonomy.computer) account, deploy your server, and start dictating. It takes only two minutes to your first dictation.
+On first launch, FreeFlow deploys a private server for you in [Autonomy](https://autonomy.computer). You don't need to know anything about servers or cloud infrastructure. The whole setup takes about two minutes. Invite your team from the app and they can start dictating right away.
 
 ## Instant, polished, and accurate
 
