@@ -21,6 +21,14 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
     /// Explicitly selected device ID, or nil to use the system default.
     private var _selectedDeviceID: UInt32?
 
+    /// Weak reference to the audio capture provider. When a device
+    /// list or default-device change is detected, the provider is
+    /// notified so it can mark its engine for rebuild. AVAudioEngine
+    /// does not emit configuration-change notifications when stopped,
+    /// so without this, device changes between recording sessions
+    /// leave the engine with stale CoreAudio state.
+    private weak var _audioCaptureProvider: AudioCaptureProvider?
+
     /// Listeners registered with Core Audio for device changes.
     private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
     private var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
@@ -29,6 +37,14 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         #if canImport(CoreAudio)
             registerListeners()
         #endif
+    }
+
+    /// Set the audio capture provider to notify on device changes.
+    ///
+    /// Call once during setup, after both providers are created.
+    /// The provider is held weakly to avoid retain cycles.
+    public func setAudioCaptureProvider(_ provider: AudioCaptureProvider) {
+        lock.withLock { _audioCaptureProvider = provider }
     }
 
     deinit {
@@ -337,7 +353,10 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 guard let self else { return }
                 Log.debug("[CoreAudioDeviceProvider] Device list changed")
                 // If the selected device was disconnected, clear the selection.
-                let selectedID: UInt32? = self.lock.withLock { self._selectedDeviceID }
+                let (selectedID, captureProvider): (UInt32?, AudioCaptureProvider?) = self.lock
+                    .withLock {
+                        (self._selectedDeviceID, self._audioCaptureProvider)
+                    }
                 if let selectedID {
                     let devices = self.listInputDevices()
                     if !devices.contains(where: { $0.id == selectedID }) {
@@ -347,6 +366,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                         )
                     }
                 }
+                captureProvider?.markNeedsRebuild()
             }
 
             AudioObjectAddPropertyListenerBlock(
@@ -363,8 +383,12 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 mElement: kAudioObjectPropertyElementMain
             )
 
-            let defaultBlock: AudioObjectPropertyListenerBlock = { _, _ in
+            let defaultBlock: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
                 Log.debug("[CoreAudioDeviceProvider] Default input device changed")
+                let captureProvider: AudioCaptureProvider? = self?.lock.withLock {
+                    self?._audioCaptureProvider
+                }
+                captureProvider?.markNeedsRebuild()
             }
 
             AudioObjectAddPropertyListenerBlock(

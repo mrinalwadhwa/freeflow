@@ -412,6 +412,28 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         #endif
     }
 
+    /// Mark the engine for rebuild on the next recording session.
+    ///
+    /// Called by `CoreAudioDeviceProvider` when the device list or
+    /// default input device changes. AVAudioEngine does not emit
+    /// `AVAudioEngineConfigurationChange` when it is stopped, so
+    /// device changes that happen between recording sessions leave
+    /// the engine with stale CoreAudio state. Without this, the
+    /// next `ensureEngine()` tries to reuse the stopped engine,
+    /// and `engine.start()` hangs indefinitely.
+    public func markNeedsRebuild() {
+        #if canImport(AVFoundation)
+            lock.withLock {
+                guard !_isRecording else { return }
+                guard engine != nil else { return }
+                _needsEngineRebuild = true
+                Log.debug(
+                    "[AudioCapture] Marked for rebuild (external device change while idle)"
+                )
+            }
+        #endif
+    }
+
     // MARK: - Persistent engine management
 
     #if canImport(AVFoundation)
@@ -457,20 +479,42 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                             _configuredDeviceID
                         ) ?? "System Default"
                     if !engine.isRunning {
-                        engine.prepare()
-                        let startException = ObjCTryCatch {
-                            do { try engine.start() } catch {}
-                        }
-                        if let startException {
+                        // Validate the hardware format before reusing a
+                        // stopped engine. AVAudioEngine does not emit
+                        // configurationChange notifications when stopped,
+                        // so device changes between sessions can leave
+                        // the engine with stale CoreAudio state. If the
+                        // hardware format changed (sample rate, channels,
+                        // or reports 0), tear down and rebuild.
+                        let currentFormat = engine.inputNode.outputFormat(forBus: 0)
+                        if currentFormat.sampleRate <= 0
+                            || currentFormat.sampleRate != tapFormat?.sampleRate
+                            || currentFormat.channelCount != tapFormat?.channelCount
+                        {
                             Log.debug(
-                                "[AudioCapture] engine.start() failed on reuse: "
-                                    + "\(startException.reason ?? startException.name.rawValue), "
+                                "[AudioCapture] Hardware format changed while stopped "
+                                    + "(was \(tapFormat?.sampleRate ?? 0)/\(tapFormat?.channelCount ?? 0), "
+                                    + "now \(currentFormat.sampleRate)/\(currentFormat.channelCount)), "
                                     + "rebuilding engine"
                             )
                             tearDownEngineLocked()
                             // Fall through to create a new engine.
                         } else {
-                            return engine
+                            engine.prepare()
+                            let startException = ObjCTryCatch {
+                                do { try engine.start() } catch {}
+                            }
+                            if let startException {
+                                Log.debug(
+                                    "[AudioCapture] engine.start() failed on reuse: "
+                                        + "\(startException.reason ?? startException.name.rawValue), "
+                                        + "rebuilding engine"
+                                )
+                                tearDownEngineLocked()
+                                // Fall through to create a new engine.
+                            } else {
+                                return engine
+                            }
                         }
                     } else {
                         return engine

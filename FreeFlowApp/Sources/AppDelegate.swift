@@ -501,6 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPipeline() {
         audioProvider.setAudioDeviceProvider(audioDeviceProvider)
         audioProvider.setSoundFeedbackProvider(soundFeedbackProvider)
+        audioDeviceProvider.setAudioCaptureProvider(audioProvider)
         let newPipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
