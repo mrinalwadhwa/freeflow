@@ -8,14 +8,17 @@ your editor, your coding agent, the terminal, email, anything.
 
 It is open source, so you have the [freedom to customize](CUSTOMIZE.md) it any way you want. You deploy it
 on a server private to you, so your audio and data flow through infrastructure
-you control. One deployment serves your entire team with no per-seat fees.
+you control.
+
+One deployment serves your entire team with no per-seat fees.
+
+## Demo (sound on 🔊)
+
+In this demo, you'll hear rambling speech with filler words and corrections. Watch what appears at the cursor
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/7e6cfd80-c7a8-4d3c-b31b-727887c94b77" autoplay loop playsinline></video>
 </p>
-
-> [!TIP]
-> 🔊 Watch with sound to hear the messy speech, then see the clean text appear.
 
 ## Fast
 
