@@ -30,6 +30,8 @@ brew install build-trust/freeflow/freeflow
 
 ## Fast
 
+There are some benchmarks in [BENCHMARK.md](BENCHMARK.md). Two thirds of dictations complete in under 0.6 seconds:
+
 <p align="center">
   <img src=".github/assets/latency.svg" width="100%" alt="Latency chart: 30 dictations, each square is one dictation, p50 = 0.57s">
 </p>
