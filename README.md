@@ -74,12 +74,12 @@ injected. See [CUSTOMIZE.md](CUSTOMIZE.md).
 
 ## Contribute
 
-The single most useful contribution right now is
+Jump in, we'd love your help. The single most useful contribution right now is
 [mic compatibility data](https://github.com/build-trust/freeflow/issues/2).
 FreeFlow works well with built-in mics and AirPods, but every USB mic,
 headset, and audio interface is different. The app's "Contribute Mic
 Data" menu item generates a one-click diagnostic report.
 
-Non-English polish prompts, injection strategies for untested apps, and
+[Non-English polish prompts](https://github.com/build-trust/freeflow/issues/1), injection strategies for untested apps, and
 pull requests are also welcome. See [DEVELOP.md](DEVELOP.md) for how to
 build, test, and submit changes.
