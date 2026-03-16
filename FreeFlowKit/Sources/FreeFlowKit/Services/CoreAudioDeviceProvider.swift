@@ -125,13 +125,34 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 return .nearField
             }
             switch getTransportType(deviceID: id) {
-            case .builtIn:
+            case .builtIn, .usb:
                 return .farField
-            case .bluetooth, .usb, .other:
+            case .bluetooth, .other:
                 return .nearField
             }
         #else
             return .nearField
+        #endif
+    }
+
+    /// Return the device name for a device ID.
+    ///
+    /// If `deviceID` is nil (system default), looks up the current
+    /// default input device. Returns `nil` if the device cannot be
+    /// found.
+    public func deviceNameForDevice(_ deviceID: UInt32?) -> String? {
+        #if canImport(CoreAudio)
+            let id: AudioObjectID
+            if let deviceID {
+                id = deviceID
+            } else if let defaultID = getDefaultInputDeviceID() {
+                id = defaultID
+            } else {
+                return nil
+            }
+            return getDeviceName(deviceID: id)
+        #else
+            return nil
         #endif
     }
 

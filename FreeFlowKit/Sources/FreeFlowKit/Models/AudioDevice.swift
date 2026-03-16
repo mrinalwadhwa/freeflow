@@ -42,14 +42,20 @@ public struct AudioDevice: Sendable, Equatable, Identifiable {
     /// Mic proximity hint for the server-side noise reduction config.
     ///
     /// Maps to the OpenAI Realtime API `input_audio_noise_reduction`
-    /// type field. Built-in mics are far-field (laptop at arm's
-    /// length); everything else is assumed near-field (close-talking
-    /// headset, desk mic, etc.).
+    /// type field. Built-in and USB mics are far-field (laptop at
+    /// arm's length, desk mic at 1-2 ft). Bluetooth devices are
+    /// near-field (close-talking headset).
+    ///
+    /// USB desk mics (e.g. Blue Yeti) at typical desk distance produce
+    /// speech peaks of only 0.002 RMS — similar to the built-in mic
+    /// and too quiet for reliable transcription without software gain.
+    /// Classifying USB as far-field enables 10-16x gain and server-side
+    /// far-field noise reduction, matching the built-in mic behavior.
     public var micProximity: MicProximity {
         switch transportType {
-        case .builtIn:
+        case .builtIn, .usb:
             return .farField
-        case .bluetooth, .usb, .other:
+        case .bluetooth, .other:
             return .nearField
         }
     }
@@ -60,8 +66,8 @@ public struct AudioDevice: Sendable, Equatable, Identifiable {
 /// Sent to the server so it can configure the OpenAI Realtime API's
 /// `input_audio_noise_reduction` appropriately.
 public enum MicProximity: String, Sendable, Equatable {
-    /// Close-talking microphone (headphones, USB desk mic).
+    /// Close-talking microphone (headphones, Bluetooth headset).
     case nearField = "near_field"
-    /// Far-field microphone (built-in laptop mic, conference room mic).
+    /// Far-field microphone (built-in laptop mic, USB desk mic, conference room mic).
     case farField = "far_field"
 }
