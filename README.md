@@ -65,3 +65,21 @@ simultaneously produced sub-second median latency with zero failures.
 Each dictation only occupies the server for a few seconds, so 50
 concurrent slots supports hundreds of users in practice. The economics
 improve as you add people because the infrastructure cost is small and fixed.
+
+## Customize
+
+FreeFlow is designed to be taken apart and reassembled. Swap the speech
+model, rewrite the polish prompt, add a language, or change how text is
+injected. See [CUSTOMIZE.md](CUSTOMIZE.md).
+
+## Contribute
+
+The single most useful contribution right now is
+[mic compatibility data](https://github.com/build-trust/freeflow/issues/2).
+FreeFlow works well with built-in mics and AirPods, but every USB mic,
+headset, and audio interface is different. The app's "Contribute Mic
+Data" menu item generates a one-click diagnostic report.
+
+Non-English polish prompts, injection strategies for untested apps, and
+pull requests are also welcome. See [DEVELOP.md](DEVELOP.md) for how to
+build, test, and submit changes.
