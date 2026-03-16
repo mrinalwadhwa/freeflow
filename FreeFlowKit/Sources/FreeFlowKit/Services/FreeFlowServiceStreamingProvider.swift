@@ -31,7 +31,9 @@ import Foundation
 ///
 /// Between sessions the client sends `{"type":"ping"}` every 15 s
 /// and expects `{"type":"pong"}` back from the server.
-public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding, @unchecked Sendable {
+public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding,
+    @unchecked Sendable
+{
 
     /// Explicit overrides for testing. When non-nil these take
     /// priority over `ServiceConfig`.
@@ -578,8 +580,8 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
                 let active: Bool = self.lock.withLock { self.sessionActive }
                 if active { continue }
 
-                // Tear down aged backup connections. A fresh backup will
-                // be created after the next successful session.
+                // Reconnect aged backup connections instead of just
+                // tearing down. This keeps a warm standby ready.
                 let age: TimeInterval? = self.lock.withLock {
                     self.backupConnectionEstablishedAt.map {
                         Date().timeIntervalSince($0)
@@ -588,9 +590,10 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
                 if let age, age > maxAge {
                     Log.debug(
                         "[StreamingProvider] Backup keepalive: connection aged out "
-                            + "(\(Int(age))s > \(Int(maxAge))s), tearing down"
+                            + "(\(Int(age))s > \(Int(maxAge))s), reconnecting"
                     )
                     await self.tearDownBackup()
+                    await self.reconnectBackup()
                     break
                 }
 
@@ -645,14 +648,64 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
                     if consecutiveFailures >= 2 {
                         Log.debug(
                             "[StreamingProvider] Backup keepalive: \(consecutiveFailures) "
-                                + "consecutive failures, tearing down"
+                                + "consecutive failures, reconnecting"
                         )
                         await self.tearDownBackup()
+                        await self.reconnectBackup()
                         break
                     }
                 }
             }
         }
+    }
+
+    /// Attempt to re-establish the backup connection after teardown.
+    ///
+    /// Retries with increasing backoff (2s, 4s, 8s) up to 3 attempts.
+    /// On success, starts a new backup keepalive loop.
+    private func reconnectBackup() async {
+        var attempt = 0
+        let maxAttempts = 3
+        var backoff: TimeInterval = 2.0
+
+        while attempt < maxAttempts {
+            guard !Task.isCancelled else { return }
+
+            let active: Bool = lock.withLock { sessionActive }
+            if active { return }
+
+            try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+
+            attempt += 1
+            do {
+                let (task, session) = try buildWebSocketTask()
+                task.resume()
+
+                lock.withLock {
+                    self.backupWebSocketTask = task
+                    self.backupURLSession = session
+                    self.backupConnectionEstablishedAt = Date()
+                    self.backupConnecting = false
+                }
+
+                Log.debug(
+                    "[StreamingProvider] Reconnected backup (attempt \(attempt))"
+                )
+                startBackupKeepalive()
+                return
+            } catch {
+                Log.debug(
+                    "[StreamingProvider] Backup reconnect failed "
+                        + "(attempt \(attempt)/\(maxAttempts)): \(error)"
+                )
+                backoff *= 2
+            }
+        }
+
+        Log.debug(
+            "[StreamingProvider] Backup reconnect gave up after \(maxAttempts) attempts"
+        )
     }
 
     /// Stop the backup keepalive task.
@@ -693,14 +746,16 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
                 if active { continue }
 
                 // Proactively recycle if the connection has aged out
-                // during an idle period. The next startStreaming() call
-                // will create a fresh connection via ensureConnected().
+                // during an idle period. Tear down and reconnect
+                // immediately so the next dictation has a warm
+                // connection ready.
                 if let age, age > maxAge {
                     Log.debug(
                         "[StreamingProvider] Keepalive: connection aged out "
-                            + "(\(Int(age))s > \(Int(maxAge))s), tearing down"
+                            + "(\(Int(age))s > \(Int(maxAge))s), reconnecting"
                     )
                     await self.tearDownConnection()
+                    await self.reconnectPrimary()
                     break
                 }
 
@@ -719,14 +774,69 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
                     if consecutiveFailures >= 2 {
                         Log.debug(
                             "[StreamingProvider] Keepalive: \(consecutiveFailures) "
-                                + "consecutive failures, tearing down"
+                                + "consecutive failures, reconnecting"
                         )
                         await self.tearDownConnection()
+                        await self.reconnectPrimary()
                         break
                     }
                 }
             }
         }
+    }
+
+    /// Attempt to re-establish the primary connection after teardown.
+    ///
+    /// Retries with increasing backoff (2s, 4s, 8s) up to 3 attempts.
+    /// On success, starts a new keepalive loop. On failure, gives up
+    /// and lets `ensureConnected()` handle it on the next dictation.
+    private func reconnectPrimary() async {
+        var attempt = 0
+        let maxAttempts = 3
+        var backoff: TimeInterval = 2.0
+
+        while attempt < maxAttempts {
+            guard !Task.isCancelled else { return }
+
+            // Don't reconnect if a session became active while we
+            // were waiting — the dictation path manages its own
+            // connection via ensureConnected().
+            let active: Bool = lock.withLock { sessionActive }
+            if active { return }
+
+            try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+
+            attempt += 1
+            do {
+                let (task, session) = try buildWebSocketTask()
+                task.resume()
+
+                lock.withLock {
+                    self.webSocketTask = task
+                    self.urlSession = session
+                    self.sessionCount = 0
+                    self.connectionEstablishedAt = Date()
+                }
+
+                Log.debug(
+                    "[StreamingProvider] Reconnected primary (attempt \(attempt))"
+                )
+                startKeepalive()
+                establishBackupIfNeeded()
+                return
+            } catch {
+                Log.debug(
+                    "[StreamingProvider] Primary reconnect failed "
+                        + "(attempt \(attempt)/\(maxAttempts)): \(error)"
+                )
+                backoff *= 2
+            }
+        }
+
+        Log.debug(
+            "[StreamingProvider] Primary reconnect gave up after \(maxAttempts) attempts"
+        )
     }
 
     /// Stop the keepalive task.
