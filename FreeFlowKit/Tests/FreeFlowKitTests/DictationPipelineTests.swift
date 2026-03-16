@@ -1033,6 +1033,7 @@ final class DictationPipelineTests: XCTestCase {
 
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
+
         XCTAssertEqual(dictation.dictateCallCount, 1)
     }
 

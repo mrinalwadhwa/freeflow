@@ -64,6 +64,16 @@ public protocol AudioProviding: Sendable {
     /// reduction.
     var micProximity: MicProximity { get }
 
+    /// The software gain factor applied to the current or most recent
+    /// recording session. Far-field mics use 10-16x; near-field use 1.0.
+    /// Used by mic diagnostics to report the gain in effect.
+    var gainFactor: Float { get }
+
+    /// The name of the audio device used for the current or most recent
+    /// recording session (e.g. "MacBook Pro Microphone", "AirPods").
+    /// Used by mic diagnostics. Returns "System Default" if unknown.
+    var deviceName: String { get }
+
     /// Tear down any persistent resources (e.g. a long-lived audio engine).
     ///
     /// Call on app termination. Implementations that do not hold persistent
@@ -72,6 +82,12 @@ public protocol AudioProviding: Sendable {
 }
 
 extension AudioProviding {
+    /// Default: gain 1.0 (no amplification).
+    public var gainFactor: Float { 1.0 }
+
+    /// Default: unknown device name.
+    public var deviceName: String { "System Default" }
+
     /// Default implementation returns nil (no PCM streaming).
     public var pcmAudioStream: AsyncStream<Data>? { nil }
 

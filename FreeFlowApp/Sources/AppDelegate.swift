@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let capabilitiesService = CapabilitiesService()
     private var updaterService: UpdaterService?
     private let trialStatusService = TrialStatusService()
+    private let micDiagnosticStore = MicDiagnosticStore()
 
     // MARK: - Controllers
 
@@ -512,7 +513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor [weak self] in
                     self?.handleInlineSessionExpired()
                 }
-            }
+            },
+            micDiagnosticStore: micDiagnosticStore
         )
         pipeline = newPipeline
 
@@ -572,6 +574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             textInjector: textInjector,
             audioDeviceProvider: audioDeviceProvider,
             updaterService: updaterService,
+            micDiagnosticStore: micDiagnosticStore,
             shortcuts: .default
         )
         menuBarController = controller

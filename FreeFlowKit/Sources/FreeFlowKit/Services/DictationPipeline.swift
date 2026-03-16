@@ -33,6 +33,7 @@ public actor DictationPipeline: PipelineProviding {
     private let textInjector: TextInjecting
     private let coordinator: RecordingCoordinator
     private let transcriptBuffer: TranscriptBuffer?
+    private let micDiagnosticStore: MicDiagnosticStore?
 
     /// Called when a dictation request fails with a 401 authentication
     /// error. The app should clear stored credentials and enter the
@@ -57,6 +58,7 @@ public actor DictationPipeline: PipelineProviding {
     /// the default `silenceThreshold` because built-in mic speech peaks
     /// at only 0.002–0.005 RMS. Set just above the absolute noise floor
     /// to reject truly silent presses without blocking quiet speech.
+    /// The server's far-field noise reduction handles signal quality.
     private let farFieldSilenceThreshold: Float = 0.001
 
     /// Multiplier applied to the measured ambient RMS to produce an
@@ -118,7 +120,8 @@ public actor DictationPipeline: PipelineProviding {
         transcriptBuffer: TranscriptBuffer? = nil,
         silenceThreshold: Float = 0.005,
         streamingProvider: StreamingDictationProviding? = nil,
-        onSessionExpired: (@Sendable () -> Void)? = nil
+        onSessionExpired: (@Sendable () -> Void)? = nil,
+        micDiagnosticStore: MicDiagnosticStore? = nil
     ) {
         self.audioProvider = audioProvider
         self.contextProvider = contextProvider
@@ -129,6 +132,7 @@ public actor DictationPipeline: PipelineProviding {
         self.silenceThreshold = silenceThreshold
         self.streamingProvider = streamingProvider
         self.onSessionExpired = onSessionExpired
+        self.micDiagnosticStore = micDiagnosticStore
     }
 
     /// Compute the effective silence threshold for the current session.
@@ -458,6 +462,21 @@ public actor DictationPipeline: PipelineProviding {
                 "[Pipeline] Early silence short-circuit: peak RMS \(audioProvider.peakRMS) <= \(earlyThreshold) (ambient: \(audioProvider.ambientRMS)), skipping setup wait"
             )
 
+            if let store = micDiagnosticStore {
+                await store.record(
+                    MicDiagnosticEntry(
+                        deviceName: audioProvider.deviceName,
+                        proximity: audioProvider.micProximity.rawValue,
+                        ambientRMS: audioProvider.ambientRMS,
+                        peakRMS: audioProvider.peakRMS,
+                        gain: audioProvider.gainFactor,
+                        threshold: earlyThreshold,
+                        duration: 0,
+                        latency: 0,
+                        result: "silent"
+                    ))
+            }
+
             // Stop audio and reset immediately.
             _ = try? await audioProvider.stopRecording()
             await coordinator.reset()
@@ -546,7 +565,7 @@ public actor DictationPipeline: PipelineProviding {
             [
                 pendingContext, audioProvider, dictationProvider, streamingProvider,
                 textInjector, coordinator, minimumAudioDuration, transcriptBuffer,
-                earlyThreshold
+                earlyThreshold, micDiagnosticStore
             ] in
             let t0 = CFAbsoluteTimeGetCurrent()
 
@@ -586,6 +605,20 @@ public actor DictationPipeline: PipelineProviding {
                 Log.debug(
                     "[Pipeline] Early silence gate: peak RMS \(peakLevel) <= \(postRecordThreshold) (ambient: \(audioProvider.ambientRMS)), skipping"
                 )
+                if let store = micDiagnosticStore {
+                    await store.record(
+                        MicDiagnosticEntry(
+                            deviceName: audioProvider.deviceName,
+                            proximity: audioProvider.micProximity.rawValue,
+                            ambientRMS: audioProvider.ambientRMS,
+                            peakRMS: audioProvider.peakRMS,
+                            gain: audioProvider.gainFactor,
+                            threshold: postRecordThreshold,
+                            duration: audioBuffer.duration,
+                            latency: 0,
+                            result: "silent"
+                        ))
+                }
                 forwardingTask?.cancel()
                 if useStreaming, let streaming = streamingProvider {
                     await streaming.cancelStreaming()
@@ -699,6 +732,20 @@ public actor DictationPipeline: PipelineProviding {
             let finalText = dictatedText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !finalText.isEmpty else {
                 Log.debug("[Pipeline] Empty dictation result, skipping injection")
+                if let store = micDiagnosticStore {
+                    await store.record(
+                        MicDiagnosticEntry(
+                            deviceName: audioProvider.deviceName,
+                            proximity: audioProvider.micProximity.rawValue,
+                            ambientRMS: audioProvider.ambientRMS,
+                            peakRMS: audioProvider.peakRMS,
+                            gain: audioProvider.gainFactor,
+                            threshold: postRecordThreshold,
+                            duration: audioBuffer.duration,
+                            latency: CFAbsoluteTimeGetCurrent() - t0,
+                            result: "empty"
+                        ))
+                }
                 await coordinator.reset()
                 return
             }
@@ -745,6 +792,21 @@ public actor DictationPipeline: PipelineProviding {
                     + " audio=\(audioKB)KB/\(fmt(audioBuffer.duration))"
                     + " mode=\(mode)"
             )
+
+            if let store = micDiagnosticStore {
+                await store.record(
+                    MicDiagnosticEntry(
+                        deviceName: audioProvider.deviceName,
+                        proximity: audioProvider.micProximity.rawValue,
+                        ambientRMS: audioProvider.ambientRMS,
+                        peakRMS: audioProvider.peakRMS,
+                        gain: audioProvider.gainFactor,
+                        threshold: postRecordThreshold,
+                        duration: audioBuffer.duration,
+                        latency: t5 - t0,
+                        result: "ok"
+                    ))
+            }
 
             // Successful injection — return to idle.
             await coordinator.finishInjecting()

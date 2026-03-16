@@ -38,6 +38,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     private var _ambientSumOfSquares: Double = 0
     private var _ambientCalibrated: Bool = false
     private var _micProximity: MicProximity = .nearField
+    private var _deviceName: String = "System Default"
     private var pcmChunks: [Data] = []
 
     /// Software gain factor applied to outbound PCM audio for far-field
@@ -134,6 +135,19 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     /// configured device's transport type. Defaults to `.nearField`.
     public var micProximity: MicProximity {
         lock.withLock { _micProximity }
+    }
+
+    /// The software gain factor applied to outbound audio for the
+    /// current or most recent recording session. Far-field mics use
+    /// 10-16x; near-field mics use 1.0.
+    public var gainFactor: Float {
+        lock.withLock { _gainFactor }
+    }
+
+    /// The name of the audio device used for the current or most
+    /// recent recording session. Set during engine creation.
+    public var deviceName: String {
+        lock.withLock { _deviceName }
     }
 
     public init() {}
@@ -438,6 +452,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                         _audioDeviceProvider?.micProximityForDevice(
                             _configuredDeviceID
                         ) ?? .nearField
+                    _deviceName =
+                        _audioDeviceProvider?.deviceNameForDevice(
+                            _configuredDeviceID
+                        ) ?? "System Default"
                     if !engine.isRunning {
                         engine.prepare()
                         let startException = ObjCTryCatch {
@@ -490,6 +508,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 _audioDeviceProvider?.micProximityForDevice(
                     _configuredDeviceID
                 ) ?? .nearField
+            _deviceName =
+                _audioDeviceProvider?.deviceNameForDevice(
+                    _configuredDeviceID
+                ) ?? "System Default"
 
             let inputNode = engine.inputNode
 
