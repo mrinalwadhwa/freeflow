@@ -13,7 +13,8 @@ you control. One deployment serves your entire team with no per-seat fees.
 <p align="center">
   <video src="https://github.com/user-attachments/assets/7e6cfd80-c7a8-4d3c-b31b-727887c94b77" autoplay loop playsinline></video>
 </p>
-<p align="center"><sub>🔊 Watch with sound to hear the messy speech, then see the clean text appear.</sub></p>
+> [!TIP]
+> 🔊 Watch with sound to hear the messy speech, then see the clean text appear.
 
 ## Fast
 
