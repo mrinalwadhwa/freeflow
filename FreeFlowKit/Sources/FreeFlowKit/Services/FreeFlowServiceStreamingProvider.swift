@@ -679,10 +679,14 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
 
             attempt += 1
             do {
-                let (task, session) = try buildWebSocketTask()
+                let (task, session) = try self.buildWebSocketTask()
                 task.resume()
 
-                lock.withLock {
+                // Verify the connection is actually live before
+                // declaring success.
+                try await verifyConnection(task)
+
+                self.lock.withLock {
                     self.backupWebSocketTask = task
                     self.backupURLSession = session
                     self.backupConnectionEstablishedAt = Date()
@@ -812,6 +816,12 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
                 let (task, session) = try buildWebSocketTask()
                 task.resume()
 
+                // Verify the connection is actually live with a
+                // ping/pong before declaring success. Without this,
+                // resume() can return immediately while the underlying
+                // TCP connection is still dead.
+                try await verifyConnection(task)
+
                 lock.withLock {
                     self.webSocketTask = task
                     self.urlSession = session
@@ -837,6 +847,33 @@ public final class FreeFlowServiceStreamingProvider: StreamingDictationProviding
         Log.debug(
             "[StreamingProvider] Primary reconnect gave up after \(maxAttempts) attempts"
         )
+    }
+
+    /// Verify a WebSocket connection is live by sending a ping and
+    /// waiting for a pong. Throws on timeout or failure.
+    private func verifyConnection(_ task: URLSessionWebSocketTask) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await self.send(json: ["type": "ping"], on: task)
+                while true {
+                    let msg = try await task.receive()
+                    if case .string(let text) = msg,
+                        let data = text.data(using: .utf8),
+                        let json = try? JSONSerialization.jsonObject(with: data)
+                            as? [String: Any],
+                        json["type"] as? String == "pong"
+                    {
+                        return
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                throw CancellationError()
+            }
+            try await group.next()
+            group.cancelAll()
+        }
     }
 
     /// Stop the keepalive task.
