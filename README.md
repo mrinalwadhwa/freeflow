@@ -52,3 +52,16 @@ fallback catches it. Whichever path finishes first wins.
 <p align="center">
   <img src=".github/assets/how-it-works.svg" width="100%" alt="How it works: FreeFlow streams audio from your Mac to your private server to a realtime speech model, then returns polished text">
 </p>
+
+## Freedom: open, private, and unlimited
+
+Everything is in this repo: the app, the server, the deployment
+configuration. Change the models, rewrite the prompts, add a language, or
+fork the whole thing. Your team's audio, transcripts, and context data flow through your private FreeFlow Server deployed in [Autonomy](https://autonomy.computer).
+
+One container handles your entire team with no per-seat fees. In our
+[concurrent users benchmark](BENCHMARK.md), 50 people dictating
+simultaneously produced sub-second median latency with zero failures.
+Each dictation only occupies the server for a few seconds, so 50
+concurrent slots supports hundreds of users in practice. The economics
+improve as you add people because the infrastructure cost is small and fixed.
