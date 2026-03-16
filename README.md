@@ -11,7 +11,7 @@ on a server private to you, so your audio and data flow through infrastructure
 you control. One deployment serves your entire team with no per-seat fees.
 
 <p align="center">
-  <video src=".github/assets/demo.mp4" width="720" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/1f930bff-d648-4d94-b5c1-42742d637d2f" autoplay loop playsinline></video>
 </p>
 
 ## Fast
