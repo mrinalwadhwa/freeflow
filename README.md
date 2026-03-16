@@ -26,7 +26,7 @@ Install with [Homebrew](https://brew.sh) or download [FreeFlow.dmg](https://gith
 brew install build-trust/freeflow/freeflow
 ```
 
-On first launch, FreeFlow walks you through setup: create an [Autonomy](https://autonomy.computer) account, deploy your server, and start dictating. About two minutes to your first dictation.
+On first launch, FreeFlow walks you through setup: create an [Autonomy](https://autonomy.computer) account, deploy your server, and start dictating. It takes only two minutes to your first dictation.
 
 ## Instant, polished, and accurate
 
