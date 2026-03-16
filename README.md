@@ -12,6 +12,16 @@ you control.
 
 One deployment serves your entire team with no per-seat fees.
 
+## Install
+
+Install with Homebrew:
+
+```
+brew install build-trust/freeflow/freeflow
+```
+
+Or download [FreeFlow.dmg](https://github.com/build-trust/freeflow/releases/latest/download/FreeFlow.dmg) directly.
+
 ## Demo (sound on 🔊)
 
 In this demo, you'll hear rambling speech with filler words and corrections. Watch what appears at the cursor.
