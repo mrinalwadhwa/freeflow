@@ -83,4 +83,4 @@ headset, and audio interface is different. The app's "Contribute Mic
 Data" menu item generates a one-click diagnostic report that
 can help us improve accuracy of dictation.
 
-Want to add or improve support for a language? See [issue #1](https://github.com/build-trust/freeflow/issues/1). Found an app where injection breaks? Open an issue. Code contributions and pull requests are welcome too. [DEVELOP.md](DEVELOP.md) has the build and test guide.
+Want to add or improve support for a language? See the [language tracking issue](https://github.com/build-trust/freeflow/issues/1). Found an app where injection breaks? Open an issue. Code contributions and pull requests are welcome too. [DEVELOP.md](DEVELOP.md) has the build and test guide.
