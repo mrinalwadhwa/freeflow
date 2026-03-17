@@ -723,6 +723,9 @@
             <div class="btn-group">
                 <button class="btn" onclick="handleRetry()">Try again</button>
             </div>
+            <div class="btn-row" style="margin-top: 0.5rem">
+                <button class="btn-link" onclick="handleReportIssue()">Report this issue</button>
+            </div>
         </div>
 
         <!-- Screen: Account (merged — info + two paths) -->
@@ -919,6 +922,11 @@
 
             function handleRetry() {
                 send("retryProvisioning");
+            }
+
+            function handleReportIssue() {
+                var msg = document.getElementById("error-message").textContent || "";
+                send("reportIssue", { message: msg });
             }
 
             // --- Account screen validation ---

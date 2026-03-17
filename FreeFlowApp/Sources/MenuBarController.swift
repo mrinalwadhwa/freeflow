@@ -351,6 +351,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             systemSymbolName: "mic.badge.plus", accessibilityDescription: nil)
         menu.addItem(reportMic)
 
+        let reportIssue = NSMenuItem(
+            title: "Report an Issue…",
+            action: #selector(reportAnIssue),
+            keyEquivalent: ""
+        )
+        reportIssue.target = self
+        reportIssue.image = NSImage(
+            systemSymbolName: "exclamationmark.bubble", accessibilityDescription: nil)
+        menu.addItem(reportIssue)
+
         let discord = NSMenuItem(
             title: "Join us on Discord…",
             action: #selector(openDiscord),
@@ -755,6 +765,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 URLQueryItem(name: "labels", value: "mic"),
             ]
             if let url = components.url {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    @objc private func reportAnIssue() {
+        Task {
+            let micDiagnostics: String? = await micDiagnosticStore?.formattedDiagnostics()
+            if let url = IssueDiagnostics.issueURL(micDiagnostics: micDiagnostics) {
                 NSWorkspace.shared.open(url)
             }
         }

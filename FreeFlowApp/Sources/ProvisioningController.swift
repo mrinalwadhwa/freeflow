@@ -122,6 +122,14 @@ final class ProvisioningController {
             provBridge.onOpenExternal = { url in
                 NSWorkspace.shared.open(url)
             }
+            provBridge.onReportIssue = { errorMessage in
+                if let url = IssueDiagnostics.issueURL(
+                    title: "Setup error",
+                    errorMessage: errorMessage.isEmpty ? nil : errorMessage
+                ) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
 
             bridge = provBridge
             window = win
@@ -162,9 +170,7 @@ final class ProvisioningController {
             do {
                 // Step 1: Autonomy Account login
                 bridge?.pushAuthStarted()
-                #if DEBUG
-                    Log.debug("[Provisioning] Starting Autonomy Account login")
-                #endif
+                Log.debug("[Provisioning] Starting Autonomy Account login")
                 let token = try await authController.login()
                 self.autonomyToken = token
 
@@ -172,9 +178,7 @@ final class ProvisioningController {
                 keychain.saveAutonomyToken(token)
 
                 bridge?.pushAuthComplete()
-                #if DEBUG
-                    Log.debug("[Provisioning] Auth complete, starting parallel work")
-                #endif
+                Log.debug("[Provisioning] Auth complete, starting parallel work")
                 let client = AutonomyClient(token: token)
                 self.autonomyClient = client
 
@@ -187,10 +191,8 @@ final class ProvisioningController {
                 }
 
                 if initial.isReady {
-                    #if DEBUG
-                        Log.debug(
-                            "[Provisioning] Zone already ready, skipping account/card screens")
-                    #endif
+                    Log.debug(
+                        "[Provisioning] Zone already ready, skipping account/card screens")
                     bridge?.pushProvisioningProgress(message: "Reconnecting…")
                     showProvisioningScreen()
                     try await completeProvisioning(status: initial)
@@ -225,16 +227,12 @@ final class ProvisioningController {
 
                 // Step 3: Show Screen A (account details + plan).
                 bridge?.pushAccountSetup()
-                #if DEBUG
-                    Log.debug("[Provisioning] Showing Screen A (account details)")
-                #endif
+                Log.debug("[Provisioning] Showing Screen A (account details)")
 
                 let (firstName, lastName, company, wantsCard) = await waitForAccountDetails()
 
                 // Save account details to orchestrator.
-                #if DEBUG
-                    Log.debug("[Provisioning] Saving account details")
-                #endif
+                Log.debug("[Provisioning] Saving account details")
                 try await client.saveAccount(
                     firstName: firstName,
                     lastName: lastName,
@@ -250,11 +248,9 @@ final class ProvisioningController {
                         setupInfo = try await setupIntentTask.value
                         self.stripeSetupInfo = setupInfo
                     } catch {
-                        #if DEBUG
-                            Log.debug(
-                                "[Provisioning] SetupIntent fetch failed: \(error.localizedDescription)"
-                            )
-                        #endif
+                        Log.debug(
+                            "[Provisioning] SetupIntent fetch failed: \(error.localizedDescription)"
+                        )
                     }
 
                     if let info = setupInfo {
@@ -266,46 +262,36 @@ final class ProvisioningController {
                         // No Stripe info — show Screen B in skip-only mode.
                         bridge?.pushCreditCard(clientSecret: "", publishableKey: "")
                     }
-                    #if DEBUG
-                        Log.debug("[Provisioning] Showing credit card screen")
-                    #endif
+                    Log.debug("[Provisioning] Showing credit card screen")
 
                     let setupIntentId = await waitForPaymentAction()
 
                     // Handle payment. Retry loop if confirmation fails.
                     var paymentAction = setupIntentId
                     while let intentId = paymentAction {
-                        #if DEBUG
-                            Log.debug("[Provisioning] Confirming payment with orchestrator")
-                        #endif
+                        Log.debug("[Provisioning] Confirming payment with orchestrator")
                         do {
                             try await client.confirmPayment(setupIntentId: intentId)
                             bridge?.pushPaymentSuccess()
                             break
                         } catch {
-                            #if DEBUG
-                                Log.debug(
-                                    "[Provisioning] Payment confirmation failed: \(error.localizedDescription)"
-                                )
-                            #endif
+                            Log.debug(
+                                "[Provisioning] Payment confirmation failed: \(error.localizedDescription)"
+                            )
                             bridge?.pushPaymentError(message: error.localizedDescription)
                             paymentAction = await waitForPaymentAction()
                         }
                     }
 
                     if paymentAction == nil {
-                        #if DEBUG
-                            Log.debug("[Provisioning] User skipped card from credit card screen")
-                        #endif
+                        Log.debug("[Provisioning] User skipped card from credit card screen")
                     } else {
                         addedCard = true
                     }
                 } else {
                     // User chose "Start free trial" — skip card entirely.
                     setupIntentTask.cancel()
-                    #if DEBUG
-                        Log.debug("[Provisioning] User skipped adding a card")
-                    #endif
+                    Log.debug("[Provisioning] User skipped adding a card")
                 }
 
                 // Step 5: Wait for provisioning if still in progress.
@@ -323,9 +309,7 @@ final class ProvisioningController {
                     // we wait for the background provisioning task.
                     bridge?.pushProvisioningProgress(message: "Finishing setup…")
                     showProvisioningScreen()
-                    #if DEBUG
-                        Log.debug("[Provisioning] Waiting for zone to be ready")
-                    #endif
+                    Log.debug("[Provisioning] Waiting for zone to be ready")
                     result = try await provisioningTask.value
                 }
 
@@ -333,15 +317,11 @@ final class ProvisioningController {
                 try await completeProvisioning(status: result)
 
             } catch let error as AuthControllerError where error == .userCancelled {
-                #if DEBUG
-                    Log.debug("[Provisioning] User cancelled login")
-                #endif
+                Log.debug("[Provisioning] User cancelled login")
                 bridge?.pushAuthError(message: "Login was cancelled. Tap Get Started to try again.")
 
             } catch AutonomyError.unauthorized {
-                #if DEBUG
-                    Log.debug("[Provisioning] Autonomy token expired, restarting login")
-                #endif
+                Log.debug("[Provisioning] Autonomy token expired, restarting login")
                 keychain.deleteAutonomyToken()
                 self.autonomyToken = nil
                 self.autonomyClient = nil
@@ -349,9 +329,7 @@ final class ProvisioningController {
                     message: "Your session has expired. Tap Get Started to sign in again.")
 
             } catch {
-                #if DEBUG
-                    Log.debug("[Provisioning] Error: \(error.localizedDescription)")
-                #endif
+                Log.debug("[Provisioning] Error: \(error.localizedDescription)")
                 bridge?.pushProvisioningError(message: error.localizedDescription)
                 onError?(error)
             }
@@ -470,9 +448,7 @@ final class ProvisioningController {
         }
 
         // Step 5: Redeem admin token on the zone to get a zone session.
-        #if DEBUG
-            Log.debug("[Provisioning] Redeeming admin token on zone")
-        #endif
+        Log.debug("[Provisioning] Redeeming admin token on zone")
         let redeemResult: AuthClient.RedeemResult
         do {
             redeemResult = try await authClient.redeemInvite(
@@ -480,18 +456,14 @@ final class ProvisioningController {
                 token: adminToken
             )
         } catch {
-            #if DEBUG
-                Log.debug("[Provisioning] Redeem failed: \(error)")
-            #endif
+            Log.debug("[Provisioning] Redeem failed: \(error)")
             throw error
         }
         keychain.saveSessionToken(redeemResult.sessionToken)
 
         // Step 6: Notify the UI and hand off.
         bridge?.pushProvisioningReady()
-        #if DEBUG
-            Log.debug("[Provisioning] Zone ready, handing off to onboarding")
-        #endif
+        Log.debug("[Provisioning] Zone ready, handing off to onboarding")
 
         // Brief delay so the user sees the success screen.
         try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
@@ -513,9 +485,7 @@ final class ProvisioningController {
             return
         }
 
-        #if DEBUG
-            Log.debug("[Provisioning] Resuming interrupted provisioning")
-        #endif
+        Log.debug("[Provisioning] Resuming interrupted provisioning")
         self.autonomyToken = token
         self.autonomyClient = AutonomyClient(token: token)
         isRunning = true
@@ -529,9 +499,7 @@ final class ProvisioningController {
                 let result = try await pollUntilReady(client: autonomyClient!)
                 try await completeProvisioning(status: result)
             } catch AutonomyError.unauthorized {
-                #if DEBUG
-                    Log.debug("[Provisioning] Autonomy token expired during resume")
-                #endif
+                Log.debug("[Provisioning] Autonomy token expired during resume")
                 keychain.deleteAutonomyToken()
                 self.autonomyToken = nil
                 self.autonomyClient = nil
@@ -539,9 +507,7 @@ final class ProvisioningController {
                     message: "Your session has expired. Tap Get Started to sign in again.")
 
             } catch {
-                #if DEBUG
-                    Log.debug("[Provisioning] Resume failed: \(error.localizedDescription)")
-                #endif
+                Log.debug("[Provisioning] Resume failed: \(error.localizedDescription)")
                 bridge?.pushProvisioningError(message: error.localizedDescription)
                 onError?(error)
             }
@@ -571,9 +537,7 @@ final class ProvisioningController {
                 withExtension: "html"
             )
         else {
-            #if DEBUG
-                Log.debug("[Provisioning] provisioning.html not found in bundle")
-            #endif
+            Log.debug("[Provisioning] provisioning.html not found in bundle")
             return
         }
 

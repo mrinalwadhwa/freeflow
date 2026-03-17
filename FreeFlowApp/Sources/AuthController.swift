@@ -47,9 +47,7 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             throw AuthControllerError.authFailed("Invalid Autonomy URL")
         }
 
-        #if DEBUG
-            Log.debug("[AuthController] Starting sign-in flow: \(url.absoluteString)")
-        #endif
+        Log.debug("[AuthController] Starting sign-in flow: \(url.absoluteString)")
 
         return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
@@ -116,17 +114,13 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             session.prefersEphemeralWebBrowserSession = true
 
             self.authSession = session
-            #if DEBUG
-                Log.debug("[AuthController] Presenting sign-in sheet")
-            #endif
+            Log.debug("[AuthController] Presenting sign-in sheet")
 
             if !session.start() {
                 self.authSession = nil
-                #if DEBUG
-                    Log.debug(
-                        "[AuthController] Failed to start authentication session, opening browser fallback"
-                    )
-                #endif
+                Log.debug(
+                    "[AuthController] Failed to start authentication session, opening browser fallback"
+                )
                 NSWorkspace.shared.open(url)
                 continuation.resume(
                     throwing: AuthControllerError.authFailed(
@@ -156,10 +150,8 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
             ?? NSApp.windows.first(where: { $0.isVisible })
             ?? NSApp.windows.first
             ?? ASPresentationAnchor()
-        #if DEBUG
-            Log.debug(
-                "[AuthController] Using presentation anchor: \(String(describing: anchor.title))")
-        #endif
+        Log.debug(
+            "[AuthController] Using presentation anchor: \(String(describing: anchor.title))")
         return anchor
     }
 }

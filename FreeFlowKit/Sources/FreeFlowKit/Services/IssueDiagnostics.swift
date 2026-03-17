@@ -1,0 +1,153 @@
+import Foundation
+
+/// Collects system information, recent log history, and mic diagnostics
+/// into a pre-filled GitHub issue URL for one-click error reporting.
+///
+/// Used by the "Report an Issue..." menu item and the "Report this issue"
+/// link on error screens. Follows the same pattern as "Contribute Mic Data"
+/// but captures general diagnostics instead of mic-specific data.
+public enum IssueDiagnostics {
+
+    /// The GitHub repo where issues are filed.
+    private static let repoURL = "https://github.com/build-trust/freeflow/issues/new"
+
+    /// Build a GitHub issue URL pre-filled with diagnostics.
+    ///
+    /// - Parameters:
+    ///   - title: A short summary for the issue title. Defaults to empty
+    ///     so the user fills it in.
+    ///   - errorMessage: An optional error message to highlight at the top
+    ///     of the issue body (e.g. from a "Something went wrong" screen).
+    ///   - micDiagnostics: Formatted mic diagnostic string from
+    ///     `MicDiagnosticStore.formattedDiagnostics()`. Pass nil to omit.
+    /// - Returns: A URL that opens the GitHub new-issue page with the body
+    ///   pre-filled, or nil if URL construction fails.
+    public static func issueURL(
+        title: String = "",
+        errorMessage: String? = nil,
+        micDiagnostics: String? = nil
+    ) -> URL? {
+        let body = buildBody(
+            errorMessage: errorMessage,
+            micDiagnostics: micDiagnostics
+        )
+
+        var components = URLComponents(string: repoURL)!
+        components.queryItems = [
+            URLQueryItem(name: "title", value: title),
+            URLQueryItem(name: "body", value: body),
+            URLQueryItem(name: "labels", value: "bug"),
+        ]
+        return components.url
+    }
+
+    // MARK: - Body
+
+    private static func buildBody(
+        errorMessage: String?,
+        micDiagnostics: String?
+    ) -> String {
+        var sections: [String] = []
+
+        // Error message (if reporting from an error screen).
+        if let errorMessage, !errorMessage.isEmpty {
+            sections.append(
+                """
+                **Error:**
+                > \(errorMessage)
+                """)
+        }
+
+        // What happened (user fills in).
+        sections.append(
+            """
+            **What happened:**
+            <!-- Describe what you were doing and what went wrong. -->
+
+            """)
+
+        // System info.
+        sections.append(
+            """
+            **System info:**
+            ```
+            \(systemInfo())
+            ```
+            """)
+
+        // Recent log history.
+        let history = Log.formattedHistory()
+        if history != "No log entries recorded." {
+            sections.append(
+                """
+                <details>
+                <summary>Recent log (\(Log.entryCount) entries)</summary>
+
+                ```
+                \(history)
+                ```
+                </details>
+                """)
+        }
+
+        // Mic diagnostics (if available).
+        if let micDiagnostics, micDiagnostics != "No dictation sessions recorded yet." {
+            sections.append(
+                """
+                <details>
+                <summary>Mic diagnostics</summary>
+
+                ```
+                \(micDiagnostics)
+                ```
+                </details>
+                """)
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    // MARK: - System Info
+
+    /// Collect system information as a compact multi-line string.
+    public static func systemInfo() -> String {
+        let appVersion =
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            ?? "unknown"
+        let buildNumber =
+            Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+            ?? "unknown"
+        let macOS = ProcessInfo.processInfo.operatingSystemVersionString
+        let model = macModelIdentifier()
+        let memory = ProcessInfo.processInfo.physicalMemory
+        let memoryGB = String(format: "%.0f", Double(memory) / 1_073_741_824)
+        let uptime = formatUptime(ProcessInfo.processInfo.systemUptime)
+
+        return [
+            "FreeFlow: \(appVersion) (\(buildNumber))",
+            "macOS: \(macOS)",
+            "Mac: \(model)",
+            "Memory: \(memoryGB) GB",
+            "Uptime: \(uptime)",
+        ].joined(separator: "\n")
+    }
+
+    // MARK: - Private Helpers
+
+    private static func macModelIdentifier() -> String {
+        var size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.model", &model, &size, nil, 0)
+        return String(cString: model)
+    }
+
+    private static func formatUptime(_ seconds: TimeInterval) -> String {
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
+    }
+}

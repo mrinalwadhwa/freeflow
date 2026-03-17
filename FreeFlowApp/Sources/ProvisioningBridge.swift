@@ -55,6 +55,10 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
     /// Called when the page requests opening a URL in the system browser.
     var onOpenExternal: ((URL) -> Void)?
 
+    /// Called when the user clicks "Report this issue" on an error screen.
+    /// Parameter: the error message displayed to the user.
+    var onReportIssue: ((String) -> Void)?
+
     // MARK: - WKScriptMessageHandler
 
     nonisolated func userContentController(
@@ -102,6 +106,9 @@ final class ProvisioningBridge: NSObject, WKScriptMessageHandler {
             {
                 onOpenExternal?(url)
             }
+        case "reportIssue":
+            let message = (body["data"] as? [String: Any])?["message"] as? String ?? ""
+            onReportIssue?(message)
         default:
             break
         }

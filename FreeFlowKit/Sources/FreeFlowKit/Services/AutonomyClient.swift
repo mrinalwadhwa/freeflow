@@ -127,11 +127,9 @@ public final class AutonomyClient: Sendable {
             throw AutonomyError.invalidResponse
         }
 
-        #if DEBUG
-            Log.debug(
-                "[AutonomyClient] POST /api/freeflow/account → \(httpResponse.statusCode)"
-            )
-        #endif
+        Log.debug(
+            "[AutonomyClient] POST /api/freeflow/account → \(httpResponse.statusCode)"
+        )
 
         switch httpResponse.statusCode {
         case 200:
@@ -177,11 +175,9 @@ public final class AutonomyClient: Sendable {
             throw AutonomyError.invalidResponse
         }
 
-        #if DEBUG
-            Log.debug(
-                "[AutonomyClient] POST /api/freeflow/setup-intent → \(httpResponse.statusCode)"
-            )
-        #endif
+        Log.debug(
+            "[AutonomyClient] POST /api/freeflow/setup-intent → \(httpResponse.statusCode)"
+        )
 
         switch httpResponse.statusCode {
         case 200:
@@ -225,11 +221,9 @@ public final class AutonomyClient: Sendable {
             throw AutonomyError.invalidResponse
         }
 
-        #if DEBUG
-            Log.debug(
-                "[AutonomyClient] POST /api/freeflow/confirm-payment → \(httpResponse.statusCode)"
-            )
-        #endif
+        Log.debug(
+            "[AutonomyClient] POST /api/freeflow/confirm-payment → \(httpResponse.statusCode)"
+        )
 
         switch httpResponse.statusCode {
         case 200:
@@ -251,11 +245,9 @@ public final class AutonomyClient: Sendable {
             throw AutonomyError.invalidResponse
         }
 
-        #if DEBUG
-            Log.debug(
-                "[AutonomyClient] \(request.httpMethod ?? "?") \(request.url?.path ?? "?") → \(httpResponse.statusCode)"
-            )
-        #endif
+        Log.debug(
+            "[AutonomyClient] \(request.httpMethod ?? "?") \(request.url?.path ?? "?") → \(httpResponse.statusCode)"
+        )
 
         switch httpResponse.statusCode {
         case 200:

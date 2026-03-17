@@ -182,9 +182,7 @@ public final class TrialStatusService: @unchecked Sendable {
             updateState(state)
             return state
         } catch {
-            #if DEBUG
-                Log.debug("[TrialStatusService] Status check failed: \(error)")
-            #endif
+            Log.debug("[TrialStatusService] Status check failed: \(error)")
             return nil
         }
     }
