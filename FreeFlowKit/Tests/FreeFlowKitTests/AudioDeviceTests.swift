@@ -83,10 +83,10 @@ struct AudioDeviceTests {
         #expect(device.micProximity == .nearField)
     }
 
-    @Test("USB mic reports near-field proximity")
+    @Test("USB mic reports far-field proximity")
     func micProximityUSB() {
         let device = AudioDevice(id: 3, name: "Yeti", transportType: .usb)
-        #expect(device.micProximity == .nearField)
+        #expect(device.micProximity == .farField)
     }
 
     @Test("Other/unknown mic reports near-field proximity")

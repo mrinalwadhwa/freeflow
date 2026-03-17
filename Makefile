@@ -62,17 +62,19 @@ test:
 	exit_code=$$?; \
 	xc_pass=`grep -c '^Test Case.*passed' $(TEST_LOG) || true`; \
 	xc_fail=`grep -c '^Test Case.*failed' $(TEST_LOG) || true`; \
+	st_fail=`grep -c '^✘ Test .* failed' $(TEST_LOG) || true`; \
 	st_line=`grep 'Test run with' $(TEST_LOG) || true`; \
 	st_total=`echo "$$st_line" | sed -n 's/.*with \([0-9]*\) tests.*/\1/p'`; \
 	st_total=$${st_total:-0}; \
 	xc_pass=$${xc_pass:-0}; \
 	xc_fail=$${xc_fail:-0}; \
+	st_fail=$${st_fail:-0}; \
 	total=`expr $$xc_pass + $$xc_fail + $$st_total`; \
-	fail=$$xc_fail; \
+	fail=`expr $$xc_fail + $$st_fail`; \
 	echo ""; \
 	if [ $$exit_code -ne 0 ] || [ $$fail -ne 0 ]; then \
 		echo "── FAILURES ──"; \
-		grep -E '✘|FAIL|failed|error:' $(TEST_LOG) | head -20; \
+		grep -E '✘ Test |✘ Suite |^Test Case.*failed' $(TEST_LOG) | head -20; \
 		echo ""; \
 	fi; \
 	echo "── Combined: $$total tests (`expr $$xc_pass + $$xc_fail` XCTest + $$st_total Swift Testing), $$fail failures ──"; \
@@ -86,17 +88,19 @@ test-all:
 	exit_code=$$?; \
 	xc_pass=`grep -c '^Test Case.*passed' $(TEST_LOG) || true`; \
 	xc_fail=`grep -c '^Test Case.*failed' $(TEST_LOG) || true`; \
+	st_fail=`grep -c '^✘ Test .* failed' $(TEST_LOG) || true`; \
 	st_line=`grep 'Test run with' $(TEST_LOG) || true`; \
 	st_total=`echo "$$st_line" | sed -n 's/.*with \([0-9]*\) tests.*/\1/p'`; \
 	st_total=$${st_total:-0}; \
 	xc_pass=$${xc_pass:-0}; \
 	xc_fail=$${xc_fail:-0}; \
+	st_fail=$${st_fail:-0}; \
 	total=`expr $$xc_pass + $$xc_fail + $$st_total`; \
-	fail=$$xc_fail; \
+	fail=`expr $$xc_fail + $$st_fail`; \
 	echo ""; \
 	if [ $$exit_code -ne 0 ] || [ $$fail -ne 0 ]; then \
 		echo "── FAILURES ──"; \
-		grep -E '✘|FAIL|failed|error:' $(TEST_LOG) | head -20; \
+		grep -E '✘ Test |✘ Suite |^Test Case.*failed' $(TEST_LOG) | head -20; \
 		echo ""; \
 	fi; \
 	echo "── Combined: $$total tests (`expr $$xc_pass + $$xc_fail` XCTest + $$st_total Swift Testing), $$fail failures ──"; \
