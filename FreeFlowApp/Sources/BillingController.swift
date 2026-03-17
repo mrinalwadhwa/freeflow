@@ -266,7 +266,7 @@ final class BillingWindow: NSWindow, WKNavigationDelegate {
     private let webConfig: WKWebViewConfiguration
 
     static let bridgeHandlerName = "billing"
-    private static let defaultSize = NSSize(width: 420, height: 520)
+    private static let defaultSize = NSSize(width: 420, height: 750)
     private static let dragHandleHeight: CGFloat = 40
 
     init(bridge: WKScriptMessageHandler? = nil) {

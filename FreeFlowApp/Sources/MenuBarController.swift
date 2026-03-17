@@ -38,9 +38,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when an invited user clicks "Disconnect".
     var onDisconnect: (() -> Void)?
 
-    /// Callback invoked when the user clicks "Add credit card…" from
-    /// the trial status section in the menu.
-    var onAddCreditCard: (() -> Void)?
+    /// Callback invoked when the user clicks "Subscribe…".
+    var onSubscribe: (() -> Void)?
 
     /// Whether the current signed-in user is an admin (provisioned the
     /// server) or an invitee. Admins see "Sign Out"; invitees see
@@ -66,11 +65,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var languageSubmenuItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
     private var accountMenuItem: NSMenuItem?
+    private var peopleItem: NSMenuItem?
+    private var subscribeItem: NSMenuItem?
+    private var peopleSeparatorItem: NSMenuItem?
     private var signOutItem: NSMenuItem?
     private var disconnectItem: NSMenuItem?
     private var trialStatusItem: NSMenuItem?
-    private var addCardItem: NSMenuItem?
-    private var trialSeparatorItem: NSMenuItem?
+
+    /// The connected server hostname, shown as a tooltip on the
+    /// account menu item.
+    private var serverHost: String?
 
     /// The email address shown in the menu bar for the signed-in user.
     private var signedInEmail: String?
@@ -151,8 +155,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         signedInEmail = email
         accountMenuItem?.title = email ?? ""
         accountMenuItem?.isHidden = email == nil
+        peopleItem?.isHidden = email == nil
+        peopleSeparatorItem?.isHidden = email == nil
         signOutItem?.isHidden = email == nil || !isAdmin
         disconnectItem?.isHidden = email == nil || isAdmin
+    }
+
+    /// Update the connected server hostname shown as a tooltip on the
+    /// account email item.
+    func setServerHost(_ host: String?) {
+        serverHost = host
+        if let host {
+            accountMenuItem?.toolTip = "Connected to \(host)"
+        } else {
+            accountMenuItem?.toolTip = nil
+        }
     }
 
     /// Update the admin/invitee role flag and refresh menu visibility.
@@ -230,12 +247,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(account)
         accountMenuItem = account
 
-        // --- Trial status ---
-
-        let trialSep = NSMenuItem.separator()
-        trialSep.isHidden = true
-        menu.addItem(trialSep)
-        trialSeparatorItem = trialSep
+        // --- Trial status (directly under account, no separator) ---
 
         let trial = NSMenuItem(
             title: "",
@@ -244,24 +256,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         trial.isEnabled = false
         trial.isHidden = true
+        trial.indentationLevel = 1
         menu.addItem(trial)
         trialStatusItem = trial
 
-        let addCard = NSMenuItem(
-            title: "Add Credit Card\u{2026}",
-            action: #selector(addCreditCardAction),
+        // --- Upgrade + Invite ---
+
+        let peopleSep = NSMenuItem.separator()
+        peopleSep.isHidden = signedInEmail == nil
+        menu.addItem(peopleSep)
+        peopleSeparatorItem = peopleSep
+
+        let subscribe = NSMenuItem(
+            title: "Subscribe\u{2026}",
+            action: #selector(subscribeAction),
             keyEquivalent: ""
         )
-        addCard.target = self
-        addCard.image = NSImage(systemSymbolName: "creditcard", accessibilityDescription: nil)
-        addCard.isHidden = true
-        addCard.indentationLevel = 1
-        menu.addItem(addCard)
-        addCardItem = addCard
-
-        menu.addItem(.separator())
-
-        // --- Invite ---
+        subscribe.target = self
+        subscribe.image = NSImage(systemSymbolName: "creditcard", accessibilityDescription: nil)
+        subscribe.isHidden = true
+        menu.addItem(subscribe)
+        subscribeItem = subscribe
 
         let people = NSMenuItem(
             title: "Invite People…",
@@ -272,6 +287,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         people.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: nil)
         people.isHidden = signedInEmail == nil
         menu.addItem(people)
+        peopleItem = people
 
         menu.addItem(.separator())
 
@@ -641,16 +657,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshTrialStatus() {
-        guard let trialStatusItem, let addCardItem, let trialSeparatorItem else { return }
+        guard let trialStatusItem else { return }
 
         guard let state = trialState, let label = state.menuLabel else {
-            trialSeparatorItem.isHidden = true
             trialStatusItem.isHidden = true
-            addCardItem.isHidden = true
+            subscribeItem?.isHidden = true
             return
         }
 
-        trialSeparatorItem.isHidden = false
         trialStatusItem.isHidden = false
 
         if state.isUrgent {
@@ -659,7 +673,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             trialStatusItem.title = label
         }
 
-        addCardItem.isHidden = !state.isUrgent
+        // Show subscribe option for trial users without a credit card.
+        subscribeItem?.isHidden = state.hasCreditCard || (!state.isTrial && !state.isExpired)
     }
 
     // MARK: - Trial state
@@ -674,8 +689,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Actions
 
-    @objc private func addCreditCardAction() {
-        onAddCreditCard?()
+    @objc private func subscribeAction() {
+        onSubscribe?()
     }
 
     @objc private func pasteLastTranscript() {

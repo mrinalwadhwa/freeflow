@@ -600,8 +600,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.disconnectFromCurrentServer()
         }
 
-        // Wire "Add credit card…" from the trial status menu item.
-        controller.onAddCreditCard = { [weak self] in
+        // Wire subscribe action (opens billing to convert from trial).
+        controller.onSubscribe = { [weak self] in
             self?.showBillingForTrial()
         }
 
@@ -614,7 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Update the menu bar with the best available email for the
     /// signed-in user. Prefers the Autonomy Account email (Auth0)
-    /// over the zone user email.
+    /// over the zone user email. Also sets the server hostname tooltip.
     private func updateMenuBarEmail() {
         #if DEBUG
             if let envEmail = ProcessInfo.processInfo.environment["FREEFLOW_AUTONOMY_EMAIL"],
@@ -622,12 +622,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             {
                 menuBarController?.setSignedInEmail(envEmail)
                 menuBarController?.setIsAdmin(keychain.autonomyToken() != nil)
+                updateMenuBarServerHost()
                 return
             }
         #endif
         let email = keychain.autonomyEmail() ?? keychain.userEmail()
         menuBarController?.setSignedInEmail(email)
         menuBarController?.setIsAdmin(keychain.autonomyToken() != nil)
+        updateMenuBarServerHost()
+    }
+
+    /// Extract the server hostname from the zone URL and set it as a
+    /// tooltip on the account menu item.
+    private func updateMenuBarServerHost() {
+        let serviceURL = keychain.serviceURL() ?? ServiceConfig.shared.baseURL
+        let host = URL(string: serviceURL)?.host
+        menuBarController?.setServerHost(host)
     }
 
     /// Sign out: clear all stored credentials and return to the

@@ -21,6 +21,13 @@ public struct TrialState: Sendable, Equatable {
     /// When true, the zone has been deleted and dictation is unavailable.
     public let isExpired: Bool
 
+    public init(isTrial: Bool, daysRemaining: Int, hasCreditCard: Bool, isExpired: Bool) {
+        self.isTrial = isTrial
+        self.daysRemaining = daysRemaining
+        self.hasCreditCard = hasCreditCard
+        self.isExpired = isExpired
+    }
+
     /// Human-readable summary for the menu bar.
     ///
     /// Returns nil when no trial indicator should be shown (user has
