@@ -308,6 +308,89 @@ struct LeadingSpaceTests {
         #expect(result == " world")
     }
 
+    // MARK: - UTF-16 Cursor Offsets (Emoji and Multi-Scalar Graphemes)
+
+    @Test("Add space after flag emoji (4 UTF-16 code units)")
+    func spaceAfterFlagEmoji() {
+        // 🇺🇸 is 1 Character but 4 UTF-16 code units (two regional indicators)
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "hello",
+            fieldContent: "🇺🇸",
+            cursorPosition: 4
+        )
+        #expect(result == " hello")
+    }
+
+    @Test("Add space after ZWJ family emoji (8 UTF-16 code units)")
+    func spaceAfterZWJFamilyEmoji() {
+        // 👨‍👩‍👧 is 1 Character but 8 UTF-16 code units (3 emoji + 2 ZWJs)
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "family",
+            fieldContent: "👨‍👩‍👧",
+            cursorPosition: "👨‍👩‍👧".utf16.count
+        )
+        #expect(result == " family")
+    }
+
+    @Test("Add space after mixed ASCII and emoji")
+    func spaceAfterMixedASCIIAndEmoji() {
+        // "Hi 🙂" = 3 ASCII chars (3 UTF-16) + 1 emoji (2 UTF-16) = 5 UTF-16 total
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "there",
+            fieldContent: "Hi 🙂",
+            cursorPosition: 5
+        )
+        #expect(result == " there")
+    }
+
+    @Test("No space after space following emoji")
+    func noSpaceAfterSpaceFollowingEmoji() {
+        // "🙂 " = emoji (2 UTF-16) + space (1 UTF-16) = 3 UTF-16 total
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "world",
+            fieldContent: "🙂 ",
+            cursorPosition: 3
+        )
+        #expect(result == "world")
+    }
+
+    @Test("Add space after multiple emoji")
+    func spaceAfterMultipleEmoji() {
+        // "🔥🔥🔥" = 3 emoji × 2 UTF-16 = 6 UTF-16 total
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "fire",
+            fieldContent: "🔥🔥🔥",
+            cursorPosition: 6
+        )
+        #expect(result == " fire")
+    }
+
+    @Test("No crash when UTF-16 offset lands mid-surrogate pair")
+    func noChangeWhenOffsetMidSurrogate() {
+        // 🙂 occupies UTF-16 positions 0-1 (a surrogate pair).
+        // Offset 1 lands in the middle. characterBeforeUTF16Offset returns nil,
+        // so the function should return the text unchanged (safe fallback).
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "hello",
+            fieldContent: "🙂",
+            cursorPosition: 1
+        )
+        #expect(result == "hello")
+    }
+
+    @Test("Add space with cursor after emoji in the middle of text")
+    func spaceAfterEmojiMidText() {
+        // "Hello🙂world" cursor right after the emoji
+        // "Hello" = 5 UTF-16, "🙂" = 2 UTF-16, cursor at 7
+        let content = "Hello🙂world"
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "there",
+            fieldContent: content,
+            cursorPosition: 7
+        )
+        #expect(result == " there")
+    }
+
     // MARK: - Injected Text Starts with Punctuation
 
     @Test("No space when injected text starts with a period")
