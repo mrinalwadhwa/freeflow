@@ -761,8 +761,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openCustomizeGuide() {
-        if let url = URL(string: "https://github.com/build-trust/freeflow/blob/main/CUSTOMIZING.md")
-        {
+        if let url = URL(string: "https://github.com/build-trust/freeflow/blob/main/CUSTOMIZE.md") {
             NSWorkspace.shared.open(url)
         }
     }
