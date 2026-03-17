@@ -298,6 +298,16 @@ struct LeadingSpaceTests {
         #expect(result == "hello")
     }
 
+    @Test("Add space with UTF-16 cursor offset after emoji")
+    func spaceAfterEmojiWithUTF16CursorOffset() {
+        let result = injector.addLeadingSpaceIfNeeded(
+            text: "world",
+            fieldContent: "🙂",
+            cursorPosition: 2
+        )
+        #expect(result == " world")
+    }
+
     // MARK: - Injected Text Starts with Punctuation
 
     @Test("No space when injected text starts with a period")
