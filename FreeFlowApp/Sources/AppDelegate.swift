@@ -318,7 +318,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// - Parameter resume: If true, attempt to resume an interrupted
     ///   provisioning session using a stored Autonomy token.
-    private func showProvisioningFlow(resume: Bool = false, windowFrame: NSRect? = nil) {
+    private func showProvisioningFlow(
+        resume: Bool = false, autoStart: Bool = true, windowFrame: NSRect? = nil
+    ) {
         let controller = ProvisioningController(
             keychain: keychain,
             authClient: authClient
@@ -343,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         provisioningController = controller
-        controller.showWindow()
+        controller.showWindow(autoStart: autoStart)
 
         if let frame = windowFrame {
             controller.window?.setFrameOrigin(frame.origin)
@@ -679,8 +681,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.setSignedInEmail(nil)
         menuBarController?.setTrialState(nil)
 
-        // Return to the provisioning flow.
-        showProvisioningFlow()
+        // Return to the provisioning welcome screen without auto-starting
+        // the login flow. The user clicked "Sign Out" and expects to
+        // land on a neutral screen, not be auto-signed back in via a
+        // cached Auth0 session. They can click "Get Started" to sign in.
+        showProvisioningFlow(autoStart: false)
     }
 
     /// Disconnect from the currently connected FreeFlow server without

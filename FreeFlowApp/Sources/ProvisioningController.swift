@@ -94,7 +94,7 @@ final class ProvisioningController {
     // MARK: - Window management
 
     /// Show the provisioning window with the bundled HTML page.
-    func showWindow() {
+    func showWindow(autoStart: Bool = true) {
         if window == nil {
             let provBridge = ProvisioningBridge()
             let win = OnboardingWindow(bridge: provBridge)
@@ -137,7 +137,9 @@ final class ProvisioningController {
 
         loadProvisioningHTML()
         window?.present()
-        start()
+        if autoStart {
+            start()
+        }
     }
 
     /// Dismiss the provisioning window and clean up.
