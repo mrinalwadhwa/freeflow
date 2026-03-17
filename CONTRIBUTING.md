@@ -7,6 +7,20 @@ This contribution could be anything from a small fix to a typo in our
 documentation or a full feature. [Tell us](https://autonomy.computer/discord)
 what you enjoy working on and we would love to help!
 
+## Where to Start
+
+The single most useful contribution right now is
+[mic compatibility data](https://github.com/build-trust/freeflow/issues/2).
+FreeFlow works well with built-in mics and AirPods, but every USB mic,
+headset, and audio interface is different. The app's "Contribute Mic
+Data" menu item generates a one-click diagnostic report that can help
+us improve accuracy of dictation for everyone.
+
+Want to add or improve support for a language?
+[Here's how.](https://github.com/build-trust/freeflow/issues/1)
+Found an app where injection breaks? Open an issue. Code contributions
+and pull requests are welcome too.
+
 If you would like to contribute but don't know where to start, check out the
 issues labeled
 [`good first issue`](https://github.com/build-trust/freeflow/contribute)
