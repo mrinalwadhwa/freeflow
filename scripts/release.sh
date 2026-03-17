@@ -6,6 +6,7 @@ set -euo pipefail
 # Usage:
 #   ./scripts/release.sh app                    # release macOS app (current Info.plist version)
 #   ./scripts/release.sh app --version 0.2.0    # set version in Info.plist, then release
+#   ./scripts/release.sh app --tag v0.1.0-rc.1  # override tag (default: v{version})
 #   ./scripts/release.sh image                  # build and push service image to ECR
 #
 # Expects:
@@ -29,10 +30,12 @@ usage() {
   echo ""
   echo "App options:"
   echo "  --version VERSION  Set version in Info.plist before releasing"
+  echo "  --tag TAG          Override the git tag (default: v{version})"
   echo ""
   echo "Examples:"
   echo "  ./scripts/release.sh app"
   echo "  ./scripts/release.sh app --version 0.2.0"
+  echo "  ./scripts/release.sh app --tag v0.1.0-rc.1"
   echo "  ./scripts/release.sh image"
 }
 
@@ -57,6 +60,7 @@ release_app() {
   local CASK_FILE="$HOMEBREW_ROOT/Casks/freeflow.rb"
   local PLIST="$REPO_ROOT/FreeFlowApp/Info.plist"
   local NEW_VERSION=""
+  local TAG_OVERRIDE=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -66,6 +70,14 @@ release_app() {
           exit 1
         fi
         NEW_VERSION="$2"
+        shift 2
+        ;;
+      --tag)
+        if [ $# -lt 2 ]; then
+          echo "Error: --tag requires a tag argument" >&2
+          exit 1
+        fi
+        TAG_OVERRIDE="$2"
         shift 2
         ;;
       *)
@@ -100,7 +112,7 @@ release_app() {
 
   local VERSION
   VERSION=$(make version)
-  local TAG="v${VERSION}"
+  local TAG="${TAG_OVERRIDE:-v${VERSION}}"
 
   echo "Releasing FreeFlow ${VERSION} (tag: ${TAG})"
   echo ""
@@ -112,7 +124,7 @@ release_app() {
 
   # Tag and push
   echo "── Tagging ${TAG} ──"
-  git tag -m "FreeFlow ${VERSION}" "$TAG"
+  git tag -m "FreeFlow ${TAG}" "$TAG"
   git push origin "$TAG"
 
   echo ""
@@ -153,7 +165,7 @@ release_app() {
   echo "── Updating Homebrew Cask ──"
   cd "$HOMEBREW_ROOT"
 
-  sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/freeflow.rb
+  sed -i '' "s/version \".*\"/version \"${TAG#v}\"/" Casks/freeflow.rb
   sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/freeflow.rb
 
   echo "  Updated Casks/freeflow.rb:"
@@ -161,7 +173,7 @@ release_app() {
   echo ""
 
   git add Casks/freeflow.rb
-  git commit -m "Update FreeFlow to ${VERSION}"
+  git commit -m "Update FreeFlow to ${TAG#v}"
   git push
 
   echo ""
