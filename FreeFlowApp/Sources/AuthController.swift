@@ -137,6 +137,29 @@ final class AuthController: NSObject, ASWebAuthenticationPresentationContextProv
         authSession = nil
     }
 
+    // MARK: - Sign Out
+
+    /// Clear the Auth0 session on the server so the next login shows
+    /// a fresh sign-in form.
+    ///
+    /// Hits the Autonomy `/signout` endpoint which redirects to Auth0's
+    /// OIDC logout. This is a fire-and-forget request; we don't need
+    /// to wait for the response or follow redirects.
+    func signOut() {
+        guard let url = URL(string: "\(autonomyURL)/signout") else { return }
+
+        Log.debug("[AuthController] Clearing Auth0 session via \(url.absoluteString)")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        // Fire and forget. We don't need to follow redirects or check
+        // the response — the server-side session is cleared on the
+        // first hop.
+        let task = URLSession.shared.dataTask(with: request)
+        task.resume()
+    }
+
     // MARK: - ASWebAuthenticationPresentationContextProviding
 
     func presentationAnchor(

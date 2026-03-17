@@ -672,6 +672,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         billingController?.dismissWindow()
         billingController = nil
 
+        // Clear the Auth0 session so the next login shows a fresh
+        // sign-in form instead of auto-completing with the old account.
+        AuthController().signOut()
+
         // Clear all stored credentials and state.
         keychain.deleteAll()
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
@@ -681,11 +685,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.setSignedInEmail(nil)
         menuBarController?.setTrialState(nil)
 
-        // Return to the provisioning welcome screen without auto-starting
-        // the login flow. The user clicked "Sign Out" and expects to
-        // land on a neutral screen, not be auto-signed back in via a
-        // cached Auth0 session. They can click "Get Started" to sign in.
-        showProvisioningFlow(autoStart: false)
+        // Return to the onboarding welcome screen ("Create your server"
+        // / "I have an invite link"). The user clicked "Sign Out" and
+        // expects to be back at the haven't-started-using-the-app state.
+        showOnboarding()
     }
 
     /// Disconnect from the currently connected FreeFlow server without
