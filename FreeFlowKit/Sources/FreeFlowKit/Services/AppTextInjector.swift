@@ -499,11 +499,12 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
         // If cursor is at the start, no space needed
         guard pos > 0 else { return text }
 
-        // If the content is shorter than expected, bail
-        guard pos <= content.count else { return text }
-
-        let index = content.index(content.startIndex, offsetBy: pos - 1)
-        let charBefore = content[index]
+        // Accessibility cursor positions are reported in UTF-16 code units,
+        // not Swift Character offsets. Convert via the UTF-16 view so emoji
+        // and other multi-scalar graphemes do not trap String indexing.
+        guard let charBefore = characterBeforeUTF16Offset(in: content, utf16Offset: pos) else {
+            return text
+        }
 
         // If the text already starts with a space or newline, don't add another
         if text.hasPrefix(" ") || text.hasPrefix("\n") { return text }
@@ -524,6 +525,22 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
         }
 
         return " " + text
+    }
+
+    private func characterBeforeUTF16Offset(in content: String, utf16Offset: Int) -> Character? {
+        guard utf16Offset > 0 else { return nil }
+
+        let utf16 = content.utf16
+        guard utf16Offset <= utf16.count else { return nil }
+
+        let utf16Index = utf16.index(utf16.startIndex, offsetBy: utf16Offset)
+        guard let stringIndex = String.Index(utf16Index, within: content),
+              stringIndex > content.startIndex
+        else {
+            return nil
+        }
+
+        return content[content.index(before: stringIndex)]
     }
 
     /// Add a leading space by reading the currently focused element's state.
