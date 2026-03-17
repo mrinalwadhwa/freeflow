@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(AppKit)
+    import AppKit
+#endif
+
 /// Collects system information, recent log history, and mic diagnostics
 /// into a pre-filled GitHub issue URL for one-click error reporting.
 ///
@@ -27,10 +31,18 @@ public enum IssueDiagnostics {
         errorMessage: String? = nil,
         micDiagnostics: String? = nil
     ) -> URL? {
-        let body = buildBody(
+        // Build the full diagnostics and copy to clipboard.
+        let fullDiagnostics = buildFullDiagnostics(
             errorMessage: errorMessage,
             micDiagnostics: micDiagnostics
         )
+        #if canImport(AppKit)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(fullDiagnostics, forType: .string)
+        #endif
+
+        // The URL body is kept short: system info + paste prompt.
+        let body = buildURLBody(errorMessage: errorMessage)
 
         var components = URLComponents(string: repoURL)!
         components.queryItems = [
@@ -43,10 +55,8 @@ public enum IssueDiagnostics {
 
     // MARK: - Body
 
-    private static func buildBody(
-        errorMessage: String?,
-        micDiagnostics: String?
-    ) -> String {
+    /// Build a short body for the URL (stays under GitHub's URL length limit).
+    private static func buildURLBody(errorMessage: String?) -> String {
         var sections: [String] = []
 
         // Error message (if reporting from an error screen).
@@ -66,7 +76,7 @@ public enum IssueDiagnostics {
 
             """)
 
-        // System info.
+        // System info (compact, always fits).
         sections.append(
             """
             **System info:**
@@ -74,6 +84,27 @@ public enum IssueDiagnostics {
             \(systemInfo())
             ```
             """)
+
+        // Prompt to paste full diagnostics from clipboard.
+        sections.append(
+            """
+            **Diagnostics:**
+            <!-- Full diagnostics have been copied to your clipboard. Paste (⌘V) below this line. -->
+
+            """)
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    /// Build the full diagnostics string for the clipboard.
+    private static func buildFullDiagnostics(
+        errorMessage: String?,
+        micDiagnostics: String?
+    ) -> String {
+        var sections: [String] = []
+
+        sections.append("**System info:**")
+        sections.append("```\n\(systemInfo())\n```")
 
         // Recent log history.
         let history = Log.formattedHistory()
