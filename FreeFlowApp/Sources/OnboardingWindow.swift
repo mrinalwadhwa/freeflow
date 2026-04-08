@@ -2,15 +2,9 @@ import AppKit
 import FreeFlowKit
 import WebKit
 
-/// A window that hosts a WKWebView for onboarding, account, and
-/// session recovery flows. The web view loads pages from the user's
-/// FreeFlowService zone and communicates with native code via the
-/// OnboardingBridge message handler.
-///
-/// The same window is reused for all web-based flows: initial
-/// onboarding, add-email, sign-in, and session recovery. Call
-/// `navigate(to:)` to load a different page without recreating the
-/// window.
+/// A window that hosts a WKWebView for onboarding. The web view loads
+/// a bundled HTML page from the app resources and communicates with
+/// native code via the OnboardingBridge message handler.
 final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     private static func log(_ msg: String) {
@@ -156,81 +150,25 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         )
     }
 
-    // MARK: - Navigation
-
-    /// Load a page at the given URL in the web view.
-    ///
-    /// Use this to navigate to onboarding, account, or sign-in pages
-    /// on the zone. The URL should be a full URL including the zone
-    /// base (e.g. `https://zone.example.com/onboarding/?token=abc`).
-    func navigate(to url: URL) {
-        Self.log("navigate(to: \(url.absoluteString))")
-        let request = URLRequest(url: url)
-        webView.load(request)
-    }
-
-    /// Load a page by constructing a URL from a base URL and path.
-    ///
-    /// - Parameters:
-    ///   - baseURL: The zone base URL (e.g. `https://zone.example.com`).
-    ///   - path: The path to load (e.g. `/onboarding/?token=abc`).
-    func navigate(baseURL: String, path: String) {
-        let combined = "\(baseURL)\(path)"
-        Self.log("navigate(baseURL:path:) base=\(baseURL) path=\(path) combined=\(combined)")
-        guard let url = URL(string: combined) else {
-            Self.log("navigate(baseURL:path:) failed to create URL from: \(combined)")
-            return
-        }
-        navigate(to: url)
-    }
-
     // MARK: - Bundled pages
 
-    /// Load a bundled HTML page from the app bundle by resource name.
-    ///
-    /// The page must be a self-contained HTML file (all CSS and JS
-    /// inlined) shipped in the app bundle. Optional query parameters
-    /// are appended to the file URL so the page JS can read them with
-    /// `URLSearchParams(window.location.search)`.
-    ///
-    /// - Parameters:
-    ///   - name: The resource name without extension (e.g. "onboarding",
-    ///     "add-email", "sign-in").
-    ///   - queryString: Optional query string without the leading `?`,
-    ///     e.g. `"token=abc"` or `"variant=grace"`.
-    func loadBundledPage(_ name: String, queryString: String? = nil) {
+    /// Load the bundled onboarding HTML page from the app bundle.
+    func loadBundledOnboarding() {
         guard
             let htmlURL = Bundle.main.url(
-                forResource: name,
+                forResource: "onboarding",
                 withExtension: "html"
             )
         else {
-            Self.log("\(name).html not found in bundle")
+            Self.log("onboarding.html not found in bundle")
             return
         }
 
-        var fileURL = htmlURL
-        if let queryString, !queryString.isEmpty {
-            var components = URLComponents(url: htmlURL, resolvingAgainstBaseURL: false)
-            components?.query = queryString
-            fileURL = components?.url ?? htmlURL
-        }
-
-        Self.log("loadBundledPage(\(name)): \(fileURL.absoluteString)")
+        Self.log("loadBundledOnboarding: \(htmlURL.absoluteString)")
         webView.loadFileURL(
-            fileURL,
+            htmlURL,
             allowingReadAccessTo: htmlURL.deletingLastPathComponent()
         )
-    }
-
-    /// Load the bundled onboarding HTML page from the app bundle.
-    ///
-    /// Convenience wrapper around `loadBundledPage(_:queryString:)`.
-    ///
-    /// - Parameter queryString: Optional query string without the
-    ///   leading `?`, e.g. `"token=abc"` or `"skip=connect"`.
-    func loadBundledOnboarding(queryString: String? = nil) {
-        loadBundledPage("onboarding", queryString: queryString)
     }
 
     // MARK: - Presentation

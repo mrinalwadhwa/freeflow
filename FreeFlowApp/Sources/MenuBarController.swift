@@ -29,23 +29,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when Settings menu item is clicked.
     var onOpenSettings: (() -> Void)?
 
-    /// Callback invoked when People menu item is clicked.
-    var onOpenPeople: (() -> Void)?
-
-    /// Callback invoked when the user clicks "Sign Out".
-    var onSignOut: (() -> Void)?
-
-    /// Callback invoked when an invited user clicks "Disconnect".
-    var onDisconnect: (() -> Void)?
-
-    /// Callback invoked when the user clicks "Subscribe…".
-    var onSubscribe: (() -> Void)?
-
-    /// Whether the current signed-in user is an admin (provisioned the
-    /// server) or an invitee. Admins see "Sign Out"; invitees see
-    /// "Disconnect". Defaults to true so the menu shows "Sign Out"
-    /// until the app determines the actual role.
-    private var isAdmin: Bool = true
+    /// Callback invoked when the user clicks "Reset API Key".
+    var onResetAPIKey: (() -> Void)?
 
     // MARK: - Onboarding mode
 
@@ -64,23 +49,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var micSubmenuItem: NSMenuItem?
     private var languageSubmenuItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
-    private var accountMenuItem: NSMenuItem?
-    private var peopleItem: NSMenuItem?
-    private var subscribeItem: NSMenuItem?
-    private var peopleSeparatorItem: NSMenuItem?
-    private var signOutItem: NSMenuItem?
-    private var disconnectItem: NSMenuItem?
-    private var trialStatusItem: NSMenuItem?
-
-    /// The connected server hostname, shown as a tooltip on the
-    /// account menu item.
-    private var serverHost: String?
-
-    /// The email address shown in the menu bar for the signed-in user.
-    private var signedInEmail: String?
-
-    /// The current trial state from the TrialStatusService.
-    private var trialState: TrialState?
 
     // MARK: - State tracking
 
@@ -147,38 +115,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         hotkeyRegistered = registered
     }
 
-    /// Update the signed-in email shown in the menu bar.
-    ///
-    /// Pass `nil` to hide the account section. The menu items update
-    /// in place without rebuilding the entire menu.
-    func setSignedInEmail(_ email: String?) {
-        signedInEmail = email
-        accountMenuItem?.title = email ?? ""
-        accountMenuItem?.isHidden = email == nil
-        peopleItem?.isHidden = email == nil
-        peopleSeparatorItem?.isHidden = email == nil
-        signOutItem?.isHidden = email == nil || !isAdmin
-        disconnectItem?.isHidden = email == nil || isAdmin
-    }
-
-    /// Update the connected server hostname shown as a tooltip on the
-    /// account email item.
-    func setServerHost(_ host: String?) {
-        serverHost = host
-        if let host {
-            accountMenuItem?.toolTip = "Connected to \(host)"
-        } else {
-            accountMenuItem?.toolTip = nil
-        }
-    }
-
-    /// Update the admin/invitee role flag and refresh menu visibility.
-    func setIsAdmin(_ admin: Bool) {
-        isAdmin = admin
-        signOutItem?.isHidden = signedInEmail == nil || !isAdmin
-        disconnectItem?.isHidden = signedInEmail == nil || isAdmin
-    }
-
     /// Switch to onboarding mode: show a minimal menu with a setup hint.
     func setOnboardingMode(_ enabled: Bool) {
         onboardingMode = enabled
@@ -233,63 +169,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
-
-        // --- Account ---
-
-        let account = NSMenuItem(
-            title: signedInEmail ?? "",
-            action: nil,
-            keyEquivalent: ""
-        )
-        account.isEnabled = false
-        account.image = NSImage(systemSymbolName: "person.circle", accessibilityDescription: nil)
-        account.isHidden = signedInEmail == nil
-        menu.addItem(account)
-        accountMenuItem = account
-
-        // --- Trial status (directly under account, no separator) ---
-
-        let trial = NSMenuItem(
-            title: "",
-            action: nil,
-            keyEquivalent: ""
-        )
-        trial.isEnabled = false
-        trial.isHidden = true
-        trial.indentationLevel = 1
-        menu.addItem(trial)
-        trialStatusItem = trial
-
-        // --- Upgrade + Invite ---
-
-        let peopleSep = NSMenuItem.separator()
-        peopleSep.isHidden = signedInEmail == nil
-        menu.addItem(peopleSep)
-        peopleSeparatorItem = peopleSep
-
-        let subscribe = NSMenuItem(
-            title: "Subscribe\u{2026}",
-            action: #selector(subscribeAction),
-            keyEquivalent: ""
-        )
-        subscribe.target = self
-        subscribe.image = NSImage(systemSymbolName: "creditcard", accessibilityDescription: nil)
-        subscribe.isHidden = true
-        menu.addItem(subscribe)
-        subscribeItem = subscribe
-
-        let people = NSMenuItem(
-            title: "Invite People…",
-            action: #selector(openPeople),
-            keyEquivalent: ""
-        )
-        people.target = self
-        people.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: nil)
-        people.isHidden = signedInEmail == nil
-        menu.addItem(people)
-        peopleItem = people
-
-        menu.addItem(.separator())
 
         // --- Primary actions ---
 
@@ -377,16 +256,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             systemSymbolName: "exclamationmark.bubble", accessibilityDescription: nil)
         menu.addItem(reportIssue)
 
-        let discord = NSMenuItem(
-            title: "Join us on Discord…",
-            action: #selector(openDiscord),
-            keyEquivalent: ""
-        )
-        discord.target = self
-        discord.image = NSImage(
-            systemSymbolName: "bubble.left.and.bubble.right", accessibilityDescription: nil)
-        menu.addItem(discord)
-
         menu.addItem(.separator())
 
         // --- App ---
@@ -425,31 +294,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         // --- Session ---
 
-        let signOut = NSMenuItem(
-            title: "Sign Out",
-            action: #selector(signOutAction),
+        let resetKey = NSMenuItem(
+            title: "Reset API Key…",
+            action: #selector(resetAPIKeyAction),
             keyEquivalent: ""
         )
-        signOut.target = self
-        signOut.image = NSImage(
-            systemSymbolName: "rectangle.portrait.and.arrow.right",
+        resetKey.target = self
+        resetKey.image = NSImage(
+            systemSymbolName: "key",
             accessibilityDescription: nil)
-        signOut.isHidden = signedInEmail == nil || !isAdmin
-        menu.addItem(signOut)
-        signOutItem = signOut
-
-        let disconnect = NSMenuItem(
-            title: "Disconnect",
-            action: #selector(disconnectAction),
-            keyEquivalent: ""
-        )
-        disconnect.target = self
-        disconnect.image = NSImage(
-            systemSymbolName: "wifi.slash",
-            accessibilityDescription: nil)
-        disconnect.isHidden = signedInEmail == nil || isAdmin
-        menu.addItem(disconnect)
-        disconnectItem = disconnect
+        menu.addItem(resetKey)
 
         let quit = NSMenuItem(
             title: "Quit FreeFlow",
@@ -470,7 +324,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshMicSubmenu()
         refreshLanguageSubmenu()
         refreshCheckForUpdatesItem()
-        refreshTrialStatus()
     }
 
     // MARK: - Dynamic refresh
@@ -656,51 +509,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         checkForUpdatesItem?.isEnabled = updaterService?.canCheckForUpdates ?? false
     }
 
-    private func refreshTrialStatus() {
-        guard let trialStatusItem else { return }
-
-        guard let state = trialState, let label = state.menuLabel else {
-            trialStatusItem.isHidden = true
-            subscribeItem?.isHidden = true
-            return
-        }
-
-        trialStatusItem.isHidden = false
-
-        if state.isUrgent {
-            trialStatusItem.title = "\u{26A0} \(label)"
-        } else {
-            trialStatusItem.title = label
-        }
-
-        // Show subscribe option for trial users without a credit card.
-        subscribeItem?.isHidden = state.hasCreditCard || (!state.isTrial && !state.isExpired)
-    }
-
-    // MARK: - Trial state
-
-    /// Update the trial state shown in the menu bar.
-    ///
-    /// Called by the AppDelegate when the TrialStatusService delivers
-    /// a new state. The menu items update in place on next open.
-    func setTrialState(_ state: TrialState?) {
-        trialState = state
-    }
-
     // MARK: - Actions
-
-    @objc private func subscribeAction() {
-        onSubscribe?()
-    }
 
     @objc private func pasteLastTranscript() {
         guard let transcriptBuffer, let textInjector else {
-            debugPrint("[MenuBar] Paste requested but buffer or injector not available")
+            Log.debug("[MenuBar] Paste requested but buffer or injector not available")
             return
         }
         Task {
             guard let transcript = await transcriptBuffer.consume() else {
-                debugPrint("[MenuBar] No transcript in buffer to paste")
+                Log.debug("[MenuBar] No transcript in buffer to paste")
                 return
             }
 
@@ -709,9 +527,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
             do {
                 try await textInjector.inject(text: transcript, into: context)
-                debugPrint("[MenuBar] Pasted last transcript (\(transcript.count) chars)")
+                Log.debug("[MenuBar] Pasted last transcript (\(transcript.count) chars)")
             } catch {
-                debugPrint("[MenuBar] Paste injection failed: \(error)")
+                Log.debug("[MenuBar] Paste injection failed: \(error)")
                 // Re-store the transcript so the user can try again.
                 await transcriptBuffer.store(transcript)
             }
@@ -738,7 +556,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
         }
 
-        debugPrint("[MenuBar] Selected language: \(setting.displayName) (\(setting.rawValue))")
+        Log.debug("[MenuBar] Selected language: \(setting.displayName) (\(setting.rawValue))")
     }
 
     @objc private func selectMicrophone(_ sender: NSMenuItem) {
@@ -747,9 +565,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Task {
             do {
                 try await audioDeviceProvider.selectDevice(id: deviceID)
-                debugPrint("[MenuBar] Selected microphone: \(sender.title) (id: \(deviceID))")
+                Log.debug("[MenuBar] Selected microphone: \(sender.title) (id: \(deviceID))")
             } catch {
-                debugPrint("[MenuBar] Failed to select microphone: \(error)")
+                Log.debug("[MenuBar] Failed to select microphone: \(error)")
             }
         }
     }
@@ -806,22 +624,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func openDiscord() {
-        if let url = URL(string: "https://autonomy.computer/discord") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     @objc private func checkForUpdatesAction() {
         updaterService?.checkForUpdates()
     }
 
     @objc private func openSettings() {
         onOpenSettings?()
-    }
-
-    @objc private func openPeople() {
-        onOpenPeople?()
     }
 
     @objc private func showAbout() {
@@ -833,12 +641,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         onReopenOnboarding?()
     }
 
-    @objc private func signOutAction() {
-        onSignOut?()
-    }
+    @objc private func resetAPIKeyAction() {
+        let alert = NSAlert()
+        alert.messageText = "Reset API Key?"
+        alert.informativeText =
+            "This removes the stored OpenAI API key and returns to setup. "
+            + "Dictation will be unavailable until a new key is entered."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
 
-    @objc private func disconnectAction() {
-        onDisconnect?()
+        if alert.runModal() == .alertFirstButtonReturn {
+            onResetAPIKey?()
+        }
     }
 
     // MARK: - Icon mapping

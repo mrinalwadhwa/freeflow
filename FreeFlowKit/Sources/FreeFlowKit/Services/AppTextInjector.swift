@@ -103,6 +103,11 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
     // MARK: - TextInjecting
 
     public func inject(text: String, into context: AppContext) async throws {
+        // Append a trailing space so consecutive dictations are separated.
+        // The next injection's addLeadingSpaceIfNeeded sees the space and
+        // does not add another, preventing double spaces.
+        let text = text.hasSuffix(" ") || text.hasSuffix("\n") ? text : text + " "
+
         let strategies = AppTextInjector.strategies(for: context.bundleID)
         var lastError: Error?
 

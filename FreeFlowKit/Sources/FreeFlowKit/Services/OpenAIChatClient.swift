@@ -1,0 +1,112 @@
+import Foundation
+
+/// Call the OpenAI Chat Completions API.
+///
+/// Send a system prompt and user prompt to a chat model and return the
+/// assistant's reply as a plain string. The client performs a single
+/// non-streaming request and extracts the content from the first choice.
+public struct OpenAIChatClient: Sendable {
+
+    /// Errors thrown by the chat client.
+    public enum ChatError: Error, LocalizedError {
+        case httpError(statusCode: Int, message: String?)
+        case invalidResponse
+        case emptyContent
+
+        public var errorDescription: String? {
+            switch self {
+            case .httpError(let status, let message):
+                return "OpenAI chat error \(status): \(message ?? "no details")"
+            case .invalidResponse:
+                return "Invalid OpenAI chat response"
+            case .emptyContent:
+                return "OpenAI chat response contained no content"
+            }
+        }
+    }
+
+    private let apiKeyProvider: @Sendable () -> String
+    private let session: URLSession
+    private let endpoint: URL
+
+    public init(
+        apiKey: @autoclosure @escaping @Sendable () -> String,
+        endpoint: URL = URL(string: "https://api.openai.com/v1/chat/completions")!,
+        session: URLSession? = nil
+    ) {
+        self.apiKeyProvider = apiKey
+        self.endpoint = endpoint
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            self.session = URLSession(configuration: config)
+        }
+    }
+
+    /// Send a two-message chat completion and return the assistant's reply.
+    ///
+    /// - Parameters:
+    ///   - model: Model identifier (e.g. `gpt-4.1-nano`).
+    ///   - systemPrompt: System message content.
+    ///   - userPrompt: User message content.
+    /// - Returns: The assistant's reply, trimmed of leading/trailing whitespace.
+    /// - Throws: `ChatError` on HTTP failure or malformed response.
+    public func complete(
+        model: String,
+        systemPrompt: String,
+        userPrompt: String
+    ) async throws -> String {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKeyProvider())", forHTTPHeaderField: "Authorization")
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt],
+            ],
+            "stream": false,
+        ]
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: body, options: [.sortedKeys])
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw ChatError.invalidResponse
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let message = Self.extractErrorMessage(data)
+            throw ChatError.httpError(statusCode: http.statusCode, message: message)
+        }
+
+        guard
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let choices = json["choices"] as? [[String: Any]],
+            let first = choices.first,
+            let message = first["message"] as? [String: Any],
+            let content = message["content"] as? String
+        else {
+            throw ChatError.emptyContent
+        }
+
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Extract an error message from an OpenAI error response body.
+    private static func extractErrorMessage(_ data: Data) -> String? {
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let error = json["error"] as? [String: Any],
+            let message = error["message"] as? String
+        else {
+            return nil
+        }
+        return message
+    }
+}

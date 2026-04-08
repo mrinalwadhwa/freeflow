@@ -17,11 +17,9 @@ As recommended by [RFPolicy](https://en.wikipedia.org/wiki/RFPolicy), these
 updates will be sent at least every five days.
 
 If you have not received a reply to your email within 48 hours, or have not
-heard from the security team for the past five days, please
-[start a thread on discord](https://autonomy.computer/discord).
-
-Please note that the discord is a public area. When escalating at
-this venue, please do not discuss your issue. Simply say that you're trying to
-get a hold of someone from the security team.
+heard from the security team for the past five days, please open a public
+[tracking issue](https://github.com/build-trust/freeflow/issues/new/choose)
+without discussing the vulnerability — just say that you are trying to get a
+hold of someone from the security team.
 
 Thank you for helping us make FreeFlow more secure.

@@ -15,7 +15,6 @@ import FreeFlowKit
 final class SettingsController {
 
     private let bridge: SettingsBridge
-    private let config: ServiceConfig
     private var window: SettingsWindow?
 
     /// The audio device provider for mic selection, set by AppDelegate.
@@ -45,8 +44,7 @@ final class SettingsController {
 
     // MARK: - Initialization
 
-    init(config: ServiceConfig = .shared) {
-        self.config = config
+    init() {
         self.bridge = SettingsBridge()
 
         setupBridgeHandlers()

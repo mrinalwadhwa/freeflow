@@ -119,7 +119,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
                 CGEvent.tapEnable(tap: tap, enable: true)
                 CFRunLoopRun()
             }
-            thread.name = "computer.autonomy.freeflow.hotkey"
+            thread.name = "app.freeflow.hotkey"
             thread.qualityOfService = .userInteractive
             self.tapThread = thread
             thread.start()

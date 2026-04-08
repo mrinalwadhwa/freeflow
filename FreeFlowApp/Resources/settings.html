@@ -656,7 +656,7 @@
                 /**
                  * Send an action to the native side.
                  *
-                 * @param {string} action - The action name (e.g. "redeemInvite").
+                 * @param {string} action - The action name (e.g. "setLanguage").
                  * @param {Object} [data] - Optional payload data.
                  */
                 function send(action, data) {
@@ -687,7 +687,7 @@
                 /**
                  * Register a listener for a specific event type.
                  *
-                 * @param {string} eventName - The event name (e.g. "inviteRedeemed").
+                 * @param {string} eventName - The event name (e.g. "microphoneList").
                  * @param {Function} callback - Called with the event data object.
                  */
                 function on(eventName, callback) {
@@ -726,7 +726,7 @@
                 /**
                  * Called by the native side to deliver an event.
                  * Also callable from the browser console for testing:
-                 *   window.freeflowbridge.onEvent({ event: "inviteRedeemed", user: { name: "Alice" } })
+                 *   window.freeflowbridge.onEvent({ event: "microphoneList", devices: [...] })
                  *
                  * @param {Object} data - Event payload. Must include an "event" field.
                  */

@@ -1,147 +1,66 @@
 import Foundation
 import Security
 
-/// Store and retrieve session credentials from the macOS Keychain.
+/// Store and retrieve the OpenAI API key from the macOS Keychain.
 ///
-/// Each item is stored under the service name `computer.autonomy.freeflow`
-/// with a distinct account key. The session token and service URL are
-/// stored as separate items so they can be updated independently.
+/// The key is stored as a generic password under the service name
+/// `freeflow.app` with account `openai-api-key`, accessible when the
+/// device is unlocked.
 public final class KeychainService: @unchecked Sendable {
 
     private let service: String
 
-    /// Account keys for distinct Keychain items.
     private enum Account {
-        static let sessionToken = "session-token"
-        static let serviceURL = "service-url"
-        static let autonomyToken = "autonomy-token"
-        static let userEmail = "user-email"
-        static let autonomyEmail = "autonomy-email"
+        static let openAIAPIKey = "openai-api-key"
     }
 
-    public init(service: String = "computer.autonomy.freeflow") {
+    public init(service: String = "freeflow.app") {
         self.service = service
     }
 
-    // MARK: - Session token
+    // MARK: - OpenAI API key
 
-    /// Save a session token to the Keychain.
-    ///
-    /// Overwrites any existing token. The token is stored as generic
-    /// password data, accessible when the device is unlocked.
+    /// Save the OpenAI API key to the Keychain, overwriting any existing value.
     @discardableResult
-    public func saveSessionToken(_ token: String) -> Bool {
-        save(value: token, account: Account.sessionToken)
+    public func saveOpenAIAPIKey(_ key: String) -> Bool {
+        save(value: key, account: Account.openAIAPIKey)
     }
 
-    /// Retrieve the stored session token, or nil if none exists.
-    public func sessionToken() -> String? {
-        load(account: Account.sessionToken)
+    /// Retrieve the stored OpenAI API key, or nil if none exists.
+    public func openAIAPIKey() -> String? {
+        load(account: Account.openAIAPIKey)
     }
 
-    /// Delete the stored session token.
+    /// Delete the stored OpenAI API key.
     @discardableResult
-    public func deleteSessionToken() -> Bool {
-        delete(account: Account.sessionToken)
+    public func deleteOpenAIAPIKey() -> Bool {
+        delete(account: Account.openAIAPIKey)
     }
 
-    // MARK: - Service URL
+    // MARK: - Legacy cleanup
 
-    /// Save the service URL to the Keychain.
-    @discardableResult
-    public func saveServiceURL(_ url: String) -> Bool {
-        save(value: url, account: Account.serviceURL)
-    }
-
-    /// Retrieve the stored service URL, or nil if none exists.
-    public func serviceURL() -> String? {
-        load(account: Account.serviceURL)
-    }
-
-    /// Delete the stored service URL.
-    @discardableResult
-    public func deleteServiceURL() -> Bool {
-        delete(account: Account.serviceURL)
-    }
-
-    // MARK: - Autonomy token
-
-    /// Save the Autonomy session token to the Keychain.
-    ///
-    /// This token authenticates against the central Autonomy service
-    /// (my.autonomy.computer) for provisioning and trial status checks.
-    /// It is separate from the zone session token used for dictation.
-    @discardableResult
-    public func saveAutonomyToken(_ token: String) -> Bool {
-        save(value: token, account: Account.autonomyToken)
-    }
-
-    /// Retrieve the stored Autonomy session token, or nil if none exists.
-    public func autonomyToken() -> String? {
-        load(account: Account.autonomyToken)
-    }
-
-    /// Delete the stored Autonomy session token.
-    @discardableResult
-    public func deleteAutonomyToken() -> Bool {
-        delete(account: Account.autonomyToken)
-    }
-
-    // MARK: - User email
-
-    /// Save the user's email to the Keychain.
-    ///
-    /// Email is PII and belongs in the Keychain rather than
-    /// UserDefaults. Used for session recovery via OTP sign-in.
-    @discardableResult
-    public func saveUserEmail(_ email: String) -> Bool {
-        save(value: email, account: Account.userEmail)
-    }
-
-    /// Retrieve the stored user email, or nil if none exists.
-    public func userEmail() -> String? {
-        load(account: Account.userEmail)
-    }
-
-    /// Delete the stored user email.
-    @discardableResult
-    public func deleteUserEmail() -> Bool {
-        delete(account: Account.userEmail)
-    }
-
-    // MARK: - Autonomy Account email
-
-    /// Save the Autonomy Account email to the Keychain.
-    ///
-    /// This is the email the user signed in with on my.autonomy.computer
-    /// (Auth0). It is separate from the zone user email stored by
-    /// `saveUserEmail`. Used to identify the signed-in account in the
-    /// menu bar.
-    @discardableResult
-    public func saveAutonomyEmail(_ email: String) -> Bool {
-        save(value: email, account: Account.autonomyEmail)
-    }
-
-    /// Retrieve the stored Autonomy Account email, or nil if none exists.
-    public func autonomyEmail() -> String? {
-        load(account: Account.autonomyEmail)
-    }
-
-    /// Delete the stored Autonomy Account email.
-    @discardableResult
-    public func deleteAutonomyEmail() -> Bool {
-        delete(account: Account.autonomyEmail)
-    }
-
-    // MARK: - Bulk operations
-
-    /// Delete all stored credentials (tokens, URL, and email).
-    public func deleteAll() {
-        deleteSessionToken()
-        deleteServiceURL()
-        deleteAutonomyToken()
-        deleteUserEmail()
-        deleteAutonomyEmail()
+    /// Delete any Keychain items left behind by the v0.1.0 server-backed
+    /// build. The old build stored session tokens, zone URLs, and email
+    /// addresses under the service name `computer.autonomy.freeflow`.
+    /// None of those items are read by the current build, so they serve
+    /// no purpose beyond cluttering the user's Keychain.
+    public func purgeLegacyV01Items() {
+        let legacyService = "computer.autonomy.freeflow"
+        let legacyAccounts = [
+            "session-token",
+            "service-url",
+            "autonomy-token",
+            "user-email",
+            "autonomy-email",
+        ]
+        for account in legacyAccounts {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: legacyService,
+                kSecAttrAccount as String: account,
+            ]
+            _ = SecItemDelete(query as CFDictionary)
+        }
     }
 
     // MARK: - Private helpers

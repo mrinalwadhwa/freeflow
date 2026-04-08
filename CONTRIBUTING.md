@@ -4,8 +4,8 @@ Thank you for taking time to contribute to [FreeFlow](https://github.com/build-t
 
 We want you to have a great experience making your first contribution.
 This contribution could be anything from a small fix to a typo in our
-documentation or a full feature. [Tell us](https://autonomy.computer/discord)
-what you enjoy working on and we would love to help!
+documentation or a full feature. Open an issue and tell us what you
+enjoy working on and we would love to help!
 
 ## Where to Start
 
@@ -31,10 +31,6 @@ or
 
 Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Get Help
-
-Join us on [Discord](https://autonomy.computer/discord).
-
 ## Report a Bug
 
 [Search existing issues](https://github.com/build-trust/freeflow/issues?q=is%3Aissue)
@@ -50,5 +46,5 @@ or, even better, a pull request with a fix.
 
 ## Developer Guide
 
-See [DEVELOP.md](DEVELOP.md) for build commands, project structure, and
-[CUSTOMIZE.md](CUSTOMIZE.md) for the fork and deploy flow.
+See [DEVELOP.md](DEVELOP.md) for build commands and project structure,
+and [CUSTOMIZE.md](CUSTOMIZE.md) for changing prompts and models.

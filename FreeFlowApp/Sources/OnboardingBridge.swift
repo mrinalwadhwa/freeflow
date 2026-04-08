@@ -2,7 +2,7 @@ import Foundation
 import FreeFlowKit
 import WebKit
 
-/// Handle messages from the zone's web pages running in WKWebView.
+/// Handle messages from the onboarding web page running in WKWebView.
 ///
 /// JavaScript calls `window.webkit.messageHandlers.freeflow.postMessage(data)`
 /// where `data` is a JSON object with an `action` field. The bridge
@@ -12,9 +12,7 @@ import WebKit
 /// evaluates `window.freeflowbridge.onEvent(...)` in the web view.
 ///
 /// Actions received from web pages:
-///   - redeemInvite: { action, token }
-///   - storeToken: { action, token }
-///   - emailAdded: { action, email }
+///   - storeAPIKey: { action, data: { key } }
 ///   - checkAccessibility: { action }
 ///   - openAccessibilitySettings: { action }
 ///   - requestMicrophone: { action }
@@ -24,28 +22,14 @@ import WebKit
 ///   - stopMicPreview: { action }
 ///   - registerHotkey: { action }
 ///   - completeOnboarding: { action }
-///   - openProvisioning: { action }
-///   - changeEmail: { action, data: { email, callbackURL } }
-///   - verifyEmailOtp: { action, data: { email, otp } }
-///   - sendSignInOtp: { action, data: { email, type } }
-///   - signInWithOtp: { action, data: { email, otp } }
-///   - dismiss: { action }
-///   - signInComplete: { action }
-///   - emailAddedComplete: { action }
 ///
 /// Events pushed to web pages:
-///   - inviteRedeemed: { event, userId, hasEmail }
-///   - inviteRedeemFailed: { event, error }
+///   - apiKeyStoreResult: { event, error? }
 ///   - permissionStatus: { event, accessibility, microphone }
 ///   - microphoneList: { event, devices: [...], currentId }
 ///   - microphoneSelected: { event, id }
 ///   - audioLevel: { event, level }
 ///   - dictationResult: { event, text }
-///   - tokenStored: { event }
-///   - changeEmailResult: { event, error? }
-///   - verifyEmailOtpResult: { event, error? }
-///   - sendSignInOtpResult: { event, error? }
-///   - signInWithOtpResult: { event, error? }
 @MainActor
 final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
@@ -55,9 +39,7 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
     /// Handler closures for each bridge action. Set by OnboardingController
     /// to wire native services to web page requests.
-    var onRedeemInvite: ((_ token: String) -> Void)?
-    var onStoreToken: ((_ token: String) -> Void)?
-    var onEmailAdded: ((_ email: String) -> Void)?
+    var onStoreAPIKey: ((_ key: String) -> Void)?
     var onCheckAccessibility: (() -> Void)?
     var onOpenAccessibilitySettings: (() -> Void)?
     var onRequestMicrophone: (() -> Void)?
@@ -67,16 +49,6 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
     var onStopMicPreview: (() -> Void)?
     var onRegisterHotkey: (() -> Void)?
     var onCompleteOnboarding: (() -> Void)?
-    var onOpenProvisioning: (() -> Void)?
-
-    // Account page actions (add-email and sign-in flows)
-    var onChangeEmail: ((_ email: String, _ callbackURL: String) -> Void)?
-    var onVerifyEmailOtp: ((_ email: String, _ otp: String) -> Void)?
-    var onSendSignInOtp: ((_ email: String, _ type: String) -> Void)?
-    var onSignInWithOtp: ((_ email: String, _ otp: String) -> Void)?
-    var onDismiss: (() -> Void)?
-    var onSignInComplete: (() -> Void)?
-    var onEmailAddedComplete: (() -> Void)?
 
     // MARK: - WKScriptMessageHandler
 
@@ -97,24 +69,14 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
         }
 
         // The JS bridge wraps payload fields inside a "data" key:
-        //   bridge.send("redeemInvite", { token: "abc" })
-        // becomes { action: "redeemInvite", data: { token: "abc" } }.
+        //   bridge.send("storeAPIKey", { key: "sk-..." })
+        // becomes { action: "storeAPIKey", data: { key: "sk-..." } }.
         let data = body["data"] as? [String: Any] ?? [:]
 
         switch action {
-        case "redeemInvite":
-            if let token = data["token"] as? String {
-                onRedeemInvite?(token)
-            }
-
-        case "storeToken":
-            if let token = data["token"] as? String {
-                onStoreToken?(token)
-            }
-
-        case "emailAdded":
-            if let email = data["email"] as? String {
-                onEmailAdded?(email)
+        case "storeAPIKey":
+            if let key = data["key"] as? String {
+                onStoreAPIKey?(key)
             }
 
         case "checkAccessibility":
@@ -148,44 +110,6 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
         case "completeOnboarding":
             onCompleteOnboarding?()
 
-        case "openProvisioning":
-            onOpenProvisioning?()
-
-        case "changeEmail":
-            if let email = data["email"] as? String {
-                let callbackURL = data["callbackURL"] as? String ?? ""
-                onChangeEmail?(email, callbackURL)
-            }
-
-        case "verifyEmailOtp":
-            if let email = data["email"] as? String,
-                let otp = data["otp"] as? String
-            {
-                onVerifyEmailOtp?(email, otp)
-            }
-
-        case "sendSignInOtp":
-            if let email = data["email"] as? String {
-                let type = data["type"] as? String ?? "sign-in"
-                onSendSignInOtp?(email, type)
-            }
-
-        case "signInWithOtp":
-            if let email = data["email"] as? String,
-                let otp = data["otp"] as? String
-            {
-                onSignInWithOtp?(email, otp)
-            }
-
-        case "dismiss":
-            onDismiss?()
-
-        case "signInComplete":
-            onSignInComplete?()
-
-        case "emailAddedComplete":
-            onEmailAddedComplete?()
-
         default:
             break
         }
@@ -195,10 +119,6 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
     /// Push an event to the web page by calling
     /// `window.freeflowbridge.onEvent(data)`.
-    ///
-    /// - Parameters:
-    ///   - name: The event name (e.g. "inviteRedeemed").
-    ///   - data: Additional key-value pairs to include in the event object.
     func pushEvent(name: String, data: [String: Any] = [:]) {
         var payload = data
         payload["event"] = name
@@ -221,23 +141,13 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
-    /// Push an inviteRedeemed event.
-    func pushInviteRedeemed(userId: String, hasEmail: Bool) {
-        pushEvent(
-            name: "inviteRedeemed",
-            data: [
-                "userId": userId,
-                "hasEmail": hasEmail,
-            ])
-    }
-
-    /// Push an inviteRedeemFailed event.
-    func pushInviteRedeemFailed(error: String) {
-        pushEvent(
-            name: "inviteRedeemFailed",
-            data: [
-                "error": error
-            ])
+    /// Push an apiKeyStoreResult event (success or error).
+    func pushAPIKeyStoreResult(error: String? = nil) {
+        if let error {
+            pushEvent(name: "apiKeyStoreResult", data: ["error": error])
+        } else {
+            pushEvent(name: "apiKeyStoreResult")
+        }
     }
 
     /// Push a permissionStatus event.
@@ -276,48 +186,5 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
             data: [
                 "text": text
             ])
-    }
-
-    /// Push a tokenStored event.
-    func pushTokenStored() {
-        pushEvent(name: "tokenStored")
-    }
-
-    // MARK: - Account page events
-
-    /// Push a changeEmailResult event (success or error).
-    func pushChangeEmailResult(error: String? = nil) {
-        if let error {
-            pushEvent(name: "changeEmailResult", data: ["error": error])
-        } else {
-            pushEvent(name: "changeEmailResult")
-        }
-    }
-
-    /// Push a verifyEmailOtpResult event (success or error).
-    func pushVerifyEmailOtpResult(error: String? = nil) {
-        if let error {
-            pushEvent(name: "verifyEmailOtpResult", data: ["error": error])
-        } else {
-            pushEvent(name: "verifyEmailOtpResult")
-        }
-    }
-
-    /// Push a sendSignInOtpResult event (success or error).
-    func pushSendSignInOtpResult(error: String? = nil) {
-        if let error {
-            pushEvent(name: "sendSignInOtpResult", data: ["error": error])
-        } else {
-            pushEvent(name: "sendSignInOtpResult")
-        }
-    }
-
-    /// Push a signInWithOtpResult event (success or error).
-    func pushSignInWithOtpResult(error: String? = nil) {
-        if let error {
-            pushEvent(name: "signInWithOtpResult", data: ["error": error])
-        } else {
-            pushEvent(name: "signInWithOtpResult")
-        }
     }
 }

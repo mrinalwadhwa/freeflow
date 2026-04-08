@@ -41,24 +41,9 @@ Pods/
 *.ipa
 *.dmg
 
-# Python (for any tooling)
-__pycache__/
-*.pyc
-.venv/
-
-# Node.js (auth service)
-FreeFlowService/images/main/auth/node_modules/
-FreeFlowService/images/main/auth/.pnpm-store/
-
 # Environment
 .env
 .env.*
-
-# Autonomy secrets
-secrets.yaml
-
-# Dev helper cached admin session (created by dev-token.sh)
-.dev-admin-token
 
 # IDE
 .idea/

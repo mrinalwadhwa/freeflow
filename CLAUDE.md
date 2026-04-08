@@ -1,10 +1,5 @@
 # Instructions for Coding Agents
 
-## Terminology
-
-The word "agent" refers exclusively to Autonomy Agents. Do not use "agent" for coding sessions,
-development tracks, or any other purpose.
-
 ## App Name
 
 The app is called "FreeFlow".
@@ -47,13 +42,16 @@ make test-all
 ```
 
 **Environment variable gates:**
-- `FREEFLOW_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests,
-  ServiceConfigLayeredTests, DictationProviderKeychainTests). These trigger macOS login Keychain
-  password prompts.
-- `FREEFLOW_TEST_SLOW=1` — enables timeout and backup connection tests (PipelineTimeoutTests ~75s,
-  BackupConnectionTests ~7s). These use real timeouts and waits.
+- `FREEFLOW_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests and
+  ServiceConfigTests). These trigger macOS login Keychain password prompts.
+- `FREEFLOW_TEST_SLOW=1` — enables timeout tests (PipelineTimeoutTests ~75s) that
+  use real timeouts and waits.
+- `FREEFLOW_TEST_OPENAI=1` — enables live tests that hit the real OpenAI API.
+  Requires `OPENAI_API_KEY` to be set in the environment.
+- `FREEFLOW_TEST_OPENAI_BENCH=1` — enables the OpenAI Realtime latency benchmark
+  suite (hits the real API, takes several seconds per run).
 
-Both are set automatically by `make test-all`.
+The first two are set automatically by `make test-all`.
 
 Test output is written to `/tmp/freeflow-test.log` (not to the terminal). Only the summary line
 is printed. On failure, the first 20 matching error lines are shown. Inspect the full log for
@@ -179,9 +177,9 @@ make clean      # Clean build artifacts + DerivedData
 
 ### Launching the app
 
-The app requires `FREEFLOW_SERVICE_URL` and `FREEFLOW_API_KEY` environment variables. The API
-key is in `FreeFlowService/secrets.yaml` (gitignored). The service URL is the deployed zone URL
-(check the `Server` section in the tracking docs or `autonomy zone list` output).
+In DEBUG builds, `OPENAI_API_KEY` in the process environment overrides the
+Keychain-stored key so local development does not trigger Keychain password
+prompts on every build.
 
 Launch in the background and capture all output to a log file:
 
@@ -190,8 +188,7 @@ pkill -9 -f "FreeFlow.app/Contents/MacOS/FreeFlow" 2>/dev/null
 sleep 1
 rm -f /tmp/freeflow.log
 APP=$(find ~/Library/Developer/Xcode/DerivedData/FreeFlow-*/Build/Products/Debug -name FreeFlow.app -maxdepth 1)
-FREEFLOW_SERVICE_URL="<zone-url>" \
-FREEFLOW_API_KEY="$(grep API_KEY FreeFlowService/secrets.yaml | cut -d' ' -f2)" \
+OPENAI_API_KEY="sk-..." \
 "$APP/Contents/MacOS/FreeFlow" > /tmp/freeflow.log 2>&1 &
 echo "Launched PID $!"
 ```

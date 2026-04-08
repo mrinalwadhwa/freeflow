@@ -51,8 +51,6 @@ targets:
     dependencies:
       - package: FreeFlowKit
       - package: Sparkle
-      - framework: AuthenticationServices.framework
-        embed: false
     entitlements:
       path: FreeFlowApp/FreeFlow.entitlements
       properties:

@@ -5,35 +5,30 @@ Build, test, and understand the FreeFlow codebase.
 ## Build
 
     make build       # debug build (generates Xcode project if missing)
-    make test        # fast tests (~5s, 591 tests)
+    make test        # fast tests (~5s)
     make test-all    # full suite incl Keychain + slow tests (~90s)
     make clean       # clean everything
     make xcode       # open in Xcode
 
 `FREEFLOW_TEST_KEYCHAIN=1` enables Keychain tests (require macOS login
-Keychain access, trigger password prompts). `FREEFLOW_TEST_SLOW=1`
-enables timeout and backup connection tests (~80s).
+Keychain access, trigger password prompts). `FREEFLOW_TEST_OPENAI=1`
+enables live tests that hit the real OpenAI API and require
+`OPENAI_API_KEY` to be set. `FREEFLOW_TEST_OPENAI_BENCH=1` additionally
+enables the latency benchmark suite.
 
 ## Project structure
 
-The repo has three main directories:
+The repo has two main directories:
 
-**`FreeFlowApp/`** — macOS app. Menu bar UI, onboarding, provisioning,
-settings, HUD overlay. Sources are in `Sources/`, bundled HTML and
-assets in `Resources/`.
+**`FreeFlowApp/`** — macOS app. Menu bar UI, onboarding, settings, HUD
+overlay. Sources are in `Sources/`, bundled HTML and assets in
+`Resources/`.
 
-**`FreeFlowKit/`** — Swift framework with the testable core. The
-dictation pipeline, streaming and batch providers, audio capture,
-device switching, text injection, Keychain storage, and the recording
-state machine. Protocols for every provider enable dependency injection
-in tests.
-
-**`FreeFlowService/`** — Python server deployed as an Autonomy zone.
-`autonomy.yaml` defines the zone. `images/main/` contains the
-Dockerfile and all server code: FastAPI endpoints (`main.py`),
-Realtime API streaming (`realtime.py`), the polish pipeline
-(`polish.py` + prompt text files), auth, invites, admin, and a
-Node.js better-auth service in `auth/`.
+**`FreeFlowKit/`** — Swift package with the testable core. The
+dictation pipeline, streaming and batch OpenAI providers, the polish
+pipeline, audio capture, device switching, text injection, Keychain
+storage, and the recording state machine. Protocols for every provider
+enable dependency injection in tests.
 
 ## App icon
 
