@@ -219,7 +219,7 @@ struct OpenAIChatClientStubbedTests {
         #expect(result == "Hello there.")
     }
 
-    @Test("throws on non-200 status")
+    @Test("throws httpError on non-200 status")
     func throwsOnError() async {
         let session = stubbedSession { request in
             let body = #"{"error":{"message":"invalid key"}}"#
@@ -229,14 +229,14 @@ struct OpenAIChatClientStubbedTests {
             return (response, body.data(using: .utf8)!)
         }
         let client = OpenAIChatClient(apiKey: "bad", session: session)
-        await #expect(throws: Error.self) {
+        await #expect(throws: OpenAIChatClient.ChatError.self) {
             try await client.complete(
                 model: "gpt-4.1-nano",
                 systemPrompt: "s", userPrompt: "u")
         }
     }
 
-    @Test("throws on missing content")
+    @Test("throws emptyContent on missing content field")
     func throwsOnMissingContent() async {
         let session = stubbedSession { request in
             let body = #"{"choices":[]}"#
@@ -246,10 +246,38 @@ struct OpenAIChatClientStubbedTests {
             return (response, body.data(using: .utf8)!)
         }
         let client = OpenAIChatClient(apiKey: "k", session: session)
-        await #expect(throws: Error.self) {
+        await #expect(throws: OpenAIChatClient.ChatError.self) {
             try await client.complete(
                 model: "gpt-4.1-nano",
                 systemPrompt: "s", userPrompt: "u")
+        }
+    }
+
+    @Test("throws invalidResponse on malformed JSON structure")
+    func throwsInvalidResponseOnMalformedStructure() async {
+        // A 200 response with valid JSON but no "choices" key should
+        // throw invalidResponse, not emptyContent.
+        let session = stubbedSession { request in
+            let body = #"{"not_choices": true}"#
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200,
+                httpVersion: nil, headerFields: nil)!
+            return (response, body.data(using: .utf8)!)
+        }
+        let client = OpenAIChatClient(apiKey: "k", session: session)
+        do {
+            _ = try await client.complete(
+                model: "gpt-4.1-nano",
+                systemPrompt: "s", userPrompt: "u")
+            Issue.record("Expected an error")
+        } catch let error as OpenAIChatClient.ChatError {
+            if case .invalidResponse = error {
+                // correct
+            } else {
+                Issue.record("Expected invalidResponse, got \(error)")
+            }
+        } catch {
+            Issue.record("Wrong error type: \(error)")
         }
     }
 }

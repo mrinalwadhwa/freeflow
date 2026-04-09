@@ -1328,8 +1328,8 @@ final class DictationPipelineTests: XCTestCase {
 
         let state = await coordinator.state
         XCTAssertEqual(
-            state, .idle,
-            "Non-401 errors should reset to idle, not sessionExpired")
+            state, .dictationFailed,
+            "Non-401 errors should enter recovery, not sessionExpired")
         XCTAssertFalse(callbackCalled, "onSessionExpired should not fire for non-401 errors")
     }
 
@@ -1356,5 +1356,107 @@ final class DictationPipelineTests: XCTestCase {
         XCTAssertFalse(expired, "expireSession should fail from idle")
         let state = await coordinator.state
         XCTAssertEqual(state, .idle)
+    }
+
+    // MARK: - extractRecoveryWAV stereo bug
+
+    func testExtractRecoveryWAVStereoAccountsForChannels() {
+        // 16 kHz, 16-bit, STEREO = 64,000 bytes/sec.
+        // Create 2 seconds of stereo PCM (128,000 bytes) + 44 byte header.
+        let pcmByteCount = 128_000
+        let pcm = Data(repeating: 0x42, count: pcmByteCount)
+        let wav = WAVEncoder.encode(
+            pcmData: pcm,
+            sampleRate: 16_000,
+            channels: 2,
+            bitsPerSample: 16)
+
+        let buffer = AudioBuffer(
+            data: wav,
+            duration: 2.0,
+            sampleRate: 16_000,
+            channels: 2,
+            bitsPerSample: 16)
+
+        // Extract the last 1 second (should be 64,000 bytes of PCM).
+        let recovery = DictationPipeline.extractRecoveryWAV(
+            from: buffer, uncommittedDuration: 1.0)
+        XCTAssertNotNil(recovery)
+
+        // The recovered WAV should contain ~64,000 bytes of PCM data
+        // (plus 44-byte header = ~64,044 total).
+        // If the bug exists (channels not accounted for), it would only
+        // extract 32,000 bytes instead of 64,000.
+        if let data = recovery {
+            let expectedPCMBytes = 64_000
+            let expectedTotal = expectedPCMBytes + 44
+            XCTAssertEqual(
+                data.count, expectedTotal,
+                "Recovery WAV should contain 1 second of stereo audio (64,000 PCM bytes)")
+        }
+    }
+
+    // MARK: - peakRMS == 0 pre-recording silence gate
+
+    func testZeroPeakRMSDoesNotTriggerPreRecordingSilenceGate() async {
+        // The pre-recording silence gate fires before audio setup
+        // completes. A peakRMS of 0 means the tap hasn't delivered
+        // any samples yet — not that the audio is silent. The gate
+        // must skip when peakRMS is exactly 0 so a rapid hotkey tap
+        // doesn't silently discard speech.
+        //
+        // Post-recording peakRMS==0 IS real silence (the tap ran and
+        // captured nothing), so that gate correctly rejects.
+        //
+        // This test verifies the pre-recording path by checking that
+        // the pipeline proceeds past the early short-circuit when
+        // peakRMS is 0 — streaming setup should be attempted.
+        let audio = MockAudioProvider()
+        audio.enablePCMStream = true
+        audio.stubbedPeakRMS = 0.0
+
+        let streaming = MockStreamingDictationProvider()
+        streaming.stubbedText = "Hello world."
+
+        let coordinator = RecordingCoordinator()
+        let pipeline = DictationPipeline(
+            audioProvider: audio,
+            contextProvider: MockAppContextProvider(),
+            dictationProvider: MockDictationProvider(),
+            textInjector: MockTextInjector(),
+            coordinator: coordinator,
+            transcriptBuffer: nil,
+            streamingProvider: streaming,
+            onSessionExpired: nil,
+            micDiagnosticStore: nil)
+
+        await pipeline.activate()
+
+        // Give audio setup time to start and streaming to connect.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // The pre-recording silence gate should NOT have fired.
+        // Streaming setup should have been attempted.
+        XCTAssertGreaterThan(
+            streaming.startCallCount, 0,
+            "Streaming setup should proceed when peakRMS is 0 (tap not yet fired)")
+
+        await pipeline.cancel()
+    }
+
+    // MARK: - Session expired callback
+
+    func testSessionExpiredCallbackInvokedOn401() async {
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.authenticationFailed
+
+        let expectation = XCTestExpectation(description: "session expired")
+        let (pipeline, _, _, _, _, _) = makePipeline(
+            dictationProvider: dictation,
+            onSessionExpired: { expectation.fulfill() })
+
+        await pipeline.activate()
+        await pipeline.complete()
+        await fulfillment(of: [expectation], timeout: 2.0)
     }
 }

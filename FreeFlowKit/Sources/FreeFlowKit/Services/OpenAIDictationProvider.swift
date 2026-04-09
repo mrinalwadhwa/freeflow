@@ -17,12 +17,15 @@ public struct OpenAIDictationProvider: DictationProviding {
     private let polishModel: String
     private let session: URLSession
 
+    /// Language code for polish prompt selection (e.g. "en", "fr").
+    public var language: String?
+
     public init(
         apiKey: @autoclosure @escaping @Sendable () -> String,
         model: String = "gpt-4o-mini-transcribe",
         endpoint: URL = URL(string: "https://api.openai.com/v1/audio/transcriptions")!,
         polishChatClient: OpenAIChatClient?,
-        polishModel: String = "gpt-4.1-nano",
+        polishModel: String = PolishPipeline.polishModel,
         session: URLSession? = nil
     ) {
         self.apiKeyProvider = apiKey
@@ -47,6 +50,7 @@ public struct OpenAIDictationProvider: DictationProviding {
         }
 
         let rawTranscript = try await transcribe(audio: audio)
+        try Task.checkCancellation()
         let trimmed = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return ""
@@ -87,7 +91,7 @@ public struct OpenAIDictationProvider: DictationProviding {
             throw DictationError.authenticationFailed
         default:
             let message =
-                Self.extractErrorMessage(data)
+                OpenAIChatClient.extractErrorMessage(data)
                 ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
             throw DictationError.requestFailed(
                 statusCode: http.statusCode, message: message)
@@ -137,18 +141,6 @@ public struct OpenAIDictationProvider: DictationProviding {
         return text
     }
 
-    /// Extract an error message from an OpenAI error response body.
-    private static func extractErrorMessage(_ data: Data) -> String? {
-        guard
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let error = json["error"] as? [String: Any],
-            let message = error["message"] as? String
-        else {
-            return nil
-        }
-        return message
-    }
-
     // MARK: - Polishing
 
     /// Run the three-stage polish pipeline on the raw transcript.
@@ -171,11 +163,12 @@ public struct OpenAIDictationProvider: DictationProviding {
             return PolishPipeline.normalizeFormatting(stripped)
         }
 
-        let userPrompt = PolishPipeline.buildUserPrompt(substituted, context: context)
+        let userPrompt = PolishPipeline.buildUserPrompt(
+            substituted, context: context, language: language)
         do {
             let polished = try await polishChatClient.complete(
                 model: polishModel,
-                systemPrompt: PolishPipeline.systemPromptEnglish,
+                systemPrompt: PolishPipeline.systemPrompt(forLanguage: language),
                 userPrompt: userPrompt)
             if polished.isEmpty {
                 return PolishPipeline.normalizeFormatting(stripped)
@@ -193,8 +186,10 @@ public struct OpenAIDictationProvider: DictationProviding {
 
 extension Data {
     fileprivate mutating func appendString(_ string: String) {
-        if let data = string.data(using: .utf8) {
-            append(data)
+        guard let data = string.data(using: .utf8) else {
+            assertionFailure("UTF-8 encoding failed for valid String")
+            return
         }
+        append(data)
     }
 }

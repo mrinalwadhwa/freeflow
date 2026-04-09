@@ -245,7 +245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer,
             streamingProvider: streamingProvider,
-            onSessionExpired: nil,
+            onSessionExpired: { [weak self] in
+                Task { @MainActor in self?.resetAPIKey() }
+            },
             micDiagnosticStore: micDiagnosticStore
         )
         pipeline = newPipeline
@@ -267,6 +269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptBuffer: transcriptBuffer,
             textInjector: textInjector
         )
+        controller.onSessionExpired = { [weak self] in
+            self?.resetAPIKey()
+        }
         hudController = controller
     }
 

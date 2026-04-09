@@ -105,10 +105,34 @@ public actor RecordingCoordinator {
         return true
     }
 
+    /// Transition to `.dictationFailed`. Only valid from `.processing`.
+    ///
+    /// The HUD shows a retry/dismiss recovery UI until the user acts.
+    ///
+    /// - Returns: `true` if the transition succeeded.
+    @discardableResult
+    public func failDictation() -> Bool {
+        guard _state == .processing else { return false }
+        transition(to: .dictationFailed)
+        return true
+    }
+
+    /// Transition back to `.processing` to re-attempt dictation.
+    /// Only valid from `.dictationFailed`.
+    ///
+    /// - Returns: `true` if the transition succeeded.
+    @discardableResult
+    public func retryDictation() -> Bool {
+        guard _state == .dictationFailed else { return false }
+        transition(to: .processing)
+        return true
+    }
+
     /// Transition to `.idle`. Valid from `.injecting` (normal completion),
     /// `.processing` (cancellation / error recovery), `.injectionFailed`
-    /// (user dismissed the no-target state), or `.sessionExpired` (after
-    /// the recovery flow has been triggered).
+    /// (user dismissed the no-target state), `.sessionExpired` (after
+    /// the recovery flow has been triggered), or `.dictationFailed`
+    /// (user dismissed or recovery succeeded).
     ///
     /// - Returns: `true` if the transition succeeded.
     @discardableResult
@@ -116,6 +140,7 @@ public actor RecordingCoordinator {
         guard
             _state == .injecting || _state == .processing
                 || _state == .injectionFailed || _state == .sessionExpired
+                || _state == .dictationFailed
         else { return false }
         transition(to: .idle)
         return true

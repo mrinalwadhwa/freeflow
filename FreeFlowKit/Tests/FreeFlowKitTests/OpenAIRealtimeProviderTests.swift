@@ -49,8 +49,10 @@ struct OpenAIRealtimeMessageTests {
         #expect(obj["type"] as? String == "session.update")
 
         let session = try #require(obj["session"] as? [String: Any])
-        #expect((session["modalities"] as? [String])?.contains("text") == true)
-        #expect((session["modalities"] as? [String])?.contains("audio") == true)
+        // The session should request text-only modalities. Including
+        // "audio" causes the Realtime API to generate audio responses,
+        // wasting bandwidth — we only need input transcription.
+        #expect(session["modalities"] as? [String] == ["text"])
         #expect(session["input_audio_format"] as? String == "pcm16")
 
         let transcription = try #require(
@@ -122,6 +124,143 @@ struct OpenAIRealtimeMessageTests {
     func websocketURLScheme() {
         let url = OpenAIRealtimeProvider.buildWebSocketURL(model: "m")
         #expect(url.scheme == "wss")
+    }
+}
+
+// MARK: - Session Summary Formatting
+
+@Suite("OpenAIRealtimeProvider – session summary")
+struct OpenAIRealtimeSessionSummaryTests {
+
+    private func makeTiming(
+        id: Int = 1,
+        setupKind: OpenAIRealtimeProvider.SessionTiming.SetupKind = .adoptedBackup
+    ) -> OpenAIRealtimeProvider.SessionTiming {
+        OpenAIRealtimeProvider.SessionTiming(
+            id: id,
+            startedAt: Date(timeIntervalSince1970: 1000),
+            setupKind: setupKind)
+    }
+
+    @Test("summary includes id and setup kind")
+    func idAndSetup() {
+        var t = makeTiming()
+        t.endedAt = Date(timeIntervalSince1970: 1000.5)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("[RealtimeSession] id=1"))
+        #expect(line.contains("setup=backup"))
+        #expect(line.contains("total=0.500"))
+    }
+
+    @Test("fresh connection setup prints setup=fresh")
+    func freshConnection() {
+        var t = makeTiming(setupKind: .freshConnection)
+        t.endedAt = Date(timeIntervalSince1970: 1000.1)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("setup=fresh"))
+    }
+
+    @Test("setup wait reported when setup completes")
+    func setupWait() {
+        var t = makeTiming()
+        t.setupCompletedAt = Date(timeIntervalSince1970: 1000.050)
+        t.endedAt = Date(timeIntervalSince1970: 1000.8)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("setup_wait=0.050"))
+    }
+
+    @Test("bytes and chunks reported when audio was sent")
+    func bytesAndChunks() {
+        var t = makeTiming()
+        t.audioBytesSent = 96000
+        t.audioChunksSent = 12
+        t.endedAt = Date(timeIntervalSince1970: 1000.5)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("bytes=96000"))
+        #expect(line.contains("chunks=12"))
+    }
+
+    @Test("commit-relative first_delta and transcript timings")
+    func commitRelativeTimings() {
+        var t = makeTiming()
+        t.commitSentAt = Date(timeIntervalSince1970: 1001.000)
+        t.firstDeltaAt = Date(timeIntervalSince1970: 1001.080)
+        t.transcriptCompletedAt = Date(timeIntervalSince1970: 1001.350)
+        t.endedAt = Date(timeIntervalSince1970: 1001.700)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("first_delta=0.080"))
+        #expect(line.contains("transcript=0.350"))
+    }
+
+    @Test("polish field shows kind and duration")
+    func polishField() {
+        var t = makeTiming()
+        t.polishStartedAt = Date(timeIntervalSince1970: 1001.000)
+        t.polishKind = .llmOK
+        t.polishFinishedAt = Date(timeIntervalSince1970: 1001.320)
+        t.endedAt = Date(timeIntervalSince1970: 1001.500)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("polish=llm-ok(0.320)"))
+    }
+
+    @Test("polish=skip shown without duration when no LLM ran")
+    func polishSkip() {
+        var t = makeTiming()
+        t.polishKind = .skip
+        t.endedAt = Date(timeIntervalSince1970: 1000.5)
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("polish=skip"))
+        // Skip path does not record polishStartedAt/FinishedAt.
+        #expect(!line.contains("polish=skip("))
+    }
+
+    @Test("error field escapes embedded quotes")
+    func errorField() {
+        var t = makeTiming()
+        t.endedAt = Date(timeIntervalSince1970: 1000.5)
+        t.error = "connection \"lost\" mid-session"
+        let line = OpenAIRealtimeProvider.formatSessionSummary(t)
+        #expect(line.contains("error=\"connection 'lost' mid-session\""))
+    }
+}
+
+// MARK: - Transcript Timeout
+
+@Suite("OpenAIRealtimeProvider – transcript timeout")
+struct OpenAIRealtimeTranscriptTimeoutTests {
+
+    @Test("zero bytes uses the 15 s floor")
+    func zeroBytes() {
+        let t = OpenAIRealtimeProvider.transcriptTimeout(forAudioBytes: 0)
+        #expect(t == 15.0)
+    }
+
+    @Test("short dictation returns floor + scaled budget")
+    func shortDictation() {
+        // 5 seconds of 24 kHz 16-bit mono = 240_000 bytes.
+        // Budget is max(15, 15 + 5 * 0.5) = 17.5 s.
+        let t = OpenAIRealtimeProvider.transcriptTimeout(forAudioBytes: 240_000)
+        #expect(t == 17.5)
+    }
+
+    @Test("30 second dictation gets 30 second budget")
+    func mediumDictation() {
+        let t = OpenAIRealtimeProvider.transcriptTimeout(forAudioBytes: 30 * 48_000)
+        #expect(t == 30.0)
+    }
+
+    @Test("130 second dictation gets 80 second budget")
+    func longDictation() {
+        let t = OpenAIRealtimeProvider.transcriptTimeout(forAudioBytes: 130 * 48_000)
+        #expect(t == 80.0)
+    }
+
+    @Test("budget is capped at 300 seconds")
+    func veryLongDictationCapped() {
+        // 20 minute audio buffer, way beyond any realistic use.
+        let t = OpenAIRealtimeProvider.transcriptTimeout(
+            forAudioBytes: 20 * 60 * 48_000)
+        #expect(t == 300.0)
     }
 }
 
@@ -254,5 +393,34 @@ struct OpenAIRealtimeLiveTests {
         try await provider.sendAudio(pcm)
         _ = try await provider.finishStreaming()
         await provider.cancelStreaming()
+    }
+}
+
+// MARK: - Concurrent cancel safety (H3/H4)
+
+@Suite("OpenAIRealtimeProvider – concurrent cancel safety")
+struct ConcurrentCancelSafetyTests {
+
+    @Test("concurrent cancelStreaming calls do not crash")
+    func concurrentCancel() async {
+        let provider = OpenAIRealtimeProvider(
+            apiKey: "sk-test", polishChatClient: nil)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<10 {
+                group.addTask { await provider.cancelStreaming() }
+            }
+        }
+        // If we get here without crashing, the lock discipline is correct.
+    }
+
+    @Test("concurrent disconnect calls do not crash")
+    func concurrentDisconnect() async {
+        let provider = OpenAIRealtimeProvider(
+            apiKey: "sk-test", polishChatClient: nil)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<10 {
+                group.addTask { await provider.disconnect() }
+            }
+        }
     }
 }

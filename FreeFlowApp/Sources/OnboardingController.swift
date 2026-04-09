@@ -272,9 +272,6 @@ final class OnboardingController {
         // permission was granted outside the onboarding flow.
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let micGranted = micStatus == .authorized
-        if micGranted {
-            UserDefaults.standard.set(true, forKey: "microphoneGranted")
-        }
 
         bridge.pushPermissionStatus(
             accessibility: granted ? "granted" : "denied",
@@ -309,9 +306,6 @@ final class OnboardingController {
 
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let micGranted = micStatus == .authorized
-        if micGranted {
-            UserDefaults.standard.set(true, forKey: "microphoneGranted")
-        }
 
         bridge.pushPermissionStatus(
             accessibility: granted ? "granted" : "denied",
@@ -334,10 +328,6 @@ final class OnboardingController {
     private func handleRequestMicrophone() {
         Task {
             let granted = await requestMicrophoneAccess()
-
-            if granted {
-                UserDefaults.standard.set(true, forKey: "microphoneGranted")
-            }
 
             let accGranted = permissionProvider?.checkAccessibility() == .granted
             bridge.pushPermissionStatus(

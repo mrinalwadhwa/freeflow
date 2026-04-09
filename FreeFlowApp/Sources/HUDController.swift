@@ -30,6 +30,10 @@ final class HUDController {
     private var localHandsfreeMonitor: Any?
     private var globalHandsfreeMonitor: Any?
 
+    /// Called when the user dismisses a session-expired HUD to trigger
+    /// API key reset and re-onboarding.
+    var onSessionExpired: (() -> Void)?
+
     // MARK: - Init
 
     init(
@@ -185,6 +189,23 @@ final class HUDController {
         }
     }
 
+    /// Re-attempt batch transcription of the saved tail audio.
+    func retryDictation() {
+        guard let pipeline else { return }
+        Task {
+            await pipeline.retryDictation()
+        }
+    }
+
+    /// Discard the saved tail audio and return to minimized.
+    func dismissDictationFailure() {
+        viewModel.dismissDictationFailure()
+        guard let pipeline else { return }
+        Task {
+            await pipeline.dismissDictationFailure()
+        }
+    }
+
     // MARK: - View model wiring
 
     private func setupViewModelActions() {
@@ -195,10 +216,19 @@ final class HUDController {
             self?.completePipeline()
         }
         viewModel.onDismiss = { [weak self] in
-            self?.dismissNoTarget()
+            guard let self else { return }
+            switch self.viewModel.visualState {
+            case .dictationFailed:
+                self.dismissDictationFailure()
+            default:
+                self.dismissNoTarget()
+            }
         }
         viewModel.onClickToRecord = { [weak self] in
             self?.startHandsFreeFromClick()
+        }
+        viewModel.onRetryDictation = { [weak self] in
+            self?.retryDictation()
         }
     }
 
@@ -455,6 +485,10 @@ final class HUDController {
             return true
         case .sessionExpired:
             dismissNoTarget()
+            onSessionExpired?()
+            return true
+        case .dictationFailed:
+            dismissDictationFailure()
             return true
         case .minimized, .ready, .listeningHeld, .processingCollapsing, .processingBreathing:
             return false
@@ -463,6 +497,12 @@ final class HUDController {
 
     deinit {
         visualStateObservation?.cancel()
+        if let monitor = localHandsfreeMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = globalHandsfreeMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
         if let monitor = localEscapeMonitor {
             NSEvent.removeMonitor(monitor)
         }

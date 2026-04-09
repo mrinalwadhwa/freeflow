@@ -195,6 +195,66 @@ struct OpenAIDictationProviderStubbedTests {
         }
     }
 
+    @Test("429 maps to requestFailed")
+    func rateLimited() async throws {
+        let session = stubbedSession { request in
+            let body = #"{"error":{"message":"rate limit exceeded"}}"#
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 429,
+                httpVersion: nil, headerFields: nil)!
+            return (response, body.data(using: .utf8)!)
+        }
+        let provider = OpenAIDictationProvider(
+            apiKey: "k",
+            polishChatClient: nil,
+            session: session)
+        do {
+            _ = try await provider.dictate(audio: silentWAV(), context: AppContext.empty)
+            Issue.record("expected error")
+        } catch DictationError.requestFailed(let status, let message) {
+            #expect(status == 429)
+            #expect(message.contains("rate limit"))
+        } catch {
+            Issue.record("wrong error type: \(error)")
+        }
+    }
+
+    @Test("malformed 200 response maps to invalidResponse")
+    func malformedResponse() async {
+        let session = stubbedSession { request in
+            let body = #"not json at all"#
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200,
+                httpVersion: nil, headerFields: nil)!
+            return (response, body.data(using: .utf8)!)
+        }
+        let provider = OpenAIDictationProvider(
+            apiKey: "k",
+            polishChatClient: nil,
+            session: session)
+        await #expect(throws: DictationError.self) {
+            try await provider.dictate(audio: silentWAV(), context: AppContext.empty)
+        }
+    }
+
+    @Test("200 with missing text field maps to invalidResponse")
+    func missingTextField() async {
+        let session = stubbedSession { request in
+            let body = #"{"result":"no text key here"}"#
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200,
+                httpVersion: nil, headerFields: nil)!
+            return (response, body.data(using: .utf8)!)
+        }
+        let provider = OpenAIDictationProvider(
+            apiKey: "k",
+            polishChatClient: nil,
+            session: session)
+        await #expect(throws: DictationError.self) {
+            try await provider.dictate(audio: silentWAV(), context: AppContext.empty)
+        }
+    }
+
     @Test("already-clean transcript passes through without LLM")
     func cleanTranscriptPassthrough() async throws {
         // When polish client is nil AND the transcript is already clean,

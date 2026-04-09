@@ -89,9 +89,11 @@ public struct OpenAIChatClient: Sendable {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let choices = json["choices"] as? [[String: Any]],
             let first = choices.first,
-            let message = first["message"] as? [String: Any],
-            let content = message["content"] as? String
+            let message = first["message"] as? [String: Any]
         else {
+            throw ChatError.invalidResponse
+        }
+        guard let content = message["content"] as? String else {
             throw ChatError.emptyContent
         }
 
@@ -99,7 +101,7 @@ public struct OpenAIChatClient: Sendable {
     }
 
     /// Extract an error message from an OpenAI error response body.
-    private static func extractErrorMessage(_ data: Data) -> String? {
+    static func extractErrorMessage(_ data: Data) -> String? {
         guard
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let error = json["error"] as? [String: Any],

@@ -145,8 +145,8 @@ struct PipelineDictationTests {
         #expect(injector.injectionCount == 0)
     }
 
-    @Test("Dictation failure resets to idle without injecting")
-    func dictationFailureResetsToIdle() async {
+    @Test("Dictation failure enters recovery state without injecting")
+    func dictationFailureEntersRecovery() async {
         let dictation = MockDictationProvider()
         dictation.stubbedError = DictationError.networkError("connection refused")
         let (pipeline, _, injector, coordinator, buffer) = makePipeline(
@@ -156,7 +156,7 @@ struct PipelineDictationTests {
         await pipeline.complete()
 
         let state = await coordinator.state
-        #expect(state == .idle)
+        #expect(state == .dictationFailed)
         #expect(injector.injectionCount == 0)
         let stored = await buffer.lastTranscript
         #expect(stored == nil)

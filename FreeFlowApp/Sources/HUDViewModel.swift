@@ -46,6 +46,9 @@ final class HUDViewModel: ObservableObject {
     /// Called when the user clicks the minimized/ready capsule to start hands-free.
     var onClickToRecord: (() -> Void)?
 
+    /// Called when the user taps Retry in the dictation failed state.
+    var onRetryDictation: (() -> Void)?
+
     // MARK: - Configuration
 
     let shortcuts: ShortcutConfiguration
@@ -185,6 +188,13 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
+    /// Called when the user dismisses the dictation failed state.
+    func dismissDictationFailure() {
+        if pipelineState == .dictationFailed {
+            visualState = .minimized
+        }
+    }
+
     // MARK: - Pipeline state handling
 
     private func handlePipelineState(_ state: RecordingState) {
@@ -240,6 +250,10 @@ final class HUDViewModel: ObservableObject {
             recalculate()
 
         case .sessionExpired:
+            stopAudioLevelObservation()
+            recalculate()
+
+        case .dictationFailed:
             stopAudioLevelObservation()
             recalculate()
         }
@@ -317,6 +331,9 @@ final class HUDViewModel: ObservableObject {
 
         case .sessionExpired:
             return .sessionExpired
+
+        case .dictationFailed:
+            return .dictationFailed
         }
     }
 

@@ -47,6 +47,9 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     /// When non-nil, `dictateViaBackup()` throws this error.
     public var stubbedBackupError: (any Error)?
 
+    /// The value returned by `uncommittedAudioDuration`. Defaults to 0.
+    public var stubbedUncommittedAudioDuration: TimeInterval = 0
+
     /// Number of times `startStreaming()` has been called.
     public var startCallCount: Int {
         lock.withLock { _startCallCount }
@@ -113,6 +116,10 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
 
     // MARK: - StreamingDictationProviding
 
+    public var uncommittedAudioDuration: TimeInterval {
+        stubbedUncommittedAudioDuration
+    }
+
     public func startStreaming(context: AppContext, language: String?, micProximity: MicProximity)
         async throws
     {
@@ -176,6 +183,27 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
         return text
     }
 
+    // MARK: - Chunk handler recording
+
+    private var _chunkHandler: (@Sendable (String) async -> Void)?
+
+    /// The chunk handler set by the pipeline. The mock records it but
+    /// does not invoke it automatically — call `emitChunk(_:)` from
+    /// the test to simulate a committed chunk.
+    public var hasChunkHandler: Bool {
+        lock.withLock { _chunkHandler != nil }
+    }
+
+    public func setChunkHandler(_ handler: (@Sendable (String) async -> Void)?) {
+        lock.withLock { _chunkHandler = handler }
+    }
+
+    /// Simulate the provider delivering an intermediate chunk.
+    public func emitChunk(_ text: String) async {
+        let handler = lock.withLock { _chunkHandler }
+        await handler?(text)
+    }
+
     /// Remove all recorded calls and reset counters.
     public func reset() {
         lock.withLock {
@@ -189,6 +217,7 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
             _receivedAudioChunks.removeAll()
             _receivedBackupAudio.removeAll()
             _receivedBackupContexts.removeAll()
+            _chunkHandler = nil
         }
     }
 }

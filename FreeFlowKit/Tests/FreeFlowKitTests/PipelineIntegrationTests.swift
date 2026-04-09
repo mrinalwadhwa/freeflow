@@ -223,8 +223,8 @@ struct DictationPipelineIntegrationTests {
         #expect(dictation.lastReceivedAudio!.isEmpty == false)
     }
 
-    @Test("Dictation failure resets pipeline to idle")
-    func dictationFailureResetsToIdle() async {
+    @Test("Dictation failure enters recovery state")
+    func dictationFailureEntersRecovery() async {
         let dictation = MockDictationProvider()
         dictation.stubbedError = DictationError.requestFailed(
             statusCode: 502, message: "bad gateway")
@@ -234,7 +234,7 @@ struct DictationPipelineIntegrationTests {
         await pipeline.complete()
 
         let state = await coordinator.state
-        #expect(state == .idle)
+        #expect(state == .dictationFailed)
         #expect(injector.injectionCount == 0)
     }
 

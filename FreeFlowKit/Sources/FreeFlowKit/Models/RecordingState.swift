@@ -8,4 +8,5 @@ public enum RecordingState: Sendable, Equatable {
     case injecting
     case injectionFailed
     case sessionExpired
+    case dictationFailed
 }

@@ -8,15 +8,40 @@ import Foundation
 /// is available almost immediately after the last chunk is sent.
 ///
 /// Lifecycle:
-///   1. `startStreaming(context:language:)` — open a connection.
-///   2. `sendAudio(_:)` — call repeatedly with PCM chunks.
-///   3. `finishStreaming()` — signal end of audio, receive result.
-///   4. `cancelStreaming()` — abort without waiting for a result.
+///   1. Optionally `setChunkHandler(_:)` to receive incremental
+///      chunks as audio crosses the chunking strategy's boundaries.
+///   2. `startStreaming(context:language:)` — open a connection.
+///   3. `sendAudio(_:)` — call repeatedly with PCM chunks.
+///   4. `finishStreaming()` — signal end of audio, receive the
+///      final chunk's polished text.
+///   5. `cancelStreaming()` — abort without waiting for a result.
+///
+/// When a chunk handler is set, sessions that cross the strategy's
+/// chunk boundary commit audio incrementally. Each intermediate chunk
+/// is delivered to the handler as soon as it is transcribed and
+/// polished; the final chunk is returned from `finishStreaming` as
+/// usual. A session that never crosses the first boundary behaves
+/// the same as one with no handler: one commit at `finishStreaming`.
 ///
 /// Implementations must be safe to call from any isolation context.
 /// A single streaming session is active at a time; calling
 /// `startStreaming` while a session is open is a programming error.
 public protocol StreamingDictationProviding: Sendable {
+
+    /// Duration (in seconds) of audio sent since the last successful
+    /// commit. The pipeline uses this to extract the tail audio for
+    /// batch recovery when the streaming session fails.
+    var uncommittedAudioDuration: TimeInterval { get }
+
+    /// Register a handler to receive intermediate chunks for the next
+    /// session. Call before `startStreaming`. Passing `nil` clears the
+    /// handler so the next session behaves like a single-commit run.
+    ///
+    /// The handler is invoked from an unspecified executor once per
+    /// committed chunk, with the chunk's polished text. It is not
+    /// called for the final chunk — that one is returned from
+    /// `finishStreaming`.
+    func setChunkHandler(_ handler: (@Sendable (String) async -> Void)?)
 
     /// Open a streaming transcription session.
     ///
@@ -78,7 +103,14 @@ public protocol StreamingDictationProviding: Sendable {
 /// Default implementations so conforming types only need to implement
 /// the methods they support. The backup dictation method throws by
 /// default, signaling that the provider does not have a backup connection.
+/// `setChunkHandler` is a no-op by default, so providers that do not
+/// support rolling chunks are transparent to callers that try to set
+/// a handler.
 extension StreamingDictationProviding {
+
+    public var uncommittedAudioDuration: TimeInterval { 0 }
+
+    public func setChunkHandler(_ handler: (@Sendable (String) async -> Void)?) {}
 
     public func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
         -> String

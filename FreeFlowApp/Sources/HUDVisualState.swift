@@ -46,6 +46,10 @@ enum HUDVisualState: Equatable {
     /// before the app enters the recovery flow (sign-in or onboarding).
     case sessionExpired
 
+    /// Dictation failed after all transcription paths were exhausted.
+    /// Shows "Lost connection" message with Retry and Dismiss buttons.
+    case dictationFailed
+
     /// Whether the HUD should accept mouse events in this state.
     ///
     /// States that rely on the keyboard as the control surface disable mouse
@@ -53,7 +57,7 @@ enum HUDVisualState: Equatable {
     var acceptsMouseEvents: Bool {
         switch self {
         case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
-            .sessionExpired:
+            .sessionExpired, .dictationFailed:
             return true
         case .listeningHeld, .processingCollapsing, .processingBreathing:
             return false
@@ -70,50 +74,8 @@ enum HUDVisualState: Equatable {
         case .minimized, .ready, .processingCollapsing, .processingBreathing:
             return false
         case .listeningHeld, .listeningHandsFree, .processingSlow, .noTarget,
-            .sessionExpired:
+            .sessionExpired, .dictationFailed:
             return true
         }
-    }
-
-    /// Whether waveform dots should animate in this state.
-    var showsWaveform: Bool {
-        switch self {
-        case .listeningHeld, .listeningHandsFree:
-            return true
-        default:
-            return false
-        }
-    }
-
-    /// Whether the processing animation should be visible.
-    var showsProcessingIndicator: Bool {
-        switch self {
-        case .processingSlow:
-            return true
-        default:
-            return false
-        }
-    }
-
-    /// Whether cancel (✕) and stop (■) buttons should be visible.
-    var showsHandsFreeControls: Bool {
-        self == .listeningHandsFree
-    }
-
-    /// Whether a cancel (✕) affordance should be visible.
-    ///
-    /// Available in hands-free listening, slow processing, and no-target states.
-    var showsCancelButton: Bool {
-        switch self {
-        case .listeningHandsFree, .processingSlow, .noTarget, .sessionExpired:
-            return true
-        default:
-            return false
-        }
-    }
-
-    /// Whether the stop (■) button should be visible.
-    var showsStopButton: Bool {
-        self == .listeningHandsFree
     }
 }

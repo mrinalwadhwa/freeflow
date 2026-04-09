@@ -42,6 +42,8 @@ struct HUDContentView: View {
             return 260
         case .sessionExpired:
             return 200
+        case .dictationFailed:
+            return 220
         }
     }
 
@@ -54,7 +56,8 @@ struct HUDContentView: View {
         case .processingCollapsing, .processingBreathing:
             return 8
         case .listeningHeld, .listeningHandsFree,
-            .processingSlow, .noTarget, .sessionExpired:
+            .processingSlow, .noTarget, .sessionExpired,
+            .dictationFailed:
             return 32
         }
     }
@@ -64,7 +67,8 @@ struct HUDContentView: View {
         case .minimized, .processingCollapsing, .processingBreathing:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree,
-            .processingSlow, .noTarget, .sessionExpired:
+            .processingSlow, .noTarget, .sessionExpired,
+            .dictationFailed:
             return 0.5
         }
     }
@@ -74,7 +78,8 @@ struct HUDContentView: View {
         case .minimized, .processingCollapsing, .processingBreathing:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree,
-            .processingSlow, .noTarget, .sessionExpired:
+            .processingSlow, .noTarget, .sessionExpired,
+            .dictationFailed:
             return 0.7
         }
     }
@@ -89,7 +94,8 @@ struct HUDContentView: View {
         case .minimized, .ready, .processingCollapsing, .processingBreathing:
             return false
         case .listeningHeld, .listeningHandsFree,
-            .processingSlow, .noTarget, .sessionExpired:
+            .processingSlow, .noTarget, .sessionExpired,
+            .dictationFailed:
             return true
         }
     }
@@ -167,7 +173,7 @@ struct HUDContentView: View {
             y: 1.0,
             anchor: .center
         )
-        .onChange(of: viewModel.visualState) { newState in
+        .onChange(of: viewModel.visualState) { _, newState in
             if newState == .processingBreathing {
                 withAnimation(
                     .easeInOut(duration: 0.7)
@@ -205,6 +211,9 @@ struct HUDContentView: View {
                 .transition(.opacity)
         case .sessionExpired:
             sessionExpiredContent
+                .transition(.opacity)
+        case .dictationFailed:
+            dictationFailedContent
                 .transition(.opacity)
         }
     }
@@ -337,6 +346,40 @@ struct HUDContentView: View {
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.85))
                 .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - Dictation Failed
+
+    /// Dictation failed — all transcription paths exhausted. Retry or dismiss.
+    private var dictationFailedContent: some View {
+        HStack(spacing: 8) {
+            Button(action: { viewModel.onRetryDictation?() }) {
+                Text("Retry")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.2)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Retry transcription")
+
+            Text("Lost connection")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+
+            Button(action: { viewModel.onDismiss?() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, 12)
     }

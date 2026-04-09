@@ -13,7 +13,7 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
         #endif
     }
 
-    /// The web view that displays zone-hosted pages.
+    /// The web view that displays bundled local pages.
     let webView: WKWebView
 
     /// The web view configuration, retained so the bridge message
@@ -118,13 +118,14 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     // MARK: - Close override
 
-    /// Override close to hide instead of destroy. The close button (×)
-    /// sends `close()`, which would deallocate the window while
-    /// `OnboardingController` still holds a reference. Using `orderOut`
-    /// keeps the window alive so it can be re-presented via the menu
-    /// bar "Open Setup…" item.
+    /// Override close to hide and clean up the web view. The close
+    /// button (×) sends `close()`, which would deallocate the window
+    /// while `OnboardingController` still holds a reference. Using
+    /// `dismiss()` removes the bridge handler (freeing the WKWebView
+    /// process) and hides the window so it can be re-presented via the
+    /// menu bar "Open Setup…" item.
     override func close() {
-        orderOut(nil)
+        dismiss()
     }
 
     // MARK: - WKNavigationDelegate

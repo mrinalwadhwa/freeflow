@@ -937,9 +937,95 @@ final class StreamingPipelineTests: XCTestCase {
         emitTask.cancel()
 
         let state = await coordinator.state
-        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(
+            state, .dictationFailed,
+            "All paths failed should enter recovery state")
         XCTAssertEqual(
             injector.injectionCount, 0,
             "No injection should happen when all paths fail")
+    }
+
+    // MARK: - Chunk handler wiring
+
+    func testPipelineSetsChunkHandlerOnStreamingProvider() async {
+        let streaming = MockStreamingDictationProvider()
+        let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline(
+            streamingProvider: streaming)
+
+        await pipeline.activate()
+        // Let audio setup finish and set the handler.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertTrue(
+            streaming.hasChunkHandler,
+            "Pipeline should set a chunk handler on the streaming provider")
+
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+    }
+
+    // MARK: - Chunk handler cleared after complete
+
+    func testChunkHandlerClearedAfterComplete() async {
+        let (pipeline, audio, _, _, streaming, _, _) = makeStreamingPipeline()
+
+        await pipeline.activate()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        XCTAssertFalse(
+            streaming.hasChunkHandler,
+            "Chunk handler must be cleared after complete() to prevent late injection")
+    }
+
+    // MARK: - Cancel always cancels streaming
+
+    func testCancelAlwaysCancelsStreaming() async {
+        let (pipeline, audio, _, _, streaming, _, _) = makeStreamingPipeline()
+
+        await pipeline.activate()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        let emitTask = emitChunksInBackground(audio)
+
+        // Start complete() which clears isStreamingSession, then cancel.
+        let completeTask = Task { await pipeline.complete() }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        await pipeline.cancel()
+        completeTask.cancel()
+        emitTask.cancel()
+
+        XCTAssertGreaterThanOrEqual(
+            streaming.cancelCallCount, 1,
+            "cancel() must call cancelStreaming() even after complete() cleared isStreamingSession")
+    }
+
+    // MARK: - Silence rejection
+
+    func testSilentStreamingSessionRejectsWithoutInjecting() async {
+        let audio = makeStreamingAudioProvider()
+        // Set peak RMS below the silence threshold so the early gate fires.
+        audio.stubbedPeakRMS = 0.001
+
+        let (pipeline, _, _, _, _, injector, coordinator) =
+            makeStreamingPipeline(audioProvider: audio)
+
+        await pipeline.activate()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        let emitTask = emitChunksInBackground(audio, count: 2)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        // Pipeline should return to idle without injecting text.
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(
+            injector.injectionCount, 0,
+            "Silent audio should not produce any text injection")
     }
 }

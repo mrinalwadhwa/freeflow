@@ -17,7 +17,7 @@ public enum PolishPipeline {
 
     // MARK: - Configuration
 
-    static let polishModel = "gpt-4.1-nano"
+    public static let polishModel = "gpt-4.1-nano"
 
     // MARK: - Stage 1: Dictated Punctuation Substitution
 
@@ -54,9 +54,11 @@ public enum PolishPipeline {
         PunctuationRule(#"\bcomma\b"#, ","),
         PunctuationRule(#"\bcolon\b"#, ":"),
         PunctuationRule(#"\bsemicolon\b"#, ";"),
-        // Brackets and quotes.
-        PunctuationRule(#"\bopen paren(?:thesis)?\b"#, "("),
-        PunctuationRule(#"\bclose paren(?:thesis)?\b"#, ")"),
+        // Brackets and quotes. "parent" is a common STT misrecognition
+        // for "paren" because "paren" isn't a standalone English word,
+        // so we accept it as an alias.
+        PunctuationRule(#"\bopen paren(?:t|thesis)?\b"#, "("),
+        PunctuationRule(#"\bclose paren(?:t|thesis)?\b"#, ")"),
         PunctuationRule(#"\bopen quote\b"#, "\u{201c}"),
         PunctuationRule(#"\b(?:close|end) quote\b"#, "\u{201d}"),
         PunctuationRule(#"\bunquote\b"#, "\u{201d}"),
@@ -85,8 +87,6 @@ public enum PolishPipeline {
     /// preserves them verbatim.
     public static func substituteDictatedPunctuation(_ text: String) -> String {
         var result = text
-        let nsRange = NSRange(result.startIndex..., in: result)
-        _ = nsRange  // suppress warning
 
         for rule in punctuationRules {
             let replacement: String
@@ -123,7 +123,6 @@ public enum PolishPipeline {
             options: .regularExpression)
 
         // Remove spaces after opening brackets/quotes.
-        // Remove spaces after opening brackets/quotes.
         result = result.replacingOccurrences(
             of: "([(\\[\u{201c}]) +",
             with: "$1",
@@ -135,13 +134,20 @@ public enum PolishPipeline {
             with: " ",
             options: .regularExpression)
 
+        // Collapse runs of adjacent punctuation down to the strongest
+        // single mark. The Realtime STT already inserts commas and
+        // periods from pauses and prosody, so when the user also
+        // dictates "comma" or "period" the substitution above emits
+        // duplicates. "Hey team,,," becomes "Hey team,". "breaks,."
+        // becomes "breaks.".
+        result = collapseAdjacentPunctuation(result)
+
         // Trim whitespace around line breaks.
         result = result.replacingOccurrences(
             of: " *\n *",
             with: "\n",
             options: .regularExpression)
 
-        // Capitalize first letter after sentence-ending punctuation.
         // Capitalize first letter after sentence-ending punctuation + space.
         result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
 
@@ -151,6 +157,53 @@ public enum PolishPipeline {
         }
 
         return result.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Strength ordering used by `collapseAdjacentPunctuation`: stronger
+    /// punctuation wins when multiple marks sit adjacent to each other.
+    /// Values are arbitrary but ordered `, < : < ; < . < ? < !`.
+    private static let punctuationStrength: [Character: Int] = [
+        ",": 1,
+        ":": 2,
+        ";": 3,
+        ".": 4,
+        "?": 5,
+        "!": 6,
+    ]
+
+    private static let adjacentPunctuationPattern: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(
+            pattern: #"([.,;:?!])(?:\s*[.,;:?!])+"#,
+            options: [])
+    }()
+
+    /// Collapse runs of adjacent punctuation marks (possibly separated by
+    /// whitespace) down to the single strongest one in the run. Used to
+    /// clean up duplicates produced when the STT auto-inserts punctuation
+    /// from pauses *and* the user dictates a punctuation command in the
+    /// same spot.
+    static func collapseAdjacentPunctuation(_ text: String) -> String {
+        let matches = adjacentPunctuationPattern.matches(
+            in: text,
+            range: NSRange(text.startIndex..., in: text))
+        guard !matches.isEmpty else { return text }
+
+        var result = ""
+        var lastEnd = text.startIndex
+        for match in matches {
+            guard let range = Range(match.range, in: text) else { continue }
+            result += text[lastEnd..<range.lowerBound]
+            let run = text[range]
+            let strongest = run.compactMap { punctuationStrength[$0] != nil ? $0 : nil }
+                .max(by: { punctuationStrength[$0]! < punctuationStrength[$1]! })
+            if let strongest {
+                result.append(strongest)
+            }
+            lastEnd = range.upperBound
+        }
+        result += text[lastEnd...]
+        return result
     }
 
     // MARK: - Stage 2: Clean Transcript Detection
@@ -169,44 +222,32 @@ public enum PolishPipeline {
             """#.replacingOccurrences(of: "\n", with: ""),
         options: .caseInsensitive)
 
-    // Dictated punctuation commands.
-    private static let dictatedPunctPattern = try! NSRegularExpression(
-        pattern: #"""
-            \b(
-            period|comma|question mark|exclamation (?:point|mark)
-            |colon|semicolon
-            |new line|newline|new paragraph
-            |open (?:paren|parenthesis|quote|bracket)
-            |close (?:paren|parenthesis|quote|bracket)
-            |(?:end |un)quote
-            |dot dot dot|ellipsis
-            |hyphen
-            |ampersand|at sign
-            |hashtag
-            |forward slash|backslash
-            |asterisk|underscore
-            |percent sign|dollar sign
-            |equals sign|plus sign
-            )\b
-            """#.replacingOccurrences(of: "\n", with: ""),
-        options: .caseInsensitive)
-
     // Repeated consecutive words or short phrases.
     private static let repetitionPattern = try! NSRegularExpression(
         pattern: #"\b(\w+(?:\s+\w+){0,2})\s+\1\b"#,
         options: .caseInsensitive)
 
-    // Spelled-out numbers the LLM would format as digits.
+    // Spelled-out compound numbers the LLM would format as digits.
+    // Requires two adjacent number-words or a number-word followed by a
+    // quantity marker so isolated words like "one" or "two" don't match.
+    private static let numberWord = """
+        (?:zero|one|two|three|four|five|six|seven|eight|nine|ten\
+        |eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen\
+        |eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy\
+        |eighty|ninety)
+        """
+    private static let multiplier = """
+        (?:hundred|thousand|million|billion|trillion)
+        """
+    private static let quantityMarker = """
+        (?:percent|dollar|dollars)
+        """
     private static let spelledNumberPattern = try! NSRegularExpression(
-        pattern: #"""
-            \b(
-            zero|one|two|three|four|five|six|seven|eight|nine|ten
-            |eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen
-            |eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy
-            |eighty|ninety|hundred|thousand|million|billion|trillion
-            |percent|dollar|dollars
-            )\b
-            """#.replacingOccurrences(of: "\n", with: ""),
+        pattern: #"\b(?:"# + numberWord + #"\s+"# + numberWord
+            + #"|"# + numberWord + #"\s+"# + multiplier
+            + #"|"# + numberWord + #"\s+"# + quantityMarker
+            + #"|"# + multiplier + #"\s+"# + numberWord
+            + #")\b"#,
         options: .caseInsensitive)
 
     /// Check if a transcript is clean enough to skip LLM polishing.
@@ -224,7 +265,6 @@ public enum PolishPipeline {
         let range = NSRange(text.startIndex..., in: text)
 
         if fillerPattern.firstMatch(in: text, range: range) != nil { return false }
-        if dictatedPunctPattern.firstMatch(in: text, range: range) != nil { return false }
         if repetitionPattern.firstMatch(in: text, range: range) != nil { return false }
         if spelledNumberPattern.firstMatch(in: text, range: range) != nil { return false }
 
@@ -243,7 +283,6 @@ public enum PolishPipeline {
     public static func stripKeepTags(_ text: String) -> String {
         var result = text
 
-        // Strip tags, keep content.
         // Strip tags, keep content.
         result = keepTagPattern.stringByReplacingMatches(
             in: result,
@@ -282,7 +321,6 @@ public enum PolishPipeline {
             of: " {2,}", with: " ", options: .regularExpression)
 
         // Capitalize first letter after paragraph/line breaks.
-        // Capitalize first letter after paragraph/line breaks.
         result = capitalizeAfterPattern(result, pattern: "(\\n)(\\w)")
 
         return result
@@ -302,12 +340,10 @@ public enum PolishPipeline {
         result = result.replacingOccurrences(
             of: " *\u{21b5} *", with: "\n", options: .regularExpression)
 
-        // Collapse doubled slashes (not in URLs).
         // Collapse doubled slashes (guard :// in URLs).
         result = result.replacingOccurrences(
             of: "(?<!:)//", with: "/", options: .regularExpression)
 
-        // Collapse doubled backslashes between word characters.
         // Collapse doubled backslashes between word characters.
         result = result.replacingOccurrences(
             of: "(?<=\\w)\\\\\\\\(?=\\w)", with: "\\\\",
@@ -337,6 +373,30 @@ public enum PolishPipeline {
     // MARK: - Context Formatting
 
     /// Build the user prompt for the LLM polishing call.
+    /// Strip known prompt-injection markers from a context field.
+    ///
+    /// Remove ChatML delimiters, role-like line prefixes, and other
+    /// patterns that could trick the LLM into following injected
+    /// instructions embedded in window titles, URLs, or field content.
+    public static func sanitizeContextField(_ text: String) -> String {
+        var result = text
+        // Strip ChatML delimiters.
+        result = result.replacingOccurrences(of: "<|im_start|>", with: "")
+        result = result.replacingOccurrences(of: "<|im_end|>", with: "")
+        // Strip role-like prefixes at the start of the string or after
+        // newlines (e.g. "SYSTEM:", "USER:", "ASSISTANT:").
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\n)\s*(SYSTEM|USER|ASSISTANT)\s*:"#,
+            options: .caseInsensitive
+        ) {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: "")
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public static func buildUserPrompt(
         _ text: String, context: AppContext, language: String? = nil
     ) -> String {
@@ -347,28 +407,33 @@ public enum PolishPipeline {
         }
 
         var ctxLines: [String] = []
-        if !context.appName.isEmpty {
-            ctxLines.append("App: \(context.appName)")
+        let appName = sanitizeContextField(context.appName)
+        if !appName.isEmpty {
+            ctxLines.append("App: \(appName)")
         }
-        if !context.windowTitle.isEmpty {
-            ctxLines.append("Window: \(context.windowTitle)")
+        let windowTitle = sanitizeContextField(context.windowTitle)
+        if !windowTitle.isEmpty {
+            ctxLines.append("Window: \(windowTitle)")
         }
         if let url = context.browserURL {
-            ctxLines.append("URL: \(url)")
+            ctxLines.append("URL: \(sanitizeContextField(url))")
         }
         if let content = context.focusedFieldContent {
-            var truncated = content
-            if content.count > 2000 {
-                let pos = context.cursorPosition ?? content.count
-                let start = max(0, pos - 1000)
-                let end = min(content.count, pos + 1000)
-                let startIdx = content.index(
-                    content.startIndex, offsetBy: start)
-                let endIdx = content.index(
-                    content.startIndex, offsetBy: end)
+            var truncated = sanitizeContextField(content)
+            // cursorPosition is a UTF-16 offset from macOS accessibility
+            // APIs (NSString-style). Use the utf16 view for windowing.
+            let utf16Count = content.utf16.count
+            if utf16Count > 2000 {
+                let pos = context.cursorPosition ?? utf16Count
+                let start16 = max(0, pos - 1000)
+                let end16 = min(utf16Count, pos + 1000)
+                let startIdx = String.Index(
+                    utf16Offset: start16, in: content)
+                let endIdx = String.Index(
+                    utf16Offset: end16, in: content)
                 truncated = String(content[startIdx..<endIdx])
-                if start > 0 { truncated = "..." + truncated }
-                if end < content.count { truncated = truncated + "..." }
+                if start16 > 0 { truncated = "..." + truncated }
+                if end16 < utf16Count { truncated = truncated + "..." }
             }
             ctxLines.append("Field content:\n\(truncated)")
         }
@@ -376,7 +441,7 @@ public enum PolishPipeline {
             ctxLines.append("Cursor position: \(pos)")
         }
         if let selected = context.selectedText {
-            ctxLines.append("Selected text: \(selected)")
+            ctxLines.append("Selected text: \(sanitizeContextField(selected))")
         }
 
         if !ctxLines.isEmpty {
@@ -399,16 +464,37 @@ public enum PolishPipeline {
     /// Minimal polishing prompt for non-English languages.
     public static let systemPromptMinimal = "You are a speech-to-text cleanup assistant. The user dictated text in a non-English language and a speech-to-text engine transcribed it. Your job is to clean up the transcription into polished written text.\n\nSpeech-to-text engines produce messy output. Fix these problems:\n\n1. Filler words and false starts: remove verbal fillers common in the transcription's language (e.g. \"euh\", \"este\", \"\u{00e4}hm\", \"\u{3048}\u{30fc}\u{3068}\", \"\u{90a3}\u{4e2a}\", etc.) and similar hesitation sounds.\n2. Repetitions: when words or short phrases are repeated consecutively, keep only one instance.\n3. Mid-sentence corrections: when the speaker restarts or corrects themselves, keep only the corrected version. Drop everything before the correction.\n4. Punctuation and capitalization: add proper sentence punctuation, capitalize sentence starts, and fix obvious capitalization for the language's conventions.\n5. Numbers and formatting: convert spelled-out numbers to digits where appropriate for the language (e.g. \"vingt-trois virgule cinq pour cent\" becomes \"23,5%\", \"zw\u{00f6}lf Euro\" becomes \"12 \u{20ac}\"). Use the number formatting conventions of the transcription's language (decimal comma vs decimal point, currency symbol placement, etc.).\n6. Wording preservation: keep the user's original words. Do not substitute verbs, swap phrases, or rewrite sentences. You may remove fillers, fix repetitions, apply corrections, and fix punctuation, but the surviving content words must come from the speaker's mouth.\n7. No fabricated text: NEVER insert words, phrases, or sentences that the speaker did not say.\n8. Do not translate: keep the text in its original language. Do not convert to English or any other language.\n9. Script consistency for Hindi: if the language is Hindi, ensure the output uses Devanagari script (\u{0939}\u{093f}\u{0928}\u{094d}\u{0926}\u{0940}), not Urdu/Nastaliq script. Transliterate any Urdu script portions to Devanagari while preserving the spoken words.\n\nIf the transcription is already clean, return it unchanged.\n\nDo not wrap your output in quotes or add any preamble. Return only the cleaned text.\n\nYou may also receive context about the target application (app name, window title, field content). Use it as a light signal for tone: keep email formal, chat casual, code comments technical. But do not over-adapt. The cleanup rules above are the priority."
 
+    /// Select the system prompt based on the transcription language.
+    ///
+    /// English (or nil) uses the detailed English prompt. All other
+    /// languages use the minimal prompt with language-agnostic rules.
+    public static func systemPrompt(forLanguage language: String?) -> String {
+        guard let language, !language.isEmpty, language != "en" else {
+            return systemPromptEnglish
+        }
+        return systemPromptMinimal
+    }
+
     // swiftlint:enable line_length
 
     // MARK: - Helpers
+
+    private static let regexCache = NSCache<NSString, NSRegularExpression>()
+
+    private static func cachedRegex(_ pattern: String) -> NSRegularExpression? {
+        let key = pattern as NSString
+        if let cached = regexCache.object(forKey: key) { return cached }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        regexCache.setObject(regex, forKey: key)
+        return regex
+    }
 
     /// Capitalize the first letter matched by the second capture group
     /// in the given pattern.
     private static func capitalizeAfterPattern(
         _ text: String, pattern: String
     ) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        guard let regex = cachedRegex(pattern) else {
             return text
         }
         var result = text
@@ -423,5 +509,19 @@ public enum PolishPipeline {
             result.replaceSubrange(letterRange, with: upper)
         }
         return result
+    }
+
+    // MARK: - Sentence Boundary Detection
+
+    /// Whether the text ends with sentence-ending punctuation.
+    ///
+    /// Used by the chunk buffer to decide when accumulated raw
+    /// transcripts form a complete unit worth polishing and injecting.
+    /// Only checks the last non-whitespace character.
+    public static func endsAtSentenceBoundary(_ text: String) -> Bool {
+        guard let last = text.last(where: { !$0.isWhitespace }) else {
+            return false
+        }
+        return last == "." || last == "?" || last == "!"
     }
 }
