@@ -144,6 +144,11 @@ public actor DictationPipeline: PipelineProviding {
     /// locale. When nil, the server defaults to auto-detection.
     private(set) var language: String?
 
+    /// When true, skip the streaming-vs-batch race and use streaming
+    /// result directly. Local on-device providers cannot run concurrent
+    /// SpeechAnalyzer instances safely.
+    private let localMode: Bool
+
     /// Update the language hint from outside the actor.
     public func setLanguage(_ code: String?) {
         language = code
@@ -159,7 +164,8 @@ public actor DictationPipeline: PipelineProviding {
         silenceThreshold: Float = 0.005,
         streamingProvider: StreamingDictationProviding? = nil,
         onSessionExpired: (@Sendable () -> Void)? = nil,
-        micDiagnosticStore: MicDiagnosticStore? = nil
+        micDiagnosticStore: MicDiagnosticStore? = nil,
+        localMode: Bool = false
     ) {
         self.audioProvider = audioProvider
         self.contextProvider = contextProvider
@@ -170,6 +176,7 @@ public actor DictationPipeline: PipelineProviding {
         self.silenceThreshold = silenceThreshold
         self.streamingProvider = streamingProvider
         self.onSessionExpired = onSessionExpired
+        self.localMode = localMode
         self.micDiagnosticStore = micDiagnosticStore
     }
 
@@ -821,6 +828,20 @@ public actor DictationPipeline: PipelineProviding {
                             await coordinator.reset()
                             return
                         }
+                    }
+                } else if localMode {
+                    // Local mode: use streaming result directly.
+                    // No batch race — on-device providers cannot run
+                    // concurrent recognition sessions.
+                    Log.debug("[Pipeline] finishing streaming session (local, no race)")
+                    do {
+                        let text = try await streaming.finishStreaming()
+                        dictatedText = text
+                    } catch {
+                        Log.debug("[Pipeline] Local finishStreaming failed: \(error)")
+                        recoveryBox.set(audio: audioBuffer.data, context: context)
+                        await coordinator.failDictation()
+                        return
                     }
                 } else {
                     // No chunks fired yet (short session). Race

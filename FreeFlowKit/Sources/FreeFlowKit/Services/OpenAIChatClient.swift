@@ -5,7 +5,7 @@ import Foundation
 /// Send a system prompt and user prompt to a chat model and return the
 /// assistant's reply as a plain string. The client performs a single
 /// non-streaming request and extracts the content from the first choice.
-public struct OpenAIChatClient: Sendable {
+public struct OpenAIChatClient: PolishChatClient {
 
     /// Errors thrown by the chat client.
     public enum ChatError: Error, LocalizedError {

@@ -34,6 +34,10 @@ final class SettingsController {
     /// The AppDelegate should use this to re-register the hotkey provider.
     var onHotkeyChanged: (() -> Void)?
 
+    /// Callback invoked when dictation mode changes (cloud ↔ local).
+    /// The AppDelegate should rebuild the pipeline with new providers.
+    var onDictationModeChanged: (() -> Void)?
+
     /// Task for streaming audio levels during mic preview.
     private var audioLevelTask: Task<Void, Never>?
 
@@ -108,6 +112,10 @@ final class SettingsController {
 
         bridge.onSetLanguage = { [weak self] code in
             self?.handleSetLanguage(code: code)
+        }
+
+        bridge.onSetDictationMode = { [weak self] mode in
+            self?.handleSetDictationMode(mode: mode)
         }
 
         bridge.onListMicrophones = { [weak self] in
@@ -311,6 +319,17 @@ final class SettingsController {
                 await pipeline.setLanguage(setting.languageCode)
             }
         }
+    }
+
+    // MARK: - Action: setDictationMode
+
+    private func handleSetDictationMode(mode: String) {
+        guard let newMode = DictationMode(rawValue: mode) else { return }
+        let oldMode = DictationMode.current
+        guard newMode != oldMode else { return }
+
+        DictationMode.current = newMode
+        onDictationModeChanged?()
     }
 
     // MARK: - Action: listMicrophones

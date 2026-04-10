@@ -78,6 +78,11 @@ final class OnboardingController {
 
         window?.loadBundledOnboarding()
         window?.present()
+
+        // Delay slightly so the web view has loaded before we push.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.bridge.pushOnboardingState()
+        }
     }
 
     /// Dismiss the onboarding window and clean up.
@@ -91,6 +96,10 @@ final class OnboardingController {
     // MARK: - Bridge action handlers
 
     private func setupBridgeHandlers() {
+        bridge.onSetDictationMode = { [weak self] mode in
+            self?.handleSetDictationMode(mode: mode)
+        }
+
         bridge.onStoreAPIKey = { [weak self] key in
             self?.handleStoreAPIKey(key: key)
         }
@@ -138,6 +147,11 @@ final class OnboardingController {
     }
 
     // MARK: - Action: storeAPIKey
+
+    private func handleSetDictationMode(mode: String) {
+        guard let newMode = DictationMode(rawValue: mode) else { return }
+        DictationMode.current = newMode
+    }
 
     private func handleStoreAPIKey(key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)

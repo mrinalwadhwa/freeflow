@@ -390,13 +390,13 @@
                 <div class="step-indicator-dot" data-dot="done"></div>
             </div>
 
-            <!-- Step 1: API key -->
+            <!-- Step 1: API key (cloud) or mode selection -->
             <section class="step hidden" data-step="api-key">
                 <div class="step-icon">&#128273;</div>
-                <h1>Connect to OpenAI</h1>
-                <p>FreeFlow uses OpenAI's transcription and chat APIs. Paste your API key to get started.</p>
+                <h1 id="api-key-title">Connect to OpenAI</h1>
+                <p id="api-key-subtitle">FreeFlow uses OpenAI's transcription and chat APIs. Paste your API key to get started.</p>
 
-                <div class="api-key-form">
+                <div class="api-key-form" id="api-key-form">
                     <input
                         id="api-key-input"
                         class="api-key-input"
@@ -411,10 +411,17 @@
                     <button id="api-key-save" class="btn btn-primary" type="button">Continue</button>
                 </div>
 
-                <p class="api-key-hint">
+                <p class="api-key-hint" id="api-key-hint-text">
                     Your key is stored in the macOS Keychain and never leaves this Mac.
                     Create one at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>.
                 </p>
+
+                <button id="use-local-btn" class="btn-link" type="button" style="display: none; margin-top: 0.5rem">
+                    Use on-device transcription instead
+                </button>
+                <button id="use-cloud-btn" class="btn-link" type="button" style="display: none; margin-top: 0.5rem">
+                    Use cloud transcription instead
+                </button>
             </section>
 
             <!-- Step 2: Accessibility -->
@@ -568,11 +575,57 @@
                     }
                 }
 
-                // --- Step 1: API key ---
+                // --- Step 1: API key / mode selection ---
 
                 var keyInput = document.getElementById("api-key-input");
                 var keySave = document.getElementById("api-key-save");
                 var keyError = document.getElementById("api-key-error");
+                var apiKeyForm = document.getElementById("api-key-form");
+                var apiKeyTitle = document.getElementById("api-key-title");
+                var apiKeySubtitle = document.getElementById("api-key-subtitle");
+                var apiKeyHint = document.getElementById("api-key-hint-text");
+                var useLocalBtn = document.getElementById("use-local-btn");
+                var useCloudBtn = document.getElementById("use-cloud-btn");
+                var isLocalMode = false;
+
+                // Detect macOS 26+ by checking if the native side tells us.
+                // The native bridge pushes localModeAvailable via onboardingState.
+                on("onboardingState", function (data) {
+                    if (data.localModeAvailable) {
+                        useLocalBtn.style.display = "";
+                    }
+                });
+
+                function showCloudForm() {
+                    isLocalMode = false;
+                    apiKeyTitle.textContent = "Connect to OpenAI";
+                    apiKeySubtitle.textContent = "FreeFlow uses OpenAI's transcription and chat APIs. Paste your API key to get started.";
+                    apiKeyForm.style.display = "";
+                    apiKeyHint.style.display = "";
+                    useLocalBtn.style.display = "";
+                    useCloudBtn.style.display = "none";
+                }
+
+                function showLocalForm() {
+                    isLocalMode = true;
+                    apiKeyTitle.textContent = "On-device transcription";
+                    apiKeySubtitle.textContent = "FreeFlow will use Apple's on-device speech recognition and intelligence. Nothing leaves your Mac.";
+                    apiKeyForm.style.display = "none";
+                    apiKeyHint.innerHTML = '<button id="local-continue" class="btn btn-primary" type="button">Continue</button>';
+                    useLocalBtn.style.display = "none";
+                    useCloudBtn.style.display = "";
+
+                    var localContinue = document.getElementById("local-continue");
+                    if (localContinue) {
+                        localContinue.addEventListener("click", function () {
+                            send("setDictationMode", { mode: "local" });
+                            show("accessibility");
+                        });
+                    }
+                }
+
+                useLocalBtn.addEventListener("click", showLocalForm);
+                useCloudBtn.addEventListener("click", showCloudForm);
 
                 function submitAPIKey() {
                     var value = (keyInput.value || "").trim();
@@ -583,6 +636,7 @@
                     keyError.textContent = "";
                     keySave.disabled = true;
                     keySave.textContent = "Saving…";
+                    send("setDictationMode", { mode: "cloud" });
                     send("storeAPIKey", { key: value });
                 }
 

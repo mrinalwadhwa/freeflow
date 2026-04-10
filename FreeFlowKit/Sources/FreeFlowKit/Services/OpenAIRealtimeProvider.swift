@@ -33,7 +33,7 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
     private let apiKeyProvider: @Sendable () -> String
     private let realtimeModel: String
     private let sttModel: String
-    private let polishChatClient: OpenAIChatClient?
+    private let polishChatClient: (any PolishChatClient)?
     private let polishModel: String
     private let chunkingStrategy: ChunkingStrategy
 
@@ -174,7 +174,7 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         apiKey: @autoclosure @escaping @Sendable () -> String,
         realtimeModel: String = "gpt-4o-realtime-preview",
         sttModel: String = "gpt-4o-mini-transcribe",
-        polishChatClient: OpenAIChatClient?,
+        polishChatClient: (any PolishChatClient)?,
         polishModel: String = "gpt-4.1-nano",
         chunkingStrategy: ChunkingStrategy = TimeAndSilenceChunkingStrategy()
     ) {

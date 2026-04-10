@@ -512,6 +512,21 @@
 
             <!-- Scrollable body -->
             <div class="settings-body">
+                <!-- Transcription mode -->
+                <div class="settings-section" id="dictation-mode-section" style="display: none">
+                    <div class="settings-section-label">Transcription</div>
+                    <div class="setting-row">
+                        <div class="setting-label-group">
+                            <div class="setting-label">Mode</div>
+                            <div class="setting-hint" id="dictation-mode-hint">Choose where speech is processed</div>
+                        </div>
+                        <select id="dictation-mode-select" class="setting-select setting-select-wide">
+                            <option value="cloud">Cloud (OpenAI)</option>
+                            <option value="local">On-Device</option>
+                        </select>
+                    </div>
+                </div>
+
                 <!-- Keyboard shortcuts -->
                 <div class="settings-section">
                     <div class="settings-section-label">Keyboard</div>
@@ -845,6 +860,20 @@
                         if (s.cancel) window._setShortcutLabel("cancel", s.cancel);
                     }
 
+                    // Dictation mode
+                    var modeSection = document.getElementById("dictation-mode-section");
+                    var modeSelect = document.getElementById("dictation-mode-select");
+                    if (modeSection && modeSelect) {
+                        if (data.localModeAvailable) {
+                            modeSection.style.display = "";
+                            if (data.dictationMode) {
+                                modeSelect.value = data.dictationMode;
+                            }
+                        } else {
+                            modeSection.style.display = "none";
+                        }
+                    }
+
                     // Language select — populate options if provided
                     if (data.languages && data.languages.length > 0) {
                         populateLanguages(data.languages, data.language);
@@ -958,6 +987,14 @@
                 // ----------------------------------------------------------------
 
                 function bindControls() {
+                    // Dictation mode select
+                    var modeSelect = document.getElementById("dictation-mode-select");
+                    if (modeSelect) {
+                        modeSelect.addEventListener("change", function () {
+                            bridge.send("setDictationMode", { mode: modeSelect.value });
+                        });
+                    }
+
                     // Sound toggle
                     var soundToggle = document.getElementById("sound-toggle");
                     if (soundToggle) {

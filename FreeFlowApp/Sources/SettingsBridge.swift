@@ -44,6 +44,7 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
     var onSelectMicrophone: ((_ id: UInt32) -> Void)?
     var onStartMicPreview: (() -> Void)?
     var onStopMicPreview: (() -> Void)?
+    var onSetDictationMode: ((_ mode: String) -> Void)?
     var onCloseSettings: (() -> Void)?
 
     // MARK: - WKScriptMessageHandler
@@ -104,6 +105,11 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
         case "stopMicPreview":
             onStopMicPreview?()
 
+        case "setDictationMode":
+            if let mode = data["mode"] as? String {
+                onSetDictationMode?(mode)
+            }
+
         case "closeSettings":
             onCloseSettings?()
 
@@ -156,7 +162,9 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
         soundFeedback: Bool,
         shortcuts: [String: String],
         language: String,
-        languages: [[String: String]]
+        languages: [[String: String]],
+        dictationMode: String = DictationMode.current.rawValue,
+        localModeAvailable: Bool = DictationMode.isLocalAvailable
     ) {
         pushEvent(
             name: "settingsState",
@@ -165,6 +173,8 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
                 "shortcuts": shortcuts,
                 "language": language,
                 "languages": languages,
+                "dictationMode": dictationMode,
+                "localModeAvailable": localModeAvailable,
             ]
         )
     }

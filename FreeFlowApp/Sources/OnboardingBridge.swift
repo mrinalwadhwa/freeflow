@@ -39,6 +39,7 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
 
     /// Handler closures for each bridge action. Set by OnboardingController
     /// to wire native services to web page requests.
+    var onSetDictationMode: ((_ mode: String) -> Void)?
     var onStoreAPIKey: ((_ key: String) -> Void)?
     var onCheckAccessibility: (() -> Void)?
     var onOpenAccessibilitySettings: (() -> Void)?
@@ -74,6 +75,11 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
         let data = body["data"] as? [String: Any] ?? [:]
 
         switch action {
+        case "setDictationMode":
+            if let mode = data["mode"] as? String {
+                onSetDictationMode?(mode)
+            }
+
         case "storeAPIKey":
             if let key = data["key"] as? String {
                 onStoreAPIKey?(key)
@@ -139,6 +145,13 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
                 Log.debug("[OnboardingBridge] pushEvent(\(name)) error: \(error)")
             }
         }
+    }
+
+    /// Push onboarding state with local mode availability.
+    func pushOnboardingState() {
+        pushEvent(
+            name: "onboardingState",
+            data: ["localModeAvailable": DictationMode.isLocalAvailable])
     }
 
     /// Push an apiKeyStoreResult event (success or error).

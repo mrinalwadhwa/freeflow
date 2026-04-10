@@ -13,7 +13,7 @@ public struct OpenAIDictationProvider: DictationProviding {
     private let apiKeyProvider: @Sendable () -> String
     private let model: String
     private let endpoint: URL
-    private let polishChatClient: OpenAIChatClient?
+    private let polishChatClient: (any PolishChatClient)?
     private let polishModel: String
     private let session: URLSession
 
@@ -24,7 +24,7 @@ public struct OpenAIDictationProvider: DictationProviding {
         apiKey: @autoclosure @escaping @Sendable () -> String,
         model: String = "gpt-4o-mini-transcribe",
         endpoint: URL = URL(string: "https://api.openai.com/v1/audio/transcriptions")!,
-        polishChatClient: OpenAIChatClient?,
+        polishChatClient: (any PolishChatClient)?,
         polishModel: String = PolishPipeline.polishModel,
         session: URLSession? = nil
     ) {

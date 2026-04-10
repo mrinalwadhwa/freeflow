@@ -173,7 +173,7 @@ struct HUDContentView: View {
             y: 1.0,
             anchor: .center
         )
-        .onChange(of: viewModel.visualState) { _, newState in
+        .onChange(of: viewModel.visualState) { newState in
             if newState == .processingBreathing {
                 withAnimation(
                     .easeInOut(duration: 0.7)

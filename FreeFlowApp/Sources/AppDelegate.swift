@@ -97,7 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and hotkey registration. Otherwise show the onboarding window so
     /// the user can enter one.
     private func determineLaunchFlow() {
-        if ServiceConfig.shared.isConfigured {
+        if DictationMode.current == .local && DictationMode.isLocalAvailable {
+            Log.debug("[AppDelegate] Local mode, checking permissions")
+            checkPermissions()
+        } else if ServiceConfig.shared.isConfigured {
             Log.debug("[AppDelegate] API key present, checking permissions")
             checkPermissions()
         } else {
@@ -228,15 +231,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioProvider.setSoundFeedbackProvider(soundFeedbackProvider)
         audioDeviceProvider.setAudioCaptureProvider(audioProvider)
 
-        let polishClient = OpenAIChatClient(
-            apiKey: ServiceConfig.shared.openAIAPIKey ?? "")
-        let streamingProvider = OpenAIRealtimeProvider(
-            apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
-            polishChatClient: polishClient)
-        let dictationProvider = OpenAIDictationProvider(
-            apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
-            polishChatClient: polishClient)
+        let language = LanguageSetting.current.languageCode
+        let dictationProvider: any DictationProviding
+        let streamingProvider: (any StreamingDictationProviding)?
+        let onSessionExpired: (@Sendable () -> Void)?
 
+        if DictationMode.current == .local, #available(macOS 26, *) {
+            let polisher = FoundationModelChatClient()
+            dictationProvider = SpeechAnalyzerDictationProvider(
+                polishChatClient: polisher, language: language)
+            streamingProvider = SpeechAnalyzerStreamingProvider(
+                polishChatClient: polisher, language: language)
+            onSessionExpired = nil
+        } else {
+            let polishClient = OpenAIChatClient(
+                apiKey: ServiceConfig.shared.openAIAPIKey ?? "")
+            dictationProvider = OpenAIDictationProvider(
+                apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
+                polishChatClient: polishClient)
+            streamingProvider = OpenAIRealtimeProvider(
+                apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
+                polishChatClient: polishClient)
+            onSessionExpired = { [weak self] in
+                Task { @MainActor in self?.resetAPIKey() }
+            }
+        }
+
+        let isLocal = DictationMode.current == .local
+        Log.debug("[AppDelegate] setupPipeline: isLocal=\(isLocal), mode=\(DictationMode.current.rawValue)")
         let newPipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
@@ -245,16 +267,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer,
             streamingProvider: streamingProvider,
-            onSessionExpired: { [weak self] in
-                Task { @MainActor in self?.resetAPIKey() }
-            },
-            micDiagnosticStore: micDiagnosticStore
+            onSessionExpired: onSessionExpired,
+            micDiagnosticStore: micDiagnosticStore,
+            localMode: isLocal
         )
         pipeline = newPipeline
 
         // Apply the persisted language setting.
         Task {
-            await newPipeline.setLanguage(LanguageSetting.current.languageCode)
+            await newPipeline.setLanguage(language)
         }
     }
 
@@ -328,6 +349,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onHotkeyChanged = { [weak self] in
             self?.reRegisterHotkey()
         }
+        controller.onDictationModeChanged = { [weak self] in
+            self?.rebuildPipeline()
+        }
         settingsController = controller
     }
 
@@ -340,6 +364,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func reRegisterHotkey() {
         hotkeyProvider.unregister()
         registerHotkey()
+    }
+
+    /// Rebuild the pipeline after dictation mode changes.
+    private func rebuildPipeline() {
+        Log.debug("[AppDelegate] Rebuilding pipeline for mode: \(DictationMode.current.rawValue)")
+
+        // Tear down the old pipeline and streaming provider before
+        // creating new ones to avoid stale references.
+        let oldPipeline = pipeline
+        hudController?.stop()
+        hudController = nil
+        Task {
+            await oldPipeline?.cancel()
+        }
+
+        setupPipeline()
+        setupHUD()
+        settingsController?.pipeline = pipeline
     }
 
     // MARK: - Permissions
