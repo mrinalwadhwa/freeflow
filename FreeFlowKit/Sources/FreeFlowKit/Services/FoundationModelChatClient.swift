@@ -24,13 +24,45 @@ public struct FoundationModelChatClient: PolishChatClient {
             throw FoundationModelError.unavailable(availability)
         }
 
+        // Use permissive guardrails since we're transforming the
+        // user's own dictated text, not generating new content. The
+        // default guardrails refuse to process inputs that contain
+        // words like "wrong" or "no" in certain combinations.
+        let llm = SystemLanguageModel(
+            guardrails: .permissiveContentTransformations)
         let session = LanguageModelSession(
-            model: .default,
+            model: llm,
             instructions: systemPrompt)
 
         let response = try await session.respond(to: userPrompt)
-        return response.content.trimmingCharacters(
+        let text = response.content.trimmingCharacters(
             in: .whitespacesAndNewlines)
+
+        // The on-device model sometimes returns preamble instead of
+        // cleaned text. Detect and return empty so the caller falls
+        // back to deterministic polish.
+        if Self.isRefusalOrPreamble(text) { return "" }
+        return text
+    }
+
+    /// Detect model responses that are preamble or meta-commentary
+    /// rather than cleaned transcript text.
+    static func isRefusalOrPreamble(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let markers = [
+            "i apologize", "i cannot", "i'm sorry", "i am sorry",
+            "i'm just an ai", "i am just an ai",
+            "sorry, but", "sorry but i",
+            "sure, here", "sure! here", "here is the",
+            "here's the", "here are the", "here is your",
+            "no problem", "okay, here", "of course,",
+            "no wait, i meant",
+            "sure, i can help",
+        ]
+        for marker in markers {
+            if lower.hasPrefix(marker) { return true }
+        }
+        return false
     }
 
     public enum FoundationModelError: Error, LocalizedError {

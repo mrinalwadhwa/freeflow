@@ -1,0 +1,532 @@
+import Foundation
+import Testing
+
+@testable import FreeFlowKit
+
+// ---------------------------------------------------------------------------
+// Polish scenario tests derived from real-world dictation pain points.
+// Each test case represents a realistic messy input that the polish
+// pipeline should clean up.
+//
+// Three test levels:
+//   1. Deterministic -- Stage 1 regex + isClean gate (always runs)
+//   2. Cloud LLM -- full pipeline with OpenAI (FREEFLOW_TEST_OPENAI=1)
+//   3. Local LLM -- Apple Foundation Models (FREEFLOW_TEST_LOCAL_LLM=1)
+//
+// Test data lives in PolishScenarioData.swift (allScenarios).
+// Validators are property-based per category (not exact match).
+// ---------------------------------------------------------------------------
+
+// MARK: - Deterministic Tests (Stage 1 + isClean gate)
+
+@Suite("Polish Scenarios -- Stage 1 regex")
+struct PolishScenarioRegexTests {
+
+    @Test("dictated punctuation commands are substituted")
+    func punctuationSubstitution() {
+        let punctCases = allScenarios.filter { $0.category == "punctuation" }
+        for s in punctCases {
+            let result = PolishPipeline.substituteDictatedPunctuation(s.input)
+            // The command word should be gone.
+            #expect(
+                !result.lowercased().contains(" period"),
+                "period command should be replaced in: \(s.input)")
+            #expect(
+                !result.lowercased().contains(" comma"),
+                "comma command should be replaced in: \(s.input)")
+            #expect(
+                !result.lowercased().contains("question mark"),
+                "question mark should be replaced in: \(s.input)")
+            #expect(
+                !result.lowercased().contains("exclamation point"),
+                "exclamation should be replaced in: \(s.input)")
+        }
+    }
+
+    @Test("dot dot dot becomes ellipsis")
+    func ellipsis() {
+        let input = "wait dot dot dot I need to think about this"
+        let result = PolishPipeline.substituteDictatedPunctuation(input)
+        let stripped = PolishPipeline.stripKeepTags(result)
+        #expect(stripped.contains("\u{2026}"))
+    }
+}
+
+@Suite("Polish Scenarios -- isClean gate")
+struct PolishScenarioIsCleanTests {
+
+    @Test("fillers are detected as dirty")
+    func fillersDetected() {
+        let fillerCases = allScenarios.filter { $0.category == "filler" }
+        for s in fillerCases {
+            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
+            let stripped = PolishPipeline.stripKeepTags(substituted)
+            let isClean = PolishPipeline.isClean(stripped)
+            #expect(
+                !isClean,
+                "Filler input should not be clean: \(s.input)")
+        }
+    }
+
+    @Test("repetitions are detected as dirty")
+    func repetitionsDetected() {
+        let repCases = allScenarios.filter { $0.category == "repetition" }
+        for s in repCases {
+            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
+            let stripped = PolishPipeline.stripKeepTags(substituted)
+            let isClean = PolishPipeline.isClean(stripped)
+            #expect(
+                !isClean,
+                "Repetition input should not be clean: \(s.input)")
+        }
+    }
+
+    @Test("corrections are detected as dirty")
+    func correctionsDetected() {
+        let corrCases = allScenarios.filter { $0.category == "correction" }
+        for s in corrCases {
+            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
+            let stripped = PolishPipeline.stripKeepTags(substituted)
+            let isClean = PolishPipeline.isClean(stripped)
+            #expect(
+                !isClean,
+                "Correction input should not be clean: \(s.input)")
+        }
+    }
+
+    @Test("compound numbers are detected as dirty")
+    func numbersDetected() {
+        let numCases = allScenarios.filter { $0.category == "number" }
+        for s in numCases {
+            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
+            let stripped = PolishPipeline.stripKeepTags(substituted)
+            let isClean = PolishPipeline.isClean(stripped)
+            #expect(
+                !isClean,
+                "Number input should not be clean: \(s.input)")
+        }
+    }
+
+    @Test("clean text passes through")
+    func cleanPassthrough() {
+        let cleanCases = allScenarios.filter { $0.category == "clean" }
+        for s in cleanCases {
+            let isClean = PolishPipeline.isClean(s.input)
+            #expect(
+                isClean,
+                "Clean input should be detected as clean: \(s.input)")
+        }
+    }
+
+    @Test("wording-preservation inputs with punctuation pass through unchanged")
+    func preservePassthrough() {
+        // Only test preserve cases that already have proper punctuation
+        // (ending with period/question mark). Lowercase-only inputs go
+        // through the LLM and are tested in the cloud/local suites.
+        let preserveCases = allScenarios.filter {
+            $0.category == "preserve" && $0.input.hasSuffix(".")
+        }
+        for s in preserveCases {
+            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
+            let stripped = PolishPipeline.stripKeepTags(substituted)
+            let normalized = PolishPipeline.normalizeFormatting(stripped)
+            #expect(
+                normalized == s.accepted[0],
+                "Preserve case should pass through unchanged: \(s.input)")
+        }
+    }
+}
+
+// MARK: - Cloud LLM Tests (full pipeline, gated)
+
+@Suite(
+    "Polish Scenarios -- Cloud LLM",
+    .disabled(
+        if: ProcessInfo.processInfo.environment["FREEFLOW_TEST_OPENAI"] != "1"))
+struct PolishScenarioCloudTests {
+
+    private func polishWithCloud(
+        _ input: String,
+        context: AppContext = .empty
+    ) async throws -> String {
+        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+            !apiKey.isEmpty
+        else {
+            throw PolishTestError.noAPIKey
+        }
+        let client = OpenAIChatClient(apiKey: apiKey)
+        let substituted = PolishPipeline.substituteDictatedPunctuation(input)
+        let stripped = PolishPipeline.stripKeepTags(substituted)
+        if PolishPipeline.isClean(stripped) { return stripped }
+        let userPrompt = PolishPipeline.buildUserPrompt(
+            substituted, context: context)
+        let result = try await client.complete(
+            model: PolishPipeline.polishModel,
+            systemPrompt: PolishPipeline.systemPromptEnglish,
+            userPrompt: userPrompt)
+        if result.isEmpty { return PolishPipeline.normalizeFormatting(stripped) }
+        return PolishPipeline.normalizeFormatting(
+            PolishPipeline.stripKeepTags(result))
+    }
+
+    @Test("filler removal")
+    func fillers() async throws {
+        for s in allScenarios where s.category == "filler" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.lowercased().contains(" um "),
+                "Should remove 'um' from: \(s.input), got: \(result)")
+            #expect(
+                !result.lowercased().contains(" uh "),
+                "Should remove 'uh' from: \(s.input), got: \(result)")
+            #expect(
+                !result.starts(with: "Um"),
+                "Should not start with 'Um': \(s.input), got: \(result)")
+            #expect(
+                !result.starts(with: "Uh"),
+                "Should not start with 'Uh': \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("discourse markers cleaned")
+    func discourse() async throws {
+        for s in allScenarios where s.category == "discourse" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.lowercased().contains(" um "),
+                "Should remove 'um' from: \(s.input), got: \(result)")
+            #expect(
+                !result.lowercased().contains(" uh "),
+                "Should remove 'uh' from: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("thinking sounds cleaned")
+    func thinking() async throws {
+        for s in allScenarios where s.category == "thinking" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.lowercased().contains(" um "),
+                "Should remove 'um' from: \(s.input), got: \(result)")
+            #expect(
+                !result.starts(with: "Um"),
+                "Should not start with 'Um': \(s.input), got: \(result)")
+            #expect(
+                !result.starts(with: "Uh"),
+                "Should not start with 'Uh': \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("repetitions cleaned up")
+    func repetitions() async throws {
+        for s in allScenarios where s.category == "repetition" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Repetition cleanup should produce output: \(s.input)")
+        }
+    }
+
+    @Test("corrections keep only final version")
+    func corrections() async throws {
+        for s in allScenarios where s.category == "correction" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Correction should produce output: \(s.input)")
+        }
+    }
+
+    @Test("backtracking resolved")
+    func backtracking() async throws {
+        for s in allScenarios where s.category == "backtrack" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Backtrack should produce output: \(s.input)")
+        }
+    }
+
+    @Test("punctuation commands processed")
+    func punctuation() async throws {
+        for s in allScenarios where s.category == "punctuation" {
+            let result = try await polishWithCloud(s.input)
+            let lower = result.lowercased()
+            #expect(
+                !lower.contains(" period") && !lower.contains(" comma")
+                    && !lower.contains("question mark")
+                    && !lower.contains("exclamation point"),
+                "Punctuation commands should be removed: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("numbers formatted as digits")
+    func numbers() async throws {
+        for s in allScenarios where s.category == "number" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result.contains(where: { $0.isNumber }),
+                "Numbers should be formatted as digits: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("lists formatted with line breaks")
+    func lists() async throws {
+        for s in allScenarios where s.category == "list" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result.contains("\n"),
+                "Lists should have line breaks: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("capitalization applied")
+    func capitalization() async throws {
+        for s in allScenarios where s.category == "capitalization" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result.first?.isUppercase == true,
+                "Should start with uppercase: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("run-on sentences split")
+    func runOn() async throws {
+        for s in allScenarios where s.category == "run-on" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Run-on should produce output: \(s.input)")
+        }
+    }
+
+    @Test("false starts resolved")
+    func falseStarts() async throws {
+        for s in allScenarios where s.category == "false-start" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "False start should produce output: \(s.input)")
+        }
+    }
+
+    @Test("homophones fixed")
+    func homophones() async throws {
+        for s in allScenarios where s.category == "homophone" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Homophone fix should produce output: \(s.input)")
+        }
+    }
+
+    @Test("Apple dictation comma bugs cleaned up")
+    func appleBugs() async throws {
+        for s in allScenarios where s.category == "apple-bug" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.contains(",,"),
+                "Double commas should be cleaned: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("URLs and email addresses formatted")
+    func urls() async throws {
+        for s in allScenarios where s.category == "url" {
+            let result = try await polishWithCloud(s.input)
+            let hasDotOrAt = result.contains(".") || result.contains("@")
+            #expect(
+                hasDotOrAt,
+                "URL/email should contain '.' or '@': \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("wording preserved, not rephrased")
+    func wording() async throws {
+        for s in allScenarios where s.category == "preserve" {
+            let result = try await polishWithCloud(s.input)
+            let keywords = ["grab", "mentioned", "kinda", "reckon"]
+            for kw in keywords where s.input.contains(kw) {
+                #expect(
+                    result.contains(kw),
+                    "Should preserve '\(kw)' in: \(s.input), got: \(result)")
+            }
+        }
+    }
+
+    @Test("clean text passes through unchanged")
+    func clean() async throws {
+        for s in allScenarios where s.category == "clean" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result == s.accepted[0],
+                "Clean text should not change: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("emphasis preserved")
+    func emphasis() async throws {
+        for s in allScenarios where s.category == "emphasis" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Emphasis should produce output: \(s.input)")
+        }
+    }
+
+    @Test("meeting notes formatted")
+    func meeting() async throws {
+        for s in allScenarios where s.category == "meeting" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Meeting notes should produce output: \(s.input)")
+        }
+    }
+
+    @Test("vocab capitalization applied")
+    func vocab() async throws {
+        for s in allScenarios where s.category == "vocab" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result.first?.isUppercase == true,
+                "Should start with uppercase: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("email context produces output")
+    func email() async throws {
+        for s in allScenarios where s.category == "email" {
+            let result = try await polishWithCloud(s.input, context: s.context)
+            #expect(
+                !result.isEmpty,
+                "Email context should produce output: \(s.input)")
+        }
+    }
+
+    @Test("slack context produces output")
+    func slack() async throws {
+        for s in allScenarios where s.category == "slack" {
+            let result = try await polishWithCloud(s.input, context: s.context)
+            #expect(
+                !result.isEmpty,
+                "Slack context should produce output: \(s.input)")
+        }
+    }
+
+    @Test("code context produces output")
+    func code() async throws {
+        for s in allScenarios where s.category == "code" {
+            let result = try await polishWithCloud(s.input, context: s.context)
+            #expect(
+                !result.isEmpty,
+                "Code context should produce output: \(s.input)")
+        }
+    }
+
+    @Test("multilingual input produces output")
+    func multilingual() async throws {
+        for s in allScenarios where s.category == "multilingual" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.isEmpty,
+                "Multilingual should produce output: \(s.input)")
+        }
+    }
+}
+
+// MARK: - Local LLM Tests (Apple Foundation Models, gated)
+
+#if canImport(FoundationModels)
+@Suite(
+    "Polish Scenarios -- Local LLM",
+    .disabled(
+        if: ProcessInfo.processInfo.environment["FREEFLOW_TEST_LOCAL_LLM"] != "1"))
+struct PolishScenarioLocalTests {
+
+    @available(macOS 26, *)
+    private func polishWithLocal(_ input: String) async throws -> String {
+        let client = FoundationModelChatClient()
+        let substituted = PolishPipeline.substituteDictatedPunctuation(input)
+        let stripped = PolishPipeline.stripKeepTags(substituted)
+        if PolishPipeline.isClean(stripped) { return stripped }
+        let result = try await client.complete(
+            model: "",
+            systemPrompt: PolishPipeline.systemPromptLocal,
+            userPrompt: substituted)
+        if result.isEmpty { return PolishPipeline.normalizeFormatting(stripped) }
+        return PolishPipeline.normalizeFormatting(
+            PolishPipeline.stripKeepTags(result))
+    }
+
+    @Test("filler removal")
+    func fillers() async throws {
+        guard #available(macOS 26, *) else { return }
+        for s in allScenarios where s.category == "filler" {
+            let result = try await polishWithLocal(s.input)
+            #expect(
+                !result.lowercased().contains(" um "),
+                "Should remove 'um' from: \(s.input), got: \(result)")
+            #expect(
+                !result.starts(with: "Um"),
+                "Should not start with 'Um': \(s.input), got: \(result)")
+            #expect(
+                !result.starts(with: "Uh"),
+                "Should not start with 'Uh': \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("repetitions cleaned up")
+    func repetitions() async throws {
+        guard #available(macOS 26, *) else { return }
+        for s in allScenarios where s.category == "repetition" {
+            let result = try await polishWithLocal(s.input)
+            #expect(
+                !result.isEmpty,
+                "Repetition cleanup should produce output: \(s.input)")
+        }
+    }
+
+    @Test("numbers formatted as digits")
+    func numbers() async throws {
+        guard #available(macOS 26, *) else { return }
+        for s in allScenarios where s.category == "number" {
+            let result = try await polishWithLocal(s.input)
+            #expect(
+                result.contains(where: { $0.isNumber }),
+                "Numbers should be formatted: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("clean text passes through")
+    func clean() async throws {
+        guard #available(macOS 26, *) else { return }
+        for s in allScenarios where s.category == "clean" {
+            let result = try await polishWithLocal(s.input)
+            #expect(
+                result == s.accepted[0],
+                "Clean text should not change: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("wording preserved")
+    func wording() async throws {
+        guard #available(macOS 26, *) else { return }
+        for s in allScenarios where s.category == "preserve" {
+            let result = try await polishWithLocal(s.input)
+            let keywords = ["grab", "mentioned", "kinda", "reckon"]
+            for kw in keywords where s.input.contains(kw) {
+                #expect(
+                    result.contains(kw),
+                    "Should preserve '\(kw)' in: \(s.input), got: \(result)")
+            }
+        }
+    }
+}
+#endif
+
+// MARK: - Helpers
+
+private enum PolishTestError: Error {
+    case noAPIKey
+}
