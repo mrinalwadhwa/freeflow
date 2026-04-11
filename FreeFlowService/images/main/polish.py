@@ -49,6 +49,9 @@ def _load_prompt_file(filename: str) -> str:
 
 SYSTEM_PROMPT = _load_prompt_file("polish_prompt.txt")
 SYSTEM_PROMPT_MINIMAL = _load_prompt_file("polish_prompt_minimal.txt")
+SYSTEM_PROMPT_HI = _load_prompt_file("polish_prompt_hi.txt")
+SYSTEM_PROMPT_KN = _load_prompt_file("polish_prompt_kn.txt")
+SYSTEM_PROMPT_TA = _load_prompt_file("polish_prompt_ta.txt")
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +378,20 @@ def _is_english(language: Optional[str]) -> bool:
     return language.lower().startswith("en")
 
 
+def _get_non_english_prompt(language: Optional[str]) -> str:
+    """Return the correct system prompt for a non-English language."""
+    if not language:
+        return SYSTEM_PROMPT_MINIMAL
+    lang = language.lower()
+    if lang.startswith("hi"):
+        return SYSTEM_PROMPT_HI
+    if lang.startswith("kn"):
+        return SYSTEM_PROMPT_KN
+    if lang.startswith("ta"):
+        return SYSTEM_PROMPT_TA
+    return SYSTEM_PROMPT_MINIMAL
+
+
 async def polish_text(
     raw_text: str,
     context: AppContext,
@@ -449,8 +466,9 @@ async def _polish_minimal(
 
     llm = Model(POLISH_MODEL)
     user_prompt = _build_user_prompt(text, context, language=language)
+    system_prompt = _get_non_english_prompt(language)
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_MINIMAL},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
 

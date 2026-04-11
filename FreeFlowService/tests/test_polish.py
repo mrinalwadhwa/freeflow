@@ -1059,6 +1059,115 @@ TESTS: list[TestCase] = [
             ends_with_punctuation,
         ],
     ),
+    # ----- Indic Languages -----
+    # Hindi Tests
+    TestCase(
+        name="hi filler removal",
+        category="indic-hi",
+        language="hi",
+        input="मुझे मतलब कल दिल्ली जाना है",
+        validators=[
+            not_contains("मतलब"),
+            contains("कल दिल्ली जाना है"),
+            is_single_line,
+        ],
+    ),
+    TestCase(
+        name="hi mid-sentence correction",
+        category="indic-hi",
+        language="hi",
+        input="मीटिंग तीन बजे है नहीं रुकिए चार बजे है",
+        validators=[
+            not_contains("तीन बजे"),
+            not_contains("नहीं रुकिए"),
+            contains_pattern(r'चार बजे|4 बजे', 'चार बजे or 4 बजे'),
+            is_single_line,
+        ],
+    ),
+    TestCase(
+        name="hi dictated punctuation",
+        category="indic-hi",
+        language="hi",
+        input="मैं आ रहा हूँ पूर्ण विराम",
+        validators=[
+            not_contains("पूर्ण विराम"),
+            contains("।"),
+            is_single_line,
+        ],
+    ),
+    # Kannada Tests
+    TestCase(
+        name="kn filler removal",
+        category="indic-kn",
+        language="kn",
+        input="ನಾನು ಅಂದ್ರೆ ನಾಳೆ ಹೋಗಬೇಕು ಫುಲ್ ಸ್ಟಾಪ್",
+        validators=[
+            not_contains("ಅಂದ್ರೆ"),
+            not_contains("ಫುಲ್ ಸ್ಟಾಪ್"),
+            contains("ನಾಳೆ ಹೋಗಬೇಕು"),
+            is_single_line,
+        ],
+    ),
+    TestCase(
+        name="kn mid-sentence correction",
+        category="indic-kn",
+        language="kn",
+        input="ನಾನು ಬೆಂಗಳೂರಿಗೆ ಕ್ಷಮಿಸಿ ಮೈಸೂರಿಗೆ ಹೋಗುತ್ತಿದ್ದೇನೆ",
+        validators=[
+            contains("ಮೈಸೂರಿಗೆ"),
+            not_contains("ಬೆಂಗಳೂರಿಗೆ"),
+            not_contains("ಕ್ಷಮಿಸಿ"),
+        ],
+    ),
+    TestCase(
+        name="kn numbered list",
+        category="indic-kn",
+        language="kn",
+        input="ನಾವು ಮೂರು ಕೆಲಸ ಮಾಡಬೇಕು ಮೊದಲನೆಯದು ಕೋಡ್ ಬರೆಯುವುದು ಎರಡನೆಯದು ಟೆಸ್ಟ್ ಮಾಡುವುದು ಮೂರನೆಯದು ಡಿಪ್ಲಾಯ್ ಮಾಡುವುದು",
+        validators=[
+            has_numbered_list(3),
+            contains("ಕೋಡ್"),
+            contains("ಟೆಸ್ಟ್"),
+            contains("ಡಿಪ್ಲಾಯ್"),
+        ],
+    ),
+    # Tamil Tests
+    TestCase(
+        name="ta filler removal",
+        category="indic-ta",
+        language="ta",
+        input="நான் அதாவது நாளை சென்னை செல்ல வேண்டும்",
+        validators=[
+            not_contains("அதாவது"),
+            contains("சென்னை செல்ல வேண்டும்"),
+            is_single_line,
+        ],
+    ),
+    TestCase(
+        name="ta punctuation and rupees",
+        category="indic-ta",
+        language="ta",
+        input="இதன் விலை நூறு ரூபாய் முற்றுப்புள்ளி",
+        validators=[
+            not_contains("நூறு ரூபாய்"),
+            not_contains("முற்றுப்புள்ளி"),
+            contains("₹100"),
+            contains("."),
+            is_single_line,
+        ],
+    ),
+    TestCase(
+        name="ta mid-sentence correction",
+        category="indic-ta",
+        language="ta",
+        input="மீட்டிங் 3 மணிக்கு முடிவடையும் ஒரு நிமிஷம் 4 மணிக்கு முடிவடையும்",
+        validators=[
+            contains("4"),
+            not_contains("3"),
+            not_contains("ஒரு நிமிஷம்"),
+            is_single_line,
+        ],
+    ),
 ]
 
 
