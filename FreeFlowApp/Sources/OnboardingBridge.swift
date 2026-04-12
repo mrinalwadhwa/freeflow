@@ -154,6 +154,63 @@ final class OnboardingBridge: NSObject, WKScriptMessageHandler {
             data: ["localModeAvailable": DictationMode.isLocalAvailable])
     }
 
+    /// Render SF Symbols to PNG data URIs and push to the web view.
+    func pushStepIcons() {
+        let symbols = [
+            "key.viewfinder",
+            "accessibility",
+            "mic.circle",
+            "mic.and.signal.meter",
+            "text.redaction",
+        ]
+        let color = NSColor(red: 0x29 / 255.0, green: 0x29 / 255.0,
+                            blue: 0x29 / 255.0, alpha: 1.0)
+        let config = NSImage.SymbolConfiguration(
+            pointSize: 28, weight: .regular
+        ).applying(
+            .init(paletteColors: [color])
+        )
+
+        var icons: [String: String] = [:]
+        for name in symbols {
+            guard let image = NSImage(
+                systemSymbolName: name,
+                accessibilityDescription: nil
+            )?.withSymbolConfiguration(config) else { continue }
+
+            // Render at 2x for Retina.
+            let scale: CGFloat = 2
+            let size = image.size
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size.width * scale),
+                pixelsHigh: Int(size.height * scale),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+            guard let rep else { continue }
+            rep.size = size
+
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            image.draw(
+                in: NSRect(origin: .zero, size: size),
+                from: .zero, operation: .sourceOver, fraction: 1.0
+            )
+            NSGraphicsContext.restoreGraphicsState()
+
+            if let png = rep.representation(using: .png, properties: [:]) {
+                icons[name] = png.base64EncodedString()
+            }
+        }
+        pushEvent(name: "stepIcons", data: icons)
+    }
+
     /// Push an apiKeyStoreResult event (success or error).
     func pushAPIKeyStoreResult(error: String? = nil) {
         if let error {

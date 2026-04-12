@@ -70,11 +70,12 @@ final class OnboardingController {
 
     /// Open the onboarding window and load the bundled onboarding page.
     func showWindow() {
-        if window == nil {
-            let win = OnboardingWindow(bridge: bridge)
-            bridge.webView = win.webView
-            window = win
-        }
+        // Always create a fresh window. The previous window's bridge
+        // handler is removed on close/dismiss, so reusing it would
+        // leave the JS bridge non-functional.
+        let win = OnboardingWindow(bridge: bridge)
+        bridge.webView = win.webView
+        window = win
 
         window?.loadBundledOnboarding()
         window?.present()
@@ -82,6 +83,7 @@ final class OnboardingController {
         // Delay slightly so the web view has loaded before we push.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.bridge.pushOnboardingState()
+            self?.bridge.pushStepIcons()
         }
     }
 

@@ -65,9 +65,15 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
     public func startStreaming(
         context: AppContext, language: String?, micProximity: MicProximity
     ) async throws {
+        // Use the granular initializer (no preset) so each result
+        // is an additive chunk rather than a progressive replacement.
+        // This lets us simply concatenate results, avoiding fragile
+        // sentence-boundary heuristics.
         let transcriber = SpeechTranscriber(
             locale: locale,
-            preset: .progressiveTranscription)
+            transcriptionOptions: [],
+            reportingOptions: [],
+            attributeOptions: [])
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
 
@@ -89,22 +95,23 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
         // Start the analyzer with the input stream.
         try await analyzer.start(inputSequence: stream)
 
-        // Spawn a reader that collects progressive results.
-        // Progressive transcription replaces earlier text with
-        // refined versions, so we always keep the latest result.
-        // Polishing happens once at finishStreaming, not on each
-        // partial — the Apple model is too slow and unreliable
-        // for per-chunk LLM calls during streaming.
+        // Spawn a reader that accumulates transcription results.
+        // Without .progressiveTranscription, each result is a new
+        // chunk of text — just concatenate them all.
         let reader = Task { [weak self] in
             guard let self else { return }
+            var transcript = ""
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
                     if text.isEmpty { continue }
 
+                    transcript += text
+
+                    let trimmed = transcript.trimmingCharacters(
+                        in: .whitespacesAndNewlines)
                     self.lock.withLock {
-                        self.collectedText = text
+                        self.collectedText = trimmed
                     }
                 }
             } catch {

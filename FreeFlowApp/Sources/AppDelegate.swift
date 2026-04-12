@@ -133,6 +133,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.soundFeedbackProvider = soundFeedbackProvider
 
         controller.onRegisterHotkey = { [weak self] in
+            // Rebuild the pipeline so it picks up the API key or
+            // dictation mode the user just configured in onboarding.
+            self?.rebuildPipeline()
             self?.registerHotkey()
             self?.startOnboardingDictationObserver()
         }
@@ -144,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.onboardingController = nil
             self.menuBarController?.setOnboardingMode(false)
             self.menuBarController?.onReopenOnboarding = nil
+            self.rebuildPipeline()
             self.checkPermissions()
         }
 
@@ -325,6 +329,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Clear the stored API key and return to onboarding.
     private func resetAPIKey() {
+        // If onboarding is already showing, don't tear down and reload.
+        // This avoids resetting the page when the pipeline gets a 401
+        // because it was created before the user entered a key.
+        if onboardingController != nil {
+            Log.debug("[AppDelegate] Reset API key requested (ignored — onboarding active)")
+            return
+        }
+
         Log.debug("[AppDelegate] Reset API key requested")
 
         hotkeyProvider.unregister()
