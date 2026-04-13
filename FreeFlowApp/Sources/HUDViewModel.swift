@@ -24,6 +24,7 @@ final class HUDViewModel: ObservableObject {
 
     @Published private(set) var visualState: HUDVisualState = .minimized
     @Published private(set) var isHovering: Bool = false
+    @Published var isPrivateMode: Bool = false
 
     /// Current audio input level (0.0 to 1.0) for driving the waveform bars.
     /// Smoothed to avoid jittery animation. Reset to 0 when not recording.
@@ -31,6 +32,9 @@ final class HUDViewModel: ObservableObject {
 
     /// The active microphone name to show in the callout, or nil when hidden.
     @Published private(set) var micCalloutName: String?
+
+    /// An in-app message to display above the pill, or nil when hidden.
+    @Published private(set) var inAppMessage: InAppMessage?
 
     // MARK: - Action closures (set by HUDController)
 
@@ -49,6 +53,12 @@ final class HUDViewModel: ObservableObject {
     /// Called when the user taps Retry in the dictation failed state.
     var onRetryDictation: (() -> Void)?
 
+    /// Called when the user taps the in-app message body.
+    var onMessageTapped: ((InAppMessage) -> Void)?
+
+    /// Called when the user dismisses the in-app message via X.
+    var onMessageDismissed: ((InAppMessage) -> Void)?
+
     // MARK: - Configuration
 
     let shortcuts: ShortcutConfiguration
@@ -64,6 +74,16 @@ final class HUDViewModel: ObservableObject {
     /// Whether the mic callout should show on the next recording transition.
     /// Set to true after a mic switch via the menu, reset after showing.
     private(set) var showMicCalloutOnNextRecording: Bool = false
+
+    // MARK: - In-app message
+
+    private var messageService: InAppMessageService?
+    private var hasShownMessageToday: Bool = false
+
+    /// Set the message service for fetching in-app announcements.
+    func setMessageService(_ service: InAppMessageService?) {
+        self.messageService = service
+    }
 
     // MARK: - Pipeline references
 
@@ -137,6 +157,7 @@ final class HUDViewModel: ObservableObject {
         pipelineState = .idle
         breathingFired = false
         slowProcessingFired = false
+        inAppMessage = nil
         micCalloutName = nil
         visualState = .minimized
     }
@@ -245,6 +266,7 @@ final class HUDViewModel: ObservableObject {
             // of lingering in the processing state.
             stopAudioLevelObservation()
             visualState = .minimized
+            showInAppMessageIfNeeded()
 
         case .injectionFailed:
             recalculate()
@@ -335,6 +357,35 @@ final class HUDViewModel: ObservableObject {
         case .dictationFailed:
             return .dictationFailed
         }
+    }
+
+    // MARK: - In-app message display
+
+    /// Show an in-app message after the first successful dictation of the day.
+    /// In test mode, shows on every dictation. The message stays visible
+    /// until the user taps the action or dismiss.
+    private func showInAppMessageIfNeeded() {
+        let testMode = messageService?.isTestMode ?? false
+        guard testMode || !hasShownMessageToday else { return }
+        guard let message = messageService?.messageToShow() else { return }
+
+        hasShownMessageToday = true
+        messageService?.markShownToday()
+        inAppMessage = message
+    }
+
+    /// Dismiss the in-app message when the user taps the action.
+    func tapInAppMessage() {
+        guard let message = inAppMessage else { return }
+        inAppMessage = nil
+        onMessageTapped?(message)
+    }
+
+    /// Dismiss the in-app message permanently when the user taps Dismiss.
+    func dismissInAppMessage() {
+        guard let message = inAppMessage else { return }
+        inAppMessage = nil
+        onMessageDismissed?(message)
     }
 
     // MARK: - Mic callout

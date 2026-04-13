@@ -105,4 +105,11 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         keyCode: 53,
         label: "Escape"
     )
+
+    /// Default private mode shortcut: ⌃⌥P (Control+Option+P, key code 35).
+    public static let defaultPrivateMode = ShortcutBinding(
+        modifierFlags: controlFlag | optionFlag,
+        keyCode: 35,
+        label: "⌃⌥P"
+    )
 }

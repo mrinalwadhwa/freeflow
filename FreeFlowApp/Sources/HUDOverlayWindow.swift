@@ -25,7 +25,7 @@ final class HUDOverlayWindow: NSPanel {
     /// The window is sized large enough to contain the pill at any state
     /// plus overlays (tooltip, mic callout) above it without clipping.
     private static let fixedWidth: CGFloat = 400
-    private static let fixedHeight: CGFloat = 120
+    private static let fixedHeight: CGFloat = 240
 
     /// Dimensions of the minimized capsule rendered by SwiftUI.
     private static let minimizedCapsuleWidth: CGFloat = 46
@@ -33,6 +33,9 @@ final class HUDOverlayWindow: NSPanel {
 
     /// Extra height added when the mic callout tooltip is visible above the pill.
     private static let micCalloutExtraHeight: CGFloat = 30
+
+    /// Extra height added when the in-app message tooltip is visible above the pill.
+    private static let messageExtraHeight: CGFloat = 0
 
     /// Distance from the bottom of the visible screen frame to the bottom
     /// of the window. The minimized capsule sits at the bottom of the
@@ -100,7 +103,12 @@ final class HUDOverlayWindow: NSPanel {
         // loop and global click monitor. In active expanded states
         // with buttons (listening, processing), the window accepts
         // mouse events directly.
-        if state == .minimized || state == .ready || state == .noTarget
+        let hasMessage = viewModel.inAppMessage != nil
+        if hasMessage {
+            // Accept mouse events when the message tooltip is visible
+            // so the dismiss button and tap gesture receive clicks.
+            ignoresMouseEvents = false
+        } else if state == .minimized || state == .ready || state == .noTarget
             || state == .processingCollapsing
         {
             ignoresMouseEvents = true
@@ -229,9 +237,13 @@ final class HUDOverlayWindow: NSPanel {
             viewModel.micCalloutName != nil
             ? Self.micCalloutExtraHeight : 0
 
+        let messageExtra: CGFloat =
+            viewModel.inAppMessage != nil
+            ? Self.messageExtraHeight : 0
+
         return NSSize(
             width: Self.fixedWidth,
-            height: Self.fixedHeight + calloutExtra
+            height: Self.fixedHeight + calloutExtra + messageExtra
         )
     }
 

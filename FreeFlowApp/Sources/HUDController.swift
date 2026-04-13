@@ -13,13 +13,14 @@ import FreeFlowKit
 final class HUDController {
 
     private var hudWindow: HUDOverlayWindow?
-    private let viewModel: HUDViewModel
+    let viewModel: HUDViewModel
 
     private weak var coordinator: RecordingCoordinator?
     private weak var pipeline: DictationPipeline?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
     private var transcriptBuffer: TranscriptBuffer?
     private var textInjector: (any TextInjecting)?
+    private var messageService: InAppMessageService?
 
     private var visualStateObservation: Task<Void, Never>?
     private var localEscapeMonitor: Any?
@@ -54,13 +55,16 @@ final class HUDController {
         audioDeviceProvider: (any AudioDeviceProviding)? = nil,
         audioProvider: (any AudioProviding)? = nil,
         transcriptBuffer: TranscriptBuffer? = nil,
-        textInjector: (any TextInjecting)? = nil
+        textInjector: (any TextInjecting)? = nil,
+        messageService: InAppMessageService? = nil
     ) {
         self.coordinator = coordinator
         self.pipeline = pipeline
         self.audioDeviceProvider = audioDeviceProvider
         self.transcriptBuffer = transcriptBuffer
         self.textInjector = textInjector
+        self.messageService = messageService
+        viewModel.setMessageService(messageService)
 
         // Wire audio provider for live level metering.
         viewModel.setAudioProvider(audioProvider)
@@ -90,6 +94,7 @@ final class HUDController {
             var previousState: HUDVisualState?
             var previousScreenFrame: NSRect?
             var wasHovering = false
+            var previousMessageID: String?
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 16_000_000)  // ~60fps
                 guard !Task.isCancelled else { break }
@@ -119,10 +124,14 @@ final class HUDController {
                 }
 
                 let current = self.viewModel.visualState
+                let currentMessageID = self.viewModel.inAppMessage?.id
+                let messageChanged = currentMessageID != previousMessageID
+                previousMessageID = currentMessageID
+
                 if screenChanged {
                     self.hudWindow?.repositionToCurrentScreen()
                 }
-                if current != previousState {
+                if current != previousState || messageChanged {
                     previousState = current
                     self.hudWindow?.animateToCurrentState()
                 }
@@ -229,6 +238,15 @@ final class HUDController {
         }
         viewModel.onRetryDictation = { [weak self] in
             self?.retryDictation()
+        }
+        viewModel.onMessageTapped = { [weak self] message in
+            if let urlString = message.url, let url = URL(string: urlString) {
+                NSWorkspace.shared.open(url)
+            }
+            self?.messageService?.markDismissed(message.id)
+        }
+        viewModel.onMessageDismissed = { [weak self] message in
+            self?.messageService?.markDismissed(message.id)
         }
     }
 

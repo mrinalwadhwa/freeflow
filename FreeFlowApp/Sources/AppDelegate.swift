@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let keychain = KeychainService()
     private var updaterService: UpdaterService?
     private let micDiagnosticStore = MicDiagnosticStore()
+    private var inAppMessageService: InAppMessageService?
 
     // MARK: - Controllers
 
@@ -28,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionController: PermissionController?
     private var onboardingController: OnboardingController?
     private var settingsController: SettingsController?
+    private var privateModeMonitor: Any?
 
     // MARK: - Lifecycle
 
@@ -36,8 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         setupPipeline()
         setupUpdater()
+        setupInAppMessages()
         setupSettings()
         setupMenuBarState()
+        setupPrivateModeShortcut()
         determineLaunchFlow()
     }
 
@@ -211,6 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updaterService = UpdaterService()
     }
 
+    // MARK: - In-App Messages
+
+    private func setupInAppMessages() {
+        let service = InAppMessageService()
+        inAppMessageService = service
+        Task {
+            await service.fetch()
+        }
+    }
+
     // MARK: - Menu Bar
 
     private func setupMenuBar() {
@@ -292,11 +306,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pipeline: pipeline,
             audioProvider: audioProvider,
             transcriptBuffer: transcriptBuffer,
-            textInjector: textInjector
+            textInjector: textInjector,
+            messageService: inAppMessageService
         )
         controller.onSessionExpired = { [weak self] in
             self?.resetAPIKey()
         }
+        controller.viewModel.isPrivateMode = DictationMode.current == .local
         hudController = controller
     }
 
@@ -325,19 +341,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onResetAPIKey = { [weak self] in
             self?.resetAPIKey()
         }
+
+        controller.onTogglePrivateMode = { [weak self] in
+            self?.togglePrivateMode()
+        }
+    }
+
+    /// Register a global keyboard shortcut to toggle private mode.
+    /// Works from any app since it uses NSEvent global monitoring.
+    /// Reads the binding from Settings so it respects user customization.
+    private func setupPrivateModeShortcut() {
+        guard DictationMode.isLocalAvailable else { return }
+
+        privateModeMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: .keyDown
+        ) { [weak self] event in
+            let binding = Settings.shared.privateModeShortcutBinding
+            let flags = UInt(event.modifierFlags.rawValue)
+            if binding.matches(keyCode: event.keyCode, modifierFlags: flags) {
+                Task { @MainActor in
+                    self?.togglePrivateMode()
+                }
+            }
+        }
+
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let binding = Settings.shared.privateModeShortcutBinding
+            let flags = UInt(event.modifierFlags.rawValue)
+            if binding.matches(keyCode: event.keyCode, modifierFlags: flags) {
+                Task { @MainActor in
+                    self?.togglePrivateMode()
+                }
+                return nil
+            }
+            return event
+        }
+    }
+
+    /// Toggle between cloud and private (local) dictation mode.
+    ///
+    /// Switching to cloud requires an API key. If none is stored,
+    /// show the onboarding flow so the user can enter one.
+    private func togglePrivateMode() {
+        let isCurrentlyLocal = DictationMode.current == .local
+
+        if isCurrentlyLocal && !ServiceConfig.shared.isConfigured {
+            // No API key — show just the API key entry screen.
+            Log.debug("[AppDelegate] Private mode toggle: no API key, prompting")
+            let controller = ensureOnboardingController()
+            controller.showAPIKeyEntry()
+            return
+        }
+
+        let newMode: DictationMode = isCurrentlyLocal ? .cloud : .local
+        DictationMode.current = newMode
+        Log.debug("[AppDelegate] Private mode toggled: \(newMode.rawValue)")
+
+        rebuildPipeline()
+
+        let isPrivate = newMode == .local
+        menuBarController?.setPrivateMode(isPrivate)
+        hudController?.viewModel.isPrivateMode = isPrivate
     }
 
     /// Clear the stored API key and return to onboarding.
-    private func resetAPIKey() {
-        // If onboarding is already showing, don't tear down and reload.
-        // This avoids resetting the page when the pipeline gets a 401
-        // because it was created before the user entered a key.
-        if onboardingController != nil {
+    ///
+    /// - Parameter force: When true, reset even if onboarding is active
+    ///   (used by the explicit Reset action in Preferences). When false,
+    ///   skip the reset if onboarding is already showing (prevents 401
+    ///   errors from reloading the page during the try-it step).
+    private func resetAPIKey(force: Bool = false) {
+        if !force && onboardingController != nil {
             Log.debug("[AppDelegate] Reset API key requested (ignored — onboarding active)")
             return
         }
 
-        Log.debug("[AppDelegate] Reset API key requested")
+        Log.debug("[AppDelegate] Reset API key requested (force=\(force))")
+
+        // Dismiss any existing onboarding window.
+        onboardingController?.dismissWindow()
+        onboardingController = nil
 
         hotkeyProvider.unregister()
         menuBarController?.setHotkeyRegistered(false)
@@ -363,6 +446,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         controller.onDictationModeChanged = { [weak self] in
             self?.rebuildPipeline()
+        }
+        controller.onResetApp = { [weak self] in
+            self?.resetAPIKey(force: true)
         }
         settingsController = controller
     }

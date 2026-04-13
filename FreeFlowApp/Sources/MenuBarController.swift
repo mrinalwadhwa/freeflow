@@ -32,6 +32,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Callback invoked when the user clicks "Reset API Key".
     var onResetAPIKey: (() -> Void)?
 
+    /// Callback invoked when the user toggles private mode.
+    var onTogglePrivateMode: (() -> Void)?
+
     // MARK: - Onboarding mode
 
     /// When true, the menu shows a minimal onboarding hint instead of
@@ -46,6 +49,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - Menu items that need dynamic updates
 
     private var pasteItem: NSMenuItem?
+    private var privateModeItem: NSMenuItem?
+    private var privateModeStatusItem: NSMenuItem?
     private var micSubmenuItem: NSMenuItem?
     private var languageSubmenuItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
@@ -170,6 +175,39 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false
 
+        // --- Private mode toggle (macOS 26+ only) ---
+
+        if DictationMode.isLocalAvailable {
+            let privateMode = NSMenuItem(
+                title: "Private Mode",
+                action: #selector(togglePrivateModeAction),
+                keyEquivalent: "p"
+            )
+            privateMode.keyEquivalentModifierMask = [.control, .option]
+            privateMode.target = self
+            privateMode.image = NSImage(
+                systemSymbolName: "lock.shield",
+                accessibilityDescription: nil)
+            if DictationMode.current == .local {
+                privateMode.state = .on
+            }
+            menu.addItem(privateMode)
+            privateModeItem = privateMode
+
+            let modeStatus = NSMenuItem(
+                title: DictationMode.current == .local
+                    ? "Transcribing on this Mac"
+                    : "Transcribing in the cloud",
+                action: nil,
+                keyEquivalent: ""
+            )
+            modeStatus.isEnabled = false
+            menu.addItem(modeStatus)
+            privateModeStatusItem = modeStatus
+
+            menu.addItem(.separator())
+        }
+
         // --- Primary actions ---
 
         let paste = NSMenuItem(
@@ -215,16 +253,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // --- Community ---
-
-        let customize = NSMenuItem(
-            title: "Customize FreeFlow…",
-            action: #selector(openCustomizeGuide),
-            keyEquivalent: ""
-        )
-        customize.target = self
-        customize.image = NSImage(
-            systemSymbolName: "wrench.and.screwdriver", accessibilityDescription: nil)
-        menu.addItem(customize)
 
         let requestLang = NSMenuItem(
             title: "Add a Language…",
@@ -291,19 +319,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(settings)
 
         menu.addItem(.separator())
-
-        // --- Session ---
-
-        let resetKey = NSMenuItem(
-            title: "Reset API Key…",
-            action: #selector(resetAPIKeyAction),
-            keyEquivalent: ""
-        )
-        resetKey.target = self
-        resetKey.image = NSImage(
-            systemSymbolName: "key",
-            accessibilityDescription: nil)
-        menu.addItem(resetKey)
 
         let quit = NSMenuItem(
             title: "Quit FreeFlow",
@@ -639,6 +654,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func reopenOnboarding() {
         onReopenOnboarding?()
+    }
+
+    @objc private func togglePrivateModeAction() {
+        onTogglePrivateMode?()
+    }
+
+    /// Update the private mode menu item checkmark and status text.
+    func setPrivateMode(_ isPrivate: Bool) {
+        privateModeItem?.state = isPrivate ? .on : .off
+        privateModeStatusItem?.title = isPrivate
+            ? "Transcribing on this Mac"
+            : "Transcribing in the cloud"
     }
 
     @objc private func resetAPIKeyAction() {

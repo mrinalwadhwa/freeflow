@@ -17,7 +17,7 @@ public final class Settings: @unchecked Sendable {
 
     // MARK: - Keys
 
-    private enum Key: String {
+    private enum Key: String, CaseIterable {
         case soundFeedbackEnabled = "soundFeedbackEnabled"
         case hotkeyConfiguration = "hotkeyConfiguration"
         case handsfreeShortcutLabel = "handsfreeShortcutLabel"
@@ -26,6 +26,8 @@ public final class Settings: @unchecked Sendable {
         case handsfreeShortcutBinding = "handsfreeShortcutBinding"
         case pasteShortcutBinding = "pasteShortcutBinding"
         case cancelShortcutBinding = "cancelShortcutBinding"
+        case privateModeShortcutLabel = "privateModeShortcutLabel"
+        case privateModeShortcutBinding = "privateModeShortcutBinding"
     }
 
     // MARK: - Init
@@ -192,6 +194,45 @@ public final class Settings: @unchecked Sendable {
             }
             // Also update the label to stay in sync.
             cancelShortcutLabel = newValue.label
+        }
+    }
+
+    /// The display label for the private mode shortcut.
+    public var privateModeShortcutLabel: String {
+        get {
+            defaults.string(forKey: Key.privateModeShortcutLabel.rawValue)
+                ?? privateModeShortcutBinding.label
+        }
+        set {
+            defaults.set(newValue, forKey: Key.privateModeShortcutLabel.rawValue)
+        }
+    }
+
+    /// The key binding for the private mode toggle shortcut.
+    /// Defaults to ⌃⌥P (Control+Option+P, key code 35).
+    public var privateModeShortcutBinding: ShortcutBinding {
+        get {
+            guard let data = defaults.data(forKey: Key.privateModeShortcutBinding.rawValue),
+                let binding = try? JSONDecoder().decode(ShortcutBinding.self, from: data)
+            else {
+                return .defaultPrivateMode
+            }
+            return binding
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.privateModeShortcutBinding.rawValue)
+            }
+            privateModeShortcutLabel = newValue.label
+        }
+    }
+
+    // MARK: - Reset
+
+    /// Remove all persisted settings, restoring defaults.
+    public func resetAll() {
+        for key in Key.allCases {
+            defaults.removeObject(forKey: key.rawValue)
         }
     }
 

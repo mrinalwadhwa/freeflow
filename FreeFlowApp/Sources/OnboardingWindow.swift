@@ -27,7 +27,7 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     /// Default window size for onboarding (matches the zone's
     /// onboarding page design at 480px width).
-    private static let defaultSize = NSSize(width: 480, height: 720)
+    private static let defaultSize = NSSize(width: 520, height: 800)
 
     /// Height of the transparent drag handle at the top of the window.
     private static let dragHandleHeight: CGFloat = 76
@@ -154,7 +154,9 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     // MARK: - Bundled pages
 
     /// Load the bundled onboarding HTML page from the app bundle.
-    func loadBundledOnboarding() {
+    /// - Parameter query: Optional query string appended to the URL
+    ///   (e.g. "mode=api-key-only").
+    func loadBundledOnboarding(query: String? = nil) {
         guard
             let htmlURL = Bundle.main.url(
                 forResource: "onboarding",
@@ -165,9 +167,18 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
             return
         }
 
-        Self.log("loadBundledOnboarding: \(htmlURL.absoluteString)")
+        var loadURL = htmlURL
+        if let query {
+            var components = URLComponents(url: htmlURL, resolvingAgainstBaseURL: false)
+            components?.query = query
+            if let withQuery = components?.url {
+                loadURL = withQuery
+            }
+        }
+
+        Self.log("loadBundledOnboarding: \(loadURL.absoluteString)")
         webView.loadFileURL(
-            htmlURL,
+            loadURL,
             allowingReadAccessTo: htmlURL.deletingLastPathComponent()
         )
     }

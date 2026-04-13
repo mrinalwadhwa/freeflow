@@ -367,7 +367,6 @@
                 font-size: 0.8125rem;
                 color: var(--color-muted);
                 line-height: 1.45;
-                max-width: 31ch;
             }
 
             .entry-divider {
@@ -943,9 +942,9 @@
 
                     <div class="entry-choice-group">
                         <button id="entry-cloud" class="entry-choice-card selected" type="button">
-                            <div class="entry-choice-title">Cloud transcription</div>
+                            <div class="entry-choice-title">Transcribe in the cloud</div>
                             <div class="entry-choice-copy">
-                                Best accuracy for technical terms and formatting. Requires an OpenAI API key.
+                                Highly accurate and very fast. Great with technical terms and jargon. Requires an OpenAI API key.
                             </div>
                         </button>
                     </div>
@@ -958,9 +957,9 @@
 
                     <div id="welcome-local-group" class="entry-choice-group" style="opacity:0; transition:opacity 0.2s ease">
                         <button id="entry-local" class="entry-choice-card" type="button">
-                            <div class="entry-choice-title">On-device transcription</div>
+                            <div class="entry-choice-title">Transcribe on this Mac</div>
                             <div class="entry-choice-copy">
-                                Everything stays on your Mac. Fast and private, powered by Apple Intelligence.
+                                Completely private but less accurate. Works offline and nothing leaves your Mac. Powered by Apple Intelligence.
                             </div>
                         </button>
                         <div id="local-requires-note" class="entry-choice-note" style="display:none">Requires macOS 26 or later</div>
@@ -1231,6 +1230,10 @@
                 // Welcome sub-state: "chooser" or "api-key".
                 var welcomeState = "chooser";
 
+                // API-key-only mode: show just the key entry step,
+                // complete onboarding immediately after key is saved.
+                var apiKeyOnly = new URLSearchParams(window.location.search).get("mode") === "api-key-only";
+
                 // Permission state tracked across events.
                 var permissions = {
                     accessibility: "unknown",
@@ -1263,7 +1266,18 @@
                     bridge.on("dictationResult", handleDictationResult);
 
                     bindButtons();
-                    goTo(0);
+
+                    if (apiKeyOnly) {
+                        // Skip the chooser, go straight to API key form.
+                        goTo(0);
+                        showWelcomeApiKey();
+                        // Hide step indicators and back button.
+                        document.querySelector(".step-indicator").style.display = "none";
+                        var backBtn = document.getElementById("api-key-back");
+                        if (backBtn) backBtn.style.display = "none";
+                    } else {
+                        goTo(0);
+                    }
 
                     // Reveal after layout is settled to avoid FOUC.
                     // The inline visibility:hidden on <body> prevents
@@ -1456,7 +1470,12 @@
                         return;
                     }
 
-                    next();
+                    if (apiKeyOnly) {
+                        // Single-step mode: key saved, done.
+                        bridge.send("completeOnboarding");
+                    } else {
+                        next();
+                    }
                 }
 
                 // ----------------------------------------------------------------

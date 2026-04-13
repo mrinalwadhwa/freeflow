@@ -45,6 +45,7 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
     var onStartMicPreview: (() -> Void)?
     var onStopMicPreview: (() -> Void)?
     var onSetDictationMode: ((_ mode: String) -> Void)?
+    var onResetApp: (() -> Void)?
     var onCloseSettings: (() -> Void)?
 
     // MARK: - WKScriptMessageHandler
@@ -110,6 +111,9 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
                 onSetDictationMode?(mode)
             }
 
+        case "resetApp":
+            onResetApp?()
+
         case "closeSettings":
             onCloseSettings?()
 
@@ -146,6 +150,56 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
                 Log.debug("[SettingsBridge] pushEvent(\(name)) error: \(error)")
             }
         }
+    }
+
+    /// Render SF Symbols to PNG data URIs and push to the settings page.
+    func pushSettingsIcons() {
+        let symbols = ["mic.fill"]
+        let color = NSColor(red: 0x7A / 255.0, green: 0x77 / 255.0,
+                            blue: 0x75 / 255.0, alpha: 1.0)
+        let config = NSImage.SymbolConfiguration(
+            pointSize: 14, weight: .regular
+        ).applying(
+            .init(paletteColors: [color])
+        )
+
+        var icons: [String: String] = [:]
+        for name in symbols {
+            guard let image = NSImage(
+                systemSymbolName: name,
+                accessibilityDescription: nil
+            )?.withSymbolConfiguration(config) else { continue }
+
+            let scale: CGFloat = 2
+            let size = image.size
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size.width * scale),
+                pixelsHigh: Int(size.height * scale),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+            guard let rep else { continue }
+            rep.size = size
+
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            image.draw(
+                in: NSRect(origin: .zero, size: size),
+                from: .zero, operation: .sourceOver, fraction: 1.0
+            )
+            NSGraphicsContext.restoreGraphicsState()
+
+            if let png = rep.representation(using: .png, properties: [:]) {
+                icons[name] = png.base64EncodedString()
+            }
+        }
+        pushEvent(name: "settingsIcons", data: icons)
     }
 
     /// Push the current settings state to the web page.

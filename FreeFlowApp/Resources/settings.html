@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>FreeFlow Settings</title>
+        <title>FreeFlow Preferences</title>
         <style>
             /* --- Base styles (from styles.css) --- */
 
@@ -161,7 +161,7 @@
                 display: flex;
                 flex-direction: column;
                 height: 100vh;
-                max-width: 480px;
+                max-width: 560px;
                 margin: 0 auto;
                 padding: 2.5rem 1.5rem 1rem;
                 -webkit-user-select: none;
@@ -334,9 +334,9 @@
                 box-shadow: 0 0 0 3px rgba(41, 41, 41, 0.08);
             }
 
-            /* Wider select for language (longer display names) */
+            /* Wider select for dropdowns with longer names */
             .setting-select-wide {
-                max-width: 180px;
+                max-width: 220px;
             }
 
             /* ---------------------------------------------------------- */
@@ -413,7 +413,8 @@
             .shortcut-grid {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                gap: 0.5rem;
+                column-gap: 0.75rem;
+                row-gap: 1.25rem;
             }
 
             .shortcut-cell {
@@ -507,29 +508,14 @@
         <div class="settings">
             <!-- Header -->
             <div class="settings-header">
-                <h1>Settings</h1>
+                <h1>Preferences</h1>
             </div>
 
             <!-- Scrollable body -->
             <div class="settings-body">
-                <!-- Transcription mode -->
-                <div class="settings-section" id="dictation-mode-section" style="display: none">
-                    <div class="settings-section-label">Transcription</div>
-                    <div class="setting-row">
-                        <div class="setting-label-group">
-                            <div class="setting-label">Mode</div>
-                            <div class="setting-hint" id="dictation-mode-hint">Choose where speech is processed</div>
-                        </div>
-                        <select id="dictation-mode-select" class="setting-select setting-select-wide">
-                            <option value="cloud">Cloud (OpenAI)</option>
-                            <option value="local">On-Device</option>
-                        </select>
-                    </div>
-                </div>
-
                 <!-- Keyboard shortcuts -->
                 <div class="settings-section">
-                    <div class="settings-section-label">Keyboard</div>
+                    <div class="settings-section-label">Keyboard Shortcuts</div>
                     <div class="shortcut-grid">
                         <div class="shortcut-cell">
                             <div class="shortcut-cell-label">Push to dictate</div>
@@ -583,6 +569,19 @@
                                 Escape
                             </button>
                         </div>
+                        <div class="shortcut-cell" id="private-mode-shortcut" style="display: none">
+                            <div class="shortcut-cell-label">Private mode</div>
+                            <div class="shortcut-cell-hint">Transcribe on this Mac</div>
+                            <button
+                                type="button"
+                                class="key-recorder"
+                                data-shortcut="privateMode"
+                                data-default="&#x2303;&#x2325;P"
+                                tabindex="0"
+                            >
+                                &#x2303;&#x2325;P
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -599,7 +598,7 @@
                     </div>
                     <div class="mic-preview">
                         <div class="mic-preview-row">
-                            <div class="mic-preview-icon">&#127908;</div>
+                            <div class="mic-preview-icon"><img id="mic-icon-img" data-symbol="mic.fill" style="width: 0.875rem; height: 0.875rem; opacity: 0.5" /></div>
                             <div class="mic-preview-label">Level</div>
                             <div class="mic-level-track">
                                 <div class="mic-level-bar" id="mic-level-bar"></div>
@@ -608,9 +607,9 @@
                     </div>
                 </div>
 
-                <!-- Language -->
+                <!-- Preferences -->
                 <div class="settings-section">
-                    <div class="settings-section-label">Language</div>
+                    <div class="settings-section-label">Preferences</div>
                     <div class="setting-row">
                         <div class="setting-label-group">
                             <div class="setting-label">Dictation language</div>
@@ -619,15 +618,10 @@
                             <!-- Populated by JS from native bridge -->
                         </select>
                     </div>
-                </div>
-
-                <!-- Sound feedback -->
-                <div class="settings-section">
-                    <div class="settings-section-label">Sound</div>
                     <div class="setting-row">
                         <div class="setting-label-group">
                             <div class="setting-label">Feedback sounds</div>
-                            <div class="setting-hint">Play audio cues when recording starts and stops</div>
+                            <div class="setting-hint">Audio cues when recording starts and stops</div>
                         </div>
                         <label class="toggle">
                             <input type="checkbox" id="sound-toggle" checked />
@@ -637,12 +631,22 @@
                         </label>
                     </div>
                 </div>
+                <!-- Reset -->
+                <div class="settings-section">
+                    <div class="setting-row">
+                        <div class="setting-label-group">
+                            <div class="setting-label">Reset FreeFlow</div>
+                            <div class="setting-hint">Clear all settings and return to setup</div>
+                        </div>
+                        <button id="reset-btn" class="btn btn-danger btn-small" type="button">Reset&#8230;</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Footer -->
             <div class="settings-footer">
                 <div class="btn-row">
-                    <button id="done-btn" class="btn btn-primary" style="min-width: 120px">Done</button>
+                    <button id="done-btn" class="btn btn-primary" style="min-width: 120px">Close</button>
                 </div>
             </div>
         </div>
@@ -822,6 +826,7 @@
                 function init() {
                     // Register bridge event listeners.
                     bridge.on("settingsState", handleSettingsState);
+                    bridge.on("settingsIcons", handleSettingsIcons);
                     bridge.on("microphoneList", handleMicrophoneList);
                     bridge.on("microphoneSelected", handleMicrophoneSelected);
                     bridge.on("audioLevel", handleAudioLevel);
@@ -860,17 +865,13 @@
                         if (s.cancel) window._setShortcutLabel("cancel", s.cancel);
                     }
 
-                    // Dictation mode
-                    var modeSection = document.getElementById("dictation-mode-section");
-                    var modeSelect = document.getElementById("dictation-mode-select");
-                    if (modeSection && modeSelect) {
+                    // Private mode shortcut (visible when local mode available)
+                    var privateModeShortcut = document.getElementById("private-mode-shortcut");
+                    if (privateModeShortcut) {
                         if (data.localModeAvailable) {
-                            modeSection.style.display = "";
-                            if (data.dictationMode) {
-                                modeSelect.value = data.dictationMode;
-                            }
+                            privateModeShortcut.style.display = "";
                         } else {
-                            modeSection.style.display = "none";
+                            privateModeShortcut.style.display = "none";
                         }
                     }
 
@@ -882,6 +883,16 @@
                         var langSelect = document.getElementById("language-select");
                         if (langSelect) {
                             langSelect.value = data.language;
+                        }
+                    }
+                }
+
+                function handleSettingsIcons(data) {
+                    var imgs = document.querySelectorAll("img[data-symbol]");
+                    for (var i = 0; i < imgs.length; i++) {
+                        var name = imgs[i].getAttribute("data-symbol");
+                        if (data[name]) {
+                            imgs[i].src = "data:image/png;base64," + data[name];
                         }
                     }
                 }
@@ -987,11 +998,11 @@
                 // ----------------------------------------------------------------
 
                 function bindControls() {
-                    // Dictation mode select
-                    var modeSelect = document.getElementById("dictation-mode-select");
-                    if (modeSelect) {
-                        modeSelect.addEventListener("change", function () {
-                            bridge.send("setDictationMode", { mode: modeSelect.value });
+                    // Reset button — confirmation handled on the native side.
+                    var resetBtn = document.getElementById("reset-btn");
+                    if (resetBtn) {
+                        resetBtn.addEventListener("click", function () {
+                            bridge.send("resetApp");
                         });
                     }
 

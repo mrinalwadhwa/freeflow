@@ -38,6 +38,10 @@ final class SettingsController {
     /// The AppDelegate should rebuild the pipeline with new providers.
     var onDictationModeChanged: (() -> Void)?
 
+    /// Callback invoked when the user clicks Reset in settings.
+    /// The AppDelegate should clear state and return to onboarding.
+    var onResetApp: (() -> Void)?
+
     /// Task for streaming audio levels during mic preview.
     private var audioLevelTask: Task<Void, Never>?
 
@@ -134,6 +138,10 @@ final class SettingsController {
             self?.handleStopMicPreview()
         }
 
+        bridge.onResetApp = { [weak self] in
+            self?.handleResetApp()
+        }
+
         bridge.onCloseSettings = { [weak self] in
             self?.closeWindow()
         }
@@ -155,6 +163,7 @@ final class SettingsController {
         let handsfreeLabel = Settings.shared.handsfreeShortcutLabel
         let pasteLabel = Settings.shared.pasteShortcutLabel
         let cancelLabel = Settings.shared.cancelShortcutLabel
+        let privateModeLabel = Settings.shared.privateModeShortcutLabel
 
         bridge.pushSettingsState(
             soundFeedback: soundEnabled,
@@ -163,10 +172,12 @@ final class SettingsController {
                 "handsfree": handsfreeLabel,
                 "paste": pasteLabel,
                 "cancel": cancelLabel,
+                "privateMode": privateModeLabel,
             ],
             language: language,
             languages: languages
         )
+        bridge.pushSettingsIcons()
     }
 
     // MARK: - Action: setSoundFeedback
@@ -217,6 +228,10 @@ final class SettingsController {
         case "cancel":
             let binding = shortcutBindingFromData(data, label: label)
             Settings.shared.cancelShortcutBinding = binding
+
+        case "privateMode":
+            let binding = shortcutBindingFromData(data, label: label)
+            Settings.shared.privateModeShortcutBinding = binding
 
         default:
             break
@@ -306,6 +321,24 @@ final class SettingsController {
             "ArrowUp": "↑", "ArrowDown": "↓", "ArrowLeft": "←", "ArrowRight": "→",
         ]
         return names[key] ?? key
+    }
+
+    // MARK: - Action: resetApp
+
+    private func handleResetApp() {
+        let alert = NSAlert()
+        alert.messageText = "Reset FreeFlow?"
+        alert.informativeText =
+            "This will clear all settings, shortcuts, and your API key, and return to setup."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        Settings.shared.resetAll()
+        closeWindow()
+        onResetApp?()
     }
 
     // MARK: - Action: setLanguage

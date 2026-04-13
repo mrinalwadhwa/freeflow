@@ -88,6 +88,22 @@ struct HUDContentView: View {
         return 2
     }
 
+    // MARK: - Private mode colors
+
+    /// The pill fill color — purple-tinted in private mode.
+    private var pillFillColor: Color {
+        viewModel.isPrivateMode
+            ? Color(red: 0.25, green: 0.1, blue: 0.35)
+            : Color.black
+    }
+
+    /// The pill border color — green in private mode.
+    private var pillBorderColor: Color {
+        viewModel.isPrivateMode
+            ? Color(red: 0.3, green: 0.8, blue: 0.5)
+            : Color.white
+    }
+
     /// Whether the pill is in a full active state (not minimized/ready).
     private var isActive: Bool {
         switch viewModel.visualState {
@@ -125,6 +141,11 @@ struct HUDContentView: View {
                 // the tooltip sits above the pill.
                 .offset(y: -(pillHeight + 12))
             }
+            .overlay(alignment: .bottom) {
+                inAppMessageView
+                    .fixedSize()
+                    .offset(y: -(pillHeight + 80))
+            }
             .animation(
                 viewModel.visualState == .minimized
                     || viewModel.visualState == .processingCollapsing
@@ -134,6 +155,7 @@ struct HUDContentView: View {
                 value: viewModel.visualState
             )
             .animation(.easeInOut(duration: 0.25), value: viewModel.micCalloutName)
+            .animation(.easeInOut(duration: 0.25), value: viewModel.inAppMessage)
     }
 
     // MARK: - Morphing pill
@@ -143,14 +165,14 @@ struct HUDContentView: View {
     /// upward.
     private var morphingPill: some View {
         ZStack {
-            // Background: solid black fill for all states.
+            // Background fill — purple-tinted in private mode.
             Capsule()
-                .fill(Color.black.opacity(pillFillOpacity))
+                .fill(pillFillColor.opacity(pillFillOpacity))
 
-            // Border.
+            // Border — green in private mode.
             Capsule()
                 .strokeBorder(
-                    Color.white.opacity(pillBorderOpacity),
+                    pillBorderColor.opacity(pillBorderOpacity),
                     lineWidth: pillBorderWidth
                 )
 
@@ -382,6 +404,63 @@ struct HUDContentView: View {
             .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, 12)
+    }
+
+    // MARK: - In-app message tooltip
+
+    /// A tooltip above the pill showing an announcement from the developer.
+    /// Appears after the first successful dictation of the day.
+    @ViewBuilder
+    private var inAppMessageView: some View {
+        if let message = viewModel.inAppMessage {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(message.text)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.leading)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 16) {
+                    Spacer()
+                    if message.url != nil {
+                        Button(action: { viewModel.tapInAppMessage() }) {
+                            Text(message.action ?? "Learn more")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.orange.opacity(0.8))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(message.action ?? "Learn more")
+                    }
+
+                    Button(action: { viewModel.dismissInAppMessage() }) {
+                        Text("Dismiss")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.45))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss message")
+                }
+            }
+            .frame(maxWidth: 280)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black.opacity(0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.white.opacity(0.7), lineWidth: 2)
+            )
+            .transition(.opacity)
+        }
     }
 
     // MARK: - Mic callout

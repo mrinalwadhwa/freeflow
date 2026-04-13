@@ -68,6 +68,21 @@ final class OnboardingController {
 
     // MARK: - Window management
 
+    /// Open the onboarding window showing only the API key entry step.
+    /// Used when toggling off private mode without a stored key.
+    func showAPIKeyEntry() {
+        let win = OnboardingWindow(bridge: bridge)
+        bridge.webView = win.webView
+        window = win
+
+        window?.loadBundledOnboarding(query: "mode=api-key-only")
+        window?.present()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.bridge.pushStepIcons()
+        }
+    }
+
     /// Open the onboarding window and load the bundled onboarding page.
     func showWindow() {
         // Always create a fresh window. The previous window's bridge

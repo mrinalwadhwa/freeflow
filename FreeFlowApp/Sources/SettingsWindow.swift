@@ -31,8 +31,8 @@ final class SettingsWindow: NSWindow, WKNavigationDelegate {
     /// without modification.
     static let bridgeHandlerName = "freeflow"
 
-    /// Window size for settings (narrower and shorter than onboarding).
-    private static let defaultSize = NSSize(width: 480, height: 760)
+    /// Window size for settings.
+    private static let defaultSize = NSSize(width: 560, height: 900)
 
     /// Height of the transparent drag handle at the top of the window.
     private static let dragHandleHeight: CGFloat = 52
