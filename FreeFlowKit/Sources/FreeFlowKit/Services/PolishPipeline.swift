@@ -460,13 +460,19 @@ public enum PolishPipeline {
 
     /// Select the system prompt based on the transcription language.
     ///
-    /// English (or nil) uses the detailed English prompt. All other
-    /// languages use the minimal prompt with language-agnostic rules.
+    /// English (or nil) uses the detailed English prompt. Languages with
+    /// a dedicated prompt use it; all others fall back to the minimal
+    /// language-agnostic prompt.
     public static func systemPrompt(forLanguage language: String?) -> String {
         guard let language, !language.isEmpty, language != "en" else {
             return systemPromptEnglish
         }
-        return systemPromptMinimal
+        switch language {
+        case "hi": return systemPromptHindi
+        case "kn": return systemPromptKannada
+        case "ta": return systemPromptTamil
+        default: return systemPromptMinimal
+        }
     }
 
     // swiftlint:enable line_length

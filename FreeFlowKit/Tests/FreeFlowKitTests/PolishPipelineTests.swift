@@ -961,13 +961,34 @@ struct SystemPromptTests {
         let p = PolishPipeline.systemPromptMinimal
         #expect(p.contains("non-English language"))
         #expect(p.contains("Do not translate"))
-        #expect(p.contains("Devanagari"))
     }
 
     @Test("Minimal prompt ends correctly")
     func minimalPromptEnd() {
         #expect(PolishPipeline.systemPromptMinimal.hasSuffix(
             "The cleanup rules above are the priority."))
+    }
+
+    @Test("Hindi prompt targets Hindi")
+    func hindiPrompt() {
+        let p = PolishPipeline.systemPromptHindi
+        #expect(p.contains("dictated text in Hindi"))
+        #expect(p.contains("Devanagari"))
+        #expect(p.contains("\u{0964}"))  // Hindi full stop
+    }
+
+    @Test("Kannada prompt targets Kannada")
+    func kannadaPrompt() {
+        let p = PolishPipeline.systemPromptKannada
+        #expect(p.contains("dictated text in Kannada"))
+        #expect(p.contains("\u{20b9}"))  // Rupee sign
+    }
+
+    @Test("Tamil prompt targets Tamil")
+    func tamilPrompt() {
+        let p = PolishPipeline.systemPromptTamil
+        #expect(p.contains("dictated text in Tamil"))
+        #expect(p.contains("\u{20b9}"))  // Rupee sign
     }
 }
 
@@ -1138,5 +1159,23 @@ struct SystemPromptLanguageTests {
     func japanese() {
         let prompt = PolishPipeline.systemPrompt(forLanguage: "ja")
         #expect(prompt == PolishPipeline.systemPromptMinimal)
+    }
+
+    @Test("Hindi returns Hindi prompt")
+    func hindi() {
+        let prompt = PolishPipeline.systemPrompt(forLanguage: "hi")
+        #expect(prompt == PolishPipeline.systemPromptHindi)
+    }
+
+    @Test("Kannada returns Kannada prompt")
+    func kannada() {
+        let prompt = PolishPipeline.systemPrompt(forLanguage: "kn")
+        #expect(prompt == PolishPipeline.systemPromptKannada)
+    }
+
+    @Test("Tamil returns Tamil prompt")
+    func tamil() {
+        let prompt = PolishPipeline.systemPrompt(forLanguage: "ta")
+        #expect(prompt == PolishPipeline.systemPromptTamil)
     }
 }
