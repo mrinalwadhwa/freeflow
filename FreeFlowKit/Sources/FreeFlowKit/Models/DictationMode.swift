@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
 /// Whether dictation uses cloud APIs or on-device processing.
 ///
 /// Cloud mode sends audio to OpenAI for transcription and polishing.
@@ -22,11 +26,16 @@ public enum DictationMode: String, CaseIterable, Sendable {
 
     /// Whether on-device mode is available on this system.
     ///
-    /// Requires macOS 26+ for SpeechAnalyzer and Foundation Models.
+    /// Requires macOS 26+ with Apple Intelligence enabled. Checks both
+    /// the OS version and the runtime availability of the on-device
+    /// language model so the UI only offers on-device mode when it will
+    /// actually work.
     public static var isLocalAvailable: Bool {
+        #if canImport(FoundationModels)
         if #available(macOS 26, *) {
-            return true
+            return SystemLanguageModel.default.availability == .available
         }
+        #endif
         return false
     }
 }
