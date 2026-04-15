@@ -6,8 +6,10 @@ import Foundation
 /// options. Each setting is persisted immediately on write and read
 /// fresh from UserDefaults on access, ensuring consistency across the app.
 ///
-/// Thread-safe: all operations go through UserDefaults which handles
-/// synchronization internally.
+/// Individual reads and writes are thread-safe via UserDefaults.
+/// Compound setters (e.g. binding + label) are not atomic — concurrent
+/// writes from different threads could interleave. In practice all
+/// writes come from the main thread via UI interactions.
 public final class Settings: @unchecked Sendable {
 
     /// Shared singleton instance.
