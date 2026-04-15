@@ -623,16 +623,12 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
     }
 
     public func cancelStreaming() async {
-        let (cancelSetup, cancelReader) = lock.withLock {
-            () -> (Task<Void, Error>?, Task<Void, Never>?) in
+        let cancelSetup: Task<Void, Error>? = lock.withLock {
             let s = self.setupTask
-            let r = self.chunkReaderTask
             self.setupTask = nil
-            self.chunkReaderTask = nil
-            return (s, r)
+            return s
         }
         cancelSetup?.cancel()
-        cancelReader?.cancel()
         lock.withLock {
             self.rawChunkBuffer = ""
             self.finalChunkContinuation?.finish()
@@ -646,7 +642,18 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
             }
         }
         emitSessionSummary()
+        // Tear down the WebSocket before cancelling the reader task.
+        // URLSessionWebSocketTask.receive() does not respond to Swift
+        // task cancellation — it only returns when the WebSocket is
+        // closed or receives a message. Closing the socket first
+        // unblocks the reader immediately.
         await tearDown()
+        let cancelReader: Task<Void, Never>? = lock.withLock {
+            let r = self.chunkReaderTask
+            self.chunkReaderTask = nil
+            return r
+        }
+        cancelReader?.cancel()
     }
 
     public func dictateViaBackup(
