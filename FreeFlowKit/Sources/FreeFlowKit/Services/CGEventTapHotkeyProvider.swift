@@ -87,7 +87,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
 
             // Determine which events to monitor based on hotkey type.
             var eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
-            if setting.type == .modifierPlusKey {
+            if !setting.isModifierOnly {
                 eventMask |= (1 << CGEventType.keyDown.rawValue)
                 eventMask |= (1 << CGEventType.keyUp.rawValue)
             }
@@ -166,7 +166,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
         lock.unlock()
 
         // Only handle modifier-only hotkeys here.
-        guard setting.type == .modifierOnly, let modifierKey = setting.modifierKey else {
+        guard case .modifierOnly(let modifierKey) = setting else {
             return
         }
 
@@ -202,9 +202,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
         lock.unlock()
 
         // Only handle modifier+key hotkeys here.
-        guard setting.type == .modifierPlusKey,
-            let expectedFlags = setting.modifierFlags,
-            let expectedKeyCode = setting.keyCode
+        guard case .modifierPlusKey(let expectedFlags, let expectedKeyCode, _) = setting
         else {
             return
         }

@@ -63,18 +63,18 @@ struct SettingsTests {
         let settings = Settings.shared
         let hotkey = settings.hotkeySetting
 
-        #expect(hotkey.type == .modifierOnly)
+        #expect(hotkey.isModifierOnly)
         #expect(hotkey.modifierKey == .rightOption)
     }
 
     @Test("Hotkey setting can be changed to Left Option")
     func hotkeyChangeToLeftOption() {
         let settings = Settings.shared
-        let newSetting = HotkeySetting(modifierKey: .leftOption)
+        let newSetting = HotkeySetting.modifierOnly( .leftOption)
         settings.hotkeySetting = newSetting
 
         let read = settings.hotkeySetting
-        #expect(read.type == .modifierOnly)
+        #expect(read.isModifierOnly)
         #expect(read.modifierKey == .leftOption)
 
         // Restore default.
@@ -84,7 +84,7 @@ struct SettingsTests {
     @Test("Hotkey setting can be changed to Right Command")
     func hotkeyChangeToRightCommand() {
         let settings = Settings.shared
-        let newSetting = HotkeySetting(modifierKey: .rightCommand)
+        let newSetting = HotkeySetting.modifierOnly( .rightCommand)
         settings.hotkeySetting = newSetting
 
         let read = settings.hotkeySetting
@@ -98,7 +98,7 @@ struct SettingsTests {
     func hotkeyModifierPlusKeyRoundTrip() {
         let settings = Settings.shared
         let flags: UInt = 0x0010_0000 | 0x0002_0000
-        let newSetting = HotkeySetting(
+        let newSetting = HotkeySetting.modifierPlusKey(
             modifierFlags: flags,
             keyCode: 2,
             keyName: "D"
@@ -106,7 +106,7 @@ struct SettingsTests {
         settings.hotkeySetting = newSetting
 
         let read = settings.hotkeySetting
-        #expect(read.type == .modifierPlusKey)
+        #expect(!read.isModifierOnly)
         #expect(read.modifierFlags == flags)
         #expect(read.keyCode == UInt16(2))
         #expect(read.keyName == "D")
@@ -118,7 +118,7 @@ struct SettingsTests {
     @Test("Hotkey setting persists through UserDefaults")
     func hotkeyPersistence() {
         let settings = Settings.shared
-        let newSetting = HotkeySetting(modifierKey: .leftCommand)
+        let newSetting = HotkeySetting.modifierOnly( .leftCommand)
         settings.hotkeySetting = newSetting
 
         // Read directly from UserDefaults and decode.
@@ -138,7 +138,7 @@ struct SettingsTests {
     @Test("Removing hotkey UserDefaults key falls back to default")
     func hotkeyFallbackAfterRemoval() {
         let settings = Settings.shared
-        settings.hotkeySetting = HotkeySetting(modifierKey: .leftShift)
+        settings.hotkeySetting = HotkeySetting.modifierOnly( .leftShift)
         #expect(settings.hotkeySetting.modifierKey == .leftShift)
 
         // Remove the persisted key.
@@ -146,7 +146,7 @@ struct SettingsTests {
 
         // Should fall back to Right Option default.
         let fallback = settings.hotkeySetting
-        #expect(fallback.type == .modifierOnly)
+        #expect(fallback.isModifierOnly)
         #expect(fallback.modifierKey == .rightOption)
     }
 
@@ -158,7 +158,7 @@ struct SettingsTests {
 
         let settings = Settings.shared
         let hotkey = settings.hotkeySetting
-        #expect(hotkey.type == .modifierOnly)
+        #expect(hotkey.isModifierOnly)
         #expect(hotkey.modifierKey == .rightOption)
 
         // Clean up.
@@ -209,7 +209,7 @@ struct SettingsTests {
             }
         }
 
-        settings.hotkeySetting = HotkeySetting(modifierKey: .leftOption)
+        settings.hotkeySetting = HotkeySetting.modifierOnly( .leftOption)
 
         NotificationCenter.default.removeObserver(observer)
 
@@ -279,7 +279,7 @@ struct SettingsTests {
         let settings = Settings.shared
 
         // Change the hotkey through Settings (the canonical path).
-        settings.hotkeySetting = HotkeySetting(modifierKey: .leftCommand)
+        settings.hotkeySetting = HotkeySetting.modifierOnly( .leftCommand)
 
         let config = ShortcutConfiguration.default
         #expect(

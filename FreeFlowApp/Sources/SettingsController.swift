@@ -197,13 +197,13 @@ final class SettingsController {
             if type == "modifier", let modId = data["modifierId"] as? String,
                 let modifier = HotkeySetting.ModifierKey(rawValue: modId)
             {
-                Settings.shared.hotkeySetting = HotkeySetting(modifierKey: modifier)
+                Settings.shared.hotkeySetting = .modifierOnly(modifier)
                 onHotkeyChanged?()
             } else if type == "combo" {
                 let flags = modifierFlagsFromData(data)
                 let keyCode = keyCodeFromData(data)
                 let keyName = keyNameFromData(data)
-                Settings.shared.hotkeySetting = HotkeySetting(
+                Settings.shared.hotkeySetting = .modifierPlusKey(
                     modifierFlags: flags, keyCode: keyCode, keyName: keyName)
                 onHotkeyChanged?()
             } else if type == "modifiers" {

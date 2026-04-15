@@ -2,21 +2,22 @@ import Foundation
 
 /// Configuration for the global dictation hotkey.
 ///
-/// Supports two modes:
-/// - Modifier-only keys (e.g., Right Option, Right Command)
-/// - Modifier + key combinations (e.g., Cmd+Shift+D)
+/// Two modes:
+/// - `.modifierOnly` — a single modifier key (e.g., Right Option)
+/// - `.modifierPlusKey` — a modifier + key combo (e.g., Cmd+Shift+D)
 ///
-/// Persisted in UserDefaults. The `CGEventTapHotkeyProvider` reads this
-/// on registration to determine which key events to monitor.
-public struct HotkeySetting: Codable, Sendable, Equatable {
+/// Persisted in UserDefaults via `Settings.shared.hotkeySetting`.
+/// The `CGEventTapHotkeyProvider` reads this on registration to
+/// determine which key events to monitor.
+public enum HotkeySetting: Sendable, Equatable {
 
-    /// The type of hotkey: a modifier key alone or a modifier + key combo.
-    public enum HotkeyType: String, Codable, Sendable {
-        /// A modifier key by itself (e.g., Right Option).
-        case modifierOnly
-        /// A modifier + key combination (e.g., Cmd+Shift+D).
-        case modifierPlusKey
-    }
+    /// A modifier key by itself (e.g., Right Option).
+    case modifierOnly(ModifierKey)
+
+    /// A modifier + key combination (e.g., Cmd+Shift+D).
+    case modifierPlusKey(modifierFlags: UInt, keyCode: UInt16, keyName: String)
+
+    // MARK: - ModifierKey
 
     /// Modifier keys that can be used alone as hotkeys.
     public enum ModifierKey: String, Codable, Sendable, CaseIterable {
@@ -69,99 +70,136 @@ public struct HotkeySetting: Codable, Sendable, Equatable {
         }
     }
 
-    /// The hotkey type.
-    public var type: HotkeyType
+    // MARK: - Convenience accessors
 
-    /// For `.modifierOnly` type: which modifier key.
-    public var modifierKey: ModifierKey?
-
-    /// For `.modifierPlusKey` type: the modifier flags (device-independent).
-    public var modifierFlags: UInt?
-
-    /// For `.modifierPlusKey` type: the virtual key code.
-    public var keyCode: UInt16?
-
-    /// For `.modifierPlusKey` type: human-readable key name.
-    public var keyName: String?
-
-    // MARK: - Initializers
-
-    /// Create a modifier-only hotkey.
-    public init(modifierKey: ModifierKey) {
-        self.type = .modifierOnly
-        self.modifierKey = modifierKey
-        self.modifierFlags = nil
-        self.keyCode = nil
-        self.keyName = nil
+    /// The modifier key for `.modifierOnly`, nil for `.modifierPlusKey`.
+    public var modifierKey: ModifierKey? {
+        if case .modifierOnly(let key) = self { return key }
+        return nil
     }
 
-    /// Create a modifier + key combination hotkey.
-    public init(modifierFlags: UInt, keyCode: UInt16, keyName: String) {
-        self.type = .modifierPlusKey
-        self.modifierKey = nil
-        self.modifierFlags = modifierFlags
-        self.keyCode = keyCode
-        self.keyName = keyName
+    /// The modifier flags for `.modifierPlusKey`, nil for `.modifierOnly`.
+    public var modifierFlags: UInt? {
+        if case .modifierPlusKey(let flags, _, _) = self { return flags }
+        return nil
+    }
+
+    /// The key code for `.modifierPlusKey`, nil for `.modifierOnly`.
+    public var keyCode: UInt16? {
+        if case .modifierPlusKey(_, let code, _) = self { return code }
+        return nil
+    }
+
+    /// The key name for `.modifierPlusKey`, nil for `.modifierOnly`.
+    public var keyName: String? {
+        if case .modifierPlusKey(_, _, let name) = self { return name }
+        return nil
+    }
+
+    /// Whether this is a modifier-only hotkey.
+    public var isModifierOnly: Bool {
+        if case .modifierOnly = self { return true }
+        return false
     }
 
     // MARK: - Display
 
     /// Human-readable display name for the hotkey.
     public var displayName: String {
-        switch type {
-        case .modifierOnly:
-            return modifierKey?.displayName ?? "Unknown"
-        case .modifierPlusKey:
+        switch self {
+        case .modifierOnly(let key):
+            return key.displayName
+        case .modifierPlusKey(let flags, _, let keyName):
             var parts: [String] = []
-            if let flags = modifierFlags {
-                if flags & ShortcutBinding.controlFlag != 0 {
-                    parts.append("⌃")
-                }
-                if flags & ShortcutBinding.optionFlag != 0 {
-                    parts.append("⌥")
-                }
-                if flags & ShortcutBinding.shiftFlag != 0 {
-                    parts.append("⇧")
-                }
-                if flags & ShortcutBinding.commandFlag != 0 {
-                    parts.append("⌘")
-                }
+            if flags & ShortcutBinding.controlFlag != 0 {
+                parts.append("⌃")
             }
-            if let name = keyName {
-                parts.append(name)
+            if flags & ShortcutBinding.optionFlag != 0 {
+                parts.append("⌥")
             }
+            if flags & ShortcutBinding.shiftFlag != 0 {
+                parts.append("⇧")
+            }
+            if flags & ShortcutBinding.commandFlag != 0 {
+                parts.append("⌘")
+            }
+            parts.append(keyName)
             return parts.joined()
         }
     }
 
     /// Short hint text for UI (e.g., "⌥ Right Option").
     public var hintText: String {
-        switch type {
-        case .modifierOnly:
-            if let key = modifierKey {
-                return
-                    "\(key.symbol) \(key.displayName.replacingOccurrences(of: " \(key.symbol)", with: ""))"
-            }
-            return displayName
+        switch self {
+        case .modifierOnly(let key):
+            return
+                "\(key.symbol) \(key.displayName.replacingOccurrences(of: " \(key.symbol)", with: ""))"
         case .modifierPlusKey:
             return displayName
         }
     }
 
-    /// The default hotkey: Right Option.
-    public static let `default` = HotkeySetting(modifierKey: .rightOption)
+    // MARK: - Defaults and presets
 
-    // MARK: - Common presets
+    /// The default hotkey: Right Option.
+    public static let `default` = HotkeySetting.modifierOnly(.rightOption)
 
     /// Preset: Right Option (default)
-    public static let rightOption = HotkeySetting(modifierKey: .rightOption)
+    public static let rightOption = HotkeySetting.modifierOnly(.rightOption)
 
     /// Preset: Left Option
-    public static let leftOption = HotkeySetting(modifierKey: .leftOption)
+    public static let leftOption = HotkeySetting.modifierOnly(.leftOption)
 
     /// Preset: Right Command
-    public static let rightCommand = HotkeySetting(modifierKey: .rightCommand)
+    public static let rightCommand = HotkeySetting.modifierOnly(.rightCommand)
 
     /// Preset: Right Control
-    public static let rightControl = HotkeySetting(modifierKey: .rightControl)
+    public static let rightControl = HotkeySetting.modifierOnly(.rightControl)
+}
+
+// MARK: - Codable
+
+/// Custom Codable to maintain backward compatibility with the old
+/// struct-based JSON format:
+///   {"type":"modifierOnly","modifierKey":"rightOption"}
+///   {"type":"modifierPlusKey","modifierFlags":786432,"keyCode":2,"keyName":"D"}
+extension HotkeySetting: Codable {
+
+    private enum CodingKeys: String, CodingKey {
+        case type, modifierKey, modifierFlags, keyCode, keyName
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "modifierOnly":
+            let key = try container.decode(ModifierKey.self, forKey: .modifierKey)
+            self = .modifierOnly(key)
+        case "modifierPlusKey":
+            let flags = try container.decode(UInt.self, forKey: .modifierFlags)
+            let code = try container.decode(UInt16.self, forKey: .keyCode)
+            let name = try container.decode(String.self, forKey: .keyName)
+            self = .modifierPlusKey(modifierFlags: flags, keyCode: code, keyName: name)
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type, in: container,
+                debugDescription: "Unknown hotkey type: \(type)")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .modifierOnly(let key):
+            try container.encode("modifierOnly", forKey: .type)
+            try container.encode(key, forKey: .modifierKey)
+        case .modifierPlusKey(let flags, let code, let name):
+            try container.encode("modifierPlusKey", forKey: .type)
+            try container.encode(flags, forKey: .modifierFlags)
+            try container.encode(code, forKey: .keyCode)
+            try container.encode(name, forKey: .keyName)
+        }
+    }
 }
