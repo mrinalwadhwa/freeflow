@@ -219,6 +219,78 @@ struct SettingsTests {
         settings.hotkeySetting = .default
     }
 
+    // MARK: - Reset
+
+    @Test("resetAll posts settingsDidChange notification")
+    func resetAllPostsNotification() {
+        let settings = Settings.shared
+
+        // Change a setting so there is something to reset.
+        settings.soundFeedbackEnabled = false
+
+        var receivedNotification = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: .settingsDidChange,
+            object: settings,
+            queue: nil
+        ) { _ in
+            receivedNotification = true
+        }
+
+        settings.resetAll()
+
+        NotificationCenter.default.removeObserver(observer)
+
+        #expect(receivedNotification, "resetAll() must post .settingsDidChange")
+
+        // Restore (already reset, so defaults are in effect).
+    }
+
+    @Test("privateModeShortcutLabel setter posts settingsDidChange notification")
+    func privateModeShortcutLabelNotification() {
+        let settings = Settings.shared
+        let original = settings.privateModeShortcutLabel
+
+        var receivedKey: String?
+        let observer = NotificationCenter.default.addObserver(
+            forName: .settingsDidChange,
+            object: settings,
+            queue: nil
+        ) { notification in
+            if receivedKey == nil {
+                receivedKey = notification.userInfo?["key"] as? String
+            }
+        }
+
+        settings.privateModeShortcutLabel = "⌃⌥X"
+
+        NotificationCenter.default.removeObserver(observer)
+
+        #expect(receivedKey == "privateModeShortcutLabel")
+
+        // Restore.
+        settings.privateModeShortcutLabel = original
+    }
+
+    // MARK: - Single Source of Truth
+
+    @Test("ShortcutConfiguration.holdToRecordKeyName matches Settings.shared.hotkeySetting")
+    func holdToRecordKeyNameMatchesSettings() {
+        let settings = Settings.shared
+
+        // Change the hotkey through Settings (the canonical path).
+        settings.hotkeySetting = HotkeySetting(modifierKey: .leftCommand)
+
+        let config = ShortcutConfiguration.default
+        #expect(
+            config.holdToRecordKeyName == settings.hotkeySetting.displayName,
+            "holdToRecordKeyName must read from Settings.shared, not a separate path"
+        )
+
+        // Restore.
+        settings.hotkeySetting = .default
+    }
+
     // MARK: - Settings is singleton
 
     @Test("Settings.shared always returns the same instance")

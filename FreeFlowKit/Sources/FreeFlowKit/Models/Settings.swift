@@ -205,6 +205,11 @@ public final class Settings: @unchecked Sendable {
         }
         set {
             defaults.set(newValue, forKey: Key.privateModeShortcutLabel.rawValue)
+            NotificationCenter.default.post(
+                name: .settingsDidChange,
+                object: self,
+                userInfo: ["key": Key.privateModeShortcutLabel.rawValue]
+            )
         }
     }
 
@@ -234,6 +239,11 @@ public final class Settings: @unchecked Sendable {
         for key in Key.allCases {
             defaults.removeObject(forKey: key.rawValue)
         }
+        NotificationCenter.default.post(
+            name: .settingsDidChange,
+            object: self,
+            userInfo: ["key": "resetAll"]
+        )
     }
 
     // MARK: - Observation

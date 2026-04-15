@@ -10,9 +10,9 @@ struct ShortcutConfigurationTests {
     func defaultValues() {
         let config = ShortcutConfiguration.default
 
-        // holdToRecordKeyName is now dynamic, read from HotkeySetting.current.
+        // holdToRecordKeyName is dynamic, read from Settings.shared.hotkeySetting.
         // With default settings it should reflect Right Option.
-        #expect(config.holdToRecordKeyName == HotkeySetting.current.displayName)
+        #expect(config.holdToRecordKeyName == Settings.shared.hotkeySetting.displayName)
         // pasteShortcutName is now dynamic, read from Settings.shared.
         // With default settings it should reflect ⌃⌥V.
         #expect(config.pasteShortcutName == Settings.shared.pasteShortcutBinding.label)
@@ -37,7 +37,7 @@ struct ShortcutConfigurationTests {
     @Test("Hold-to-record hint includes key name from HotkeySetting")
     func holdToRecordHint() {
         let config = ShortcutConfiguration.default
-        let expected = "Hold \(HotkeySetting.current.displayName) to dictate"
+        let expected = "Hold \(Settings.shared.hotkeySetting.displayName) to dictate"
         #expect(config.holdToRecordHint == expected)
     }
 

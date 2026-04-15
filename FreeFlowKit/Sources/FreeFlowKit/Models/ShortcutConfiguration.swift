@@ -3,9 +3,9 @@ import Foundation
 /// Key bindings for hotkeys and shortcut hints displayed in the HUD and menu bar.
 ///
 /// All UI components read from this struct to render shortcut hints dynamically.
-/// The hold-to-record key name is read from `HotkeySetting.current` and the paste
-/// shortcut name is read from `Settings.shared` so they update automatically when
-/// the user changes shortcuts in Settings.
+/// Both the hold-to-record key name and the paste shortcut name are read from
+/// `Settings.shared` so they update automatically when the user changes shortcuts
+/// in Settings.
 public struct ShortcutConfiguration: Sendable, Equatable {
 
     /// Display name of the dismiss key (e.g. "Escape").
@@ -34,7 +34,7 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     /// This is a computed property so it always reflects the current hotkey
     /// configuration, even after the user changes it in Settings.
     public var holdToRecordKeyName: String {
-        HotkeySetting.current.displayName
+        Settings.shared.hotkeySetting.displayName
     }
 
     /// The instructional hint shown in the Ready state when the user hovers the HUD.

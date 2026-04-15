@@ -162,27 +162,6 @@ public struct HotkeySetting: Codable, Sendable, Equatable {
         }
     }
 
-    // MARK: - Persistence
-
-    private static let userDefaultsKey = "hotkeyConfiguration"
-
-    /// The currently configured hotkey. Defaults to Right Option.
-    public static var current: HotkeySetting {
-        get {
-            guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-                let setting = try? JSONDecoder().decode(HotkeySetting.self, from: data)
-            else {
-                return .default
-            }
-            return setting
-        }
-        set {
-            if let data = try? JSONEncoder().encode(newValue) {
-                UserDefaults.standard.set(data, forKey: userDefaultsKey)
-            }
-        }
-    }
-
     /// The default hotkey: Right Option.
     public static let `default` = HotkeySetting(modifierKey: .rightOption)
 
