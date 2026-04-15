@@ -94,11 +94,14 @@ public struct SpeechAnalyzerDictationProvider: DictationProviding {
             return PolishPipeline.normalizeFormatting(stripped)
         }
 
+        let userPrompt = PolishPipeline.buildUserPrompt(
+            substituted, context: context)
+
         do {
             let polished = try await polishChatClient.complete(
                 model: polishModel,
                 systemPrompt: PolishPipeline.systemPromptLocal,
-                userPrompt: substituted)
+                userPrompt: userPrompt)
             if polished.isEmpty {
                 return PolishPipeline.normalizeFormatting(stripped)
             }
