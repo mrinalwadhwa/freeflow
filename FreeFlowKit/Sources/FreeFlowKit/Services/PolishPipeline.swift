@@ -419,9 +419,9 @@ public enum PolishPipeline {
             ctxLines.append("URL: \(sanitizeContextField(url))")
         }
         if let content = context.focusedFieldContent {
-            var truncated = sanitizeContextField(content)
             // cursorPosition is a UTF-16 offset from macOS accessibility
             // APIs (NSString-style). Use the utf16 view for windowing.
+            var truncated: String
             let utf16Count = content.utf16.count
             if utf16Count > 2000 {
                 let pos = context.cursorPosition ?? utf16Count
@@ -434,7 +434,12 @@ public enum PolishPipeline {
                 truncated = String(content[startIdx..<endIdx])
                 if start16 > 0 { truncated = "..." + truncated }
                 if end16 < utf16Count { truncated = truncated + "..." }
+            } else {
+                truncated = content
             }
+            // Sanitize after truncation so injection markers within the
+            // cursor window are always stripped.
+            truncated = sanitizeContextField(truncated)
             ctxLines.append("Field content:\n\(truncated)")
         }
         if let pos = context.cursorPosition {
