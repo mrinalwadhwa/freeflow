@@ -24,33 +24,40 @@ public enum IssueDiagnostics {
     ///     of the issue body (e.g. from a "Something went wrong" screen).
     ///   - micDiagnostics: Formatted mic diagnostic string from
     ///     `MicDiagnosticStore.formattedDiagnostics()`. Pass nil to omit.
-    /// - Returns: A URL that opens the GitHub new-issue page with the body
-    ///   pre-filled, or nil if URL construction fails.
+    /// Result of building an issue URL with diagnostics.
+    public struct IssueReport {
+        /// The GitHub new-issue URL with pre-filled title and body.
+        public let url: URL
+        /// Full diagnostics string for the user to paste into the issue.
+        public let diagnostics: String
+    }
+
+    /// - Returns: An `IssueReport` containing the GitHub URL and a
+    ///   diagnostics string, or nil if URL construction fails. The
+    ///   caller is responsible for copying diagnostics to the clipboard
+    ///   and informing the user.
     public static func issueURL(
         title: String = "",
         errorMessage: String? = nil,
         micDiagnostics: String? = nil
-    ) -> URL? {
-        // Build the full diagnostics and copy to clipboard.
+    ) -> IssueReport? {
         let fullDiagnostics = buildFullDiagnostics(
             errorMessage: errorMessage,
             micDiagnostics: micDiagnostics
         )
-        #if canImport(AppKit)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(fullDiagnostics, forType: .string)
-        #endif
 
-        // The URL body is kept short: system info + paste prompt.
         let body = buildURLBody(errorMessage: errorMessage)
 
-        var components = URLComponents(string: repoURL)!
+        guard var components = URLComponents(string: repoURL) else {
+            return nil
+        }
         components.queryItems = [
             URLQueryItem(name: "title", value: title),
             URLQueryItem(name: "body", value: body),
             URLQueryItem(name: "labels", value: "bug"),
         ]
-        return components.url
+        guard let url = components.url else { return nil }
+        return IssueReport(url: url, diagnostics: fullDiagnostics)
     }
 
     // MARK: - Body

@@ -621,9 +621,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func reportAnIssue() {
         Task {
             let micDiagnostics: String? = await micDiagnosticStore?.formattedDiagnostics()
-            if let url = IssueDiagnostics.issueURL(micDiagnostics: micDiagnostics) {
-                NSWorkspace.shared.open(url)
+            guard let report = IssueDiagnostics.issueURL(micDiagnostics: micDiagnostics) else {
+                return
             }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(report.diagnostics, forType: .string)
+            NSWorkspace.shared.open(report.url)
         }
     }
 
