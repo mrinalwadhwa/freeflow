@@ -211,6 +211,13 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
     ) async throws {
         try Task.checkCancellation()
 
+        // Warn if a session is already active — callers should cancel
+        // or finish the previous session before starting a new one.
+        if lock.withLock({ currentTiming != nil }) {
+            Log.debug("[OpenAIRealtime] startStreaming called while a session is active")
+            assertionFailure("startStreaming called while a session is active")
+        }
+
         // Install a fresh timing record and reset chunking state.
         let sessionID: Int = lock.withLock {
             let id = self.nextSessionID

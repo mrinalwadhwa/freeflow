@@ -65,6 +65,12 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
     public func startStreaming(
         context: AppContext, language: String?, micProximity: MicProximity
     ) async throws {
+        // Warn if a session is already active.
+        if lock.withLock({ self.analyzer != nil }) {
+            Log.debug("[SpeechAnalyzerStreaming] startStreaming called while a session is active")
+            assertionFailure("startStreaming called while a session is active")
+        }
+
         // Use the granular initializer (no preset) so each result
         // is an additive chunk rather than a progressive replacement.
         // This lets us simply concatenate results, avoiding fragile
