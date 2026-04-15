@@ -285,49 +285,23 @@ public actor DictationPipeline: PipelineProviding {
         let t3 = CFAbsoluteTimeGetCurrent()
         let audioProviderRef = audioProvider
         enum StartRecordingTimeout: Error { case timedOut }
-        let startResult: Result<Void, Error> = await withCheckedContinuation { continuation in
-            let lock = NSLock()
-            var resumed = false
-
-            // Worker: run startRecording() off the actor.
-            Task.detached {
-                do {
-                    try await audioProviderRef.startRecording()
-                    let alreadyResumed = lock.withLock {
-                        let was = resumed
-                        resumed = true
-                        return was
-                    }
-                    if !alreadyResumed {
-                        continuation.resume(returning: .success(()))
-                    }
-                } catch {
-                    let alreadyResumed = lock.withLock {
-                        let was = resumed
-                        resumed = true
-                        return was
-                    }
-                    if !alreadyResumed {
-                        continuation.resume(returning: .failure(error))
-                    }
-                }
+        // Race startRecording() against a 3s timeout for BT SCO negotiation.
+        let startResult: Result<Void, Error>
+        let completed: Result<Void, Error>? = await detachedWithTimeout(seconds: 3.0) {
+            do {
+                try await audioProviderRef.startRecording()
+                return .success(())
+            } catch {
+                return .failure(error)
             }
-
-            // Timeout: 3s ceiling for BT SCO negotiation.
-            Task.detached {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                let alreadyResumed = lock.withLock {
-                    let was = resumed
-                    resumed = true
-                    return was
-                }
-                if !alreadyResumed {
-                    Log.debug(
-                        "[Pipeline] startRecording() timed out (3s), likely BT negotiation hang"
-                    )
-                    continuation.resume(returning: .failure(StartRecordingTimeout.timedOut))
-                }
-            }
+        }
+        if let completed {
+            startResult = completed
+        } else {
+            Log.debug(
+                "[Pipeline] startRecording() timed out (3s), likely BT negotiation hang"
+            )
+            startResult = .failure(StartRecordingTimeout.timedOut)
         }
 
         switch startResult {
@@ -726,32 +700,10 @@ public actor DictationPipeline: PipelineProviding {
             // forces send() to throw) and proceed with batch mode.
             if let ft = forwardingTask {
                 ft.cancel()
-                let forwardingDone: Bool = await withCheckedContinuation { continuation in
-                    let lock = NSLock()
-                    var resumed = false
-                    Task.detached {
-                        await ft.value
-                        let alreadyResumed = lock.withLock {
-                            let was = resumed
-                            resumed = true
-                            return was
-                        }
-                        if !alreadyResumed {
-                            continuation.resume(returning: true)
-                        }
-                    }
-                    Task.detached {
-                        try? await Task.sleep(nanoseconds: 2_000_000_000)
-                        let alreadyResumed = lock.withLock {
-                            let was = resumed
-                            resumed = true
-                            return was
-                        }
-                        if !alreadyResumed {
-                            continuation.resume(returning: false)
-                        }
-                    }
-                }
+                let forwardingDone = await detachedWithTimeout(seconds: 2.0) {
+                    await ft.value
+                    return true
+                } ?? false
                 if !forwardingDone {
                     Log.debug(
                         "[Pipeline] audio forwarding task timed out (2s), cancelling streaming")
@@ -988,34 +940,11 @@ public actor DictationPipeline: PipelineProviding {
             recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         let deadline = Self.pipelineDeadline(
             forRecordingDuration: recordingDuration)
-        let pipelineDone: Bool = await withCheckedContinuation { continuation in
-            let lock = NSLock()
-            var resumed = false
-            Task.detached {
-                await task.value
-                let alreadyResumed = lock.withLock {
-                    let was = resumed
-                    resumed = true
-                    return was
-                }
-                if !alreadyResumed {
-                    continuation.resume(returning: true)
-                }
-            }
-            Task.detached {
-                try? await Task.sleep(
-                    nanoseconds: UInt64(deadline * 1_000_000_000))
-                let alreadyResumed = lock.withLock {
-                    let was = resumed
-                    resumed = true
-                    return was
-                }
-                if !alreadyResumed {
-                    task.cancel()
-                    continuation.resume(returning: false)
-                }
-            }
-        }
+        let pipelineDone = await detachedWithTimeout(seconds: deadline) {
+            await task.value
+            return true
+        } ?? false
+        if !pipelineDone { task.cancel() }
         if !pipelineDone {
             Log.debug(
                 "[Pipeline] complete() pipeline task timed out (\(Int(deadline))s), force-resetting to idle"
