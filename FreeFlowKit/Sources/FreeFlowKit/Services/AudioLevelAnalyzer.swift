@@ -17,7 +17,7 @@ public enum AudioLevelAnalyzer {
     /// - Returns: Normalized RMS level (0.0–1.0), or 0.0 if the
     ///   buffer is empty or contains no PCM samples.
     public static func rmsLevel(of buffer: AudioBuffer) -> Float {
-        let headerSize = 44
+        let headerSize = WAVEncoder.headerSize
         let bytesPerSample = buffer.bitsPerSample / 8
 
         guard bytesPerSample > 0,

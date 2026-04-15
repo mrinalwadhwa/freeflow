@@ -1322,7 +1322,7 @@ public actor DictationPipeline: PipelineProviding {
         uncommittedDuration: TimeInterval
     ) -> Data? {
         guard uncommittedDuration > 0 else { return nil }
-        let headerSize = 44
+        let headerSize = WAVEncoder.headerSize
         guard buffer.data.count > headerSize else { return nil }
 
         // 16 kHz 16-bit mono = 32,000 bytes/sec.

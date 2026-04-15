@@ -14,8 +14,11 @@ enum WAVEncoder {
     ///   - channels: Number of audio channels (1 for mono, 2 for stereo).
     ///   - bitsPerSample: Bits per sample (e.g. 16).
     /// - Returns: Complete WAV file data with a 44-byte RIFF header.
+    /// Size of the standard 44-byte RIFF/WAV header.
+    static let headerSize = 44
+
     /// Maximum PCM data size that fits in a WAV file (4 GB minus header).
-    static let maxDataSize = Int(UInt32.max) - 44
+    static let maxDataSize = Int(UInt32.max) - headerSize
 
     static func encode(
         pcmData: Data,
@@ -27,7 +30,7 @@ enum WAVEncoder {
             pcmData.count <= maxDataSize,
             "PCM data exceeds WAV format limit (~4 GB)")
 
-        let headerSize = 44
+        let headerSize = Self.headerSize
         let dataSize = pcmData.count
         let fileSize = headerSize + dataSize
 
