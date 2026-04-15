@@ -29,6 +29,12 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
     private var tapThread: Thread?
     private var _isHotkeyDown = false
 
+    /// The retained self-pointer passed to the CGEventTap callback.
+    /// Stored so `tearDownTap` can release it, preventing a dangling
+    /// pointer if the provider is deallocated while events are in flight.
+    /// Visible for testing retain-balance correctness.
+    private(set) var retainedSelfPointer: UnsafeMutableRawPointer?
+
     /// The current hotkey configuration.
     private var _hotkeySetting: HotkeySetting = .default
 
@@ -86,8 +92,11 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
                 eventMask |= (1 << CGEventType.keyUp.rawValue)
             }
 
-            // Use an Unmanaged pointer to self so the C callback can reach us.
-            let selfPointer = Unmanaged.passUnretained(self).toOpaque()
+            // Retain self so the C callback always has a valid pointer,
+            // even if events are in flight when tearDownTap runs.
+            // The balancing release happens in tearDownTap.
+            let selfPointer = Unmanaged.passRetained(self).toOpaque()
+            self.retainedSelfPointer = selfPointer
 
             guard
                 let tap = CGEvent.tapCreate(
@@ -250,6 +259,14 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
 
         if let tap = eventTap {
             CFMachPortInvalidate(tap)
+        }
+
+        // Release the retained self-pointer now that the mach port is
+        // invalidated and no more callbacks can fire.
+        if let pointer = retainedSelfPointer {
+            Unmanaged<CGEventTapHotkeyProvider>.fromOpaque(pointer)
+                .release()
+            retainedSelfPointer = nil
         }
 
         eventTap = nil
