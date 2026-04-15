@@ -852,7 +852,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
             if let error {
                 // Log and skip this chunk rather than crashing.
-                debugPrint("Audio conversion error: \(error)")
+                Log.debug("[AudioCapture] Audio conversion error: \(error)")
                 return
             }
 
