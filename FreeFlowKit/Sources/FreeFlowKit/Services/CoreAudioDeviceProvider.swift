@@ -369,12 +369,15 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 captureProvider?.markNeedsRebuild()
             }
 
-            AudioObjectAddPropertyListenerBlock(
+            let devicesStatus = AudioObjectAddPropertyListenerBlock(
                 AudioObjectID(kAudioObjectSystemObject),
                 &devicesAddress,
                 nil,
                 devicesBlock
             )
+            if devicesStatus != noErr {
+                Log.debug("[CoreAudioDeviceProvider] Failed to register device list listener: \(devicesStatus)")
+            }
             deviceListListenerBlock = devicesBlock
 
             var defaultAddress = AudioObjectPropertyAddress(
@@ -391,12 +394,15 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 captureProvider?.markNeedsRebuild()
             }
 
-            AudioObjectAddPropertyListenerBlock(
+            let defaultStatus = AudioObjectAddPropertyListenerBlock(
                 AudioObjectID(kAudioObjectSystemObject),
                 &defaultAddress,
                 nil,
                 defaultBlock
             )
+            if defaultStatus != noErr {
+                Log.debug("[CoreAudioDeviceProvider] Failed to register default device listener: \(defaultStatus)")
+            }
             defaultDeviceListenerBlock = defaultBlock
         }
 
