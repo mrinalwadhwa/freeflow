@@ -133,7 +133,7 @@ public final class Settings: @unchecked Sendable {
     // MARK: - Shortcut Labels
 
     /// Display label for the hands-free mode shortcut.
-    /// Defaults to "⌘⇧H" (Command+Shift+H).
+    /// Defaults to "⌃⌥H" (Control+Option+H).
     public var handsfreeShortcutLabel: String {
         get {
             defaults.string(forKey: Key.handsfreeShortcutLabel.rawValue)
@@ -186,7 +186,7 @@ public final class Settings: @unchecked Sendable {
     // MARK: - Shortcut Bindings
 
     /// The key binding for the hands-free mode shortcut.
-    /// Defaults to ⌘⇧H (Command+Shift+H, key code 4).
+    /// Defaults to ⌃⌥H (Control+Option+H, key code 4).
     public var handsfreeShortcutBinding: ShortcutBinding {
         get {
             guard let data = defaults.data(forKey: Key.handsfreeShortcutBinding.rawValue),
