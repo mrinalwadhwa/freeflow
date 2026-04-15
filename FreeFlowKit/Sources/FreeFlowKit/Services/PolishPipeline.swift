@@ -383,6 +383,10 @@ public enum PolishPipeline {
         // Strip ChatML delimiters.
         result = result.replacingOccurrences(of: "<|im_start|>", with: "")
         result = result.replacingOccurrences(of: "<|im_end|>", with: "")
+        // Strip <keep> tags so context fields cannot inject protected
+        // content that the LLM would preserve verbatim.
+        result = result.replacingOccurrences(of: "<keep>", with: "")
+        result = result.replacingOccurrences(of: "</keep>", with: "")
         // Strip role-like prefixes at the start of the string or after
         // newlines (e.g. "SYSTEM:", "USER:", "ASSISTANT:").
         if let regex = try? NSRegularExpression(
