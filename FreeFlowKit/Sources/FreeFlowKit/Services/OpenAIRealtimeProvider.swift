@@ -187,12 +187,16 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
     }
 
     deinit {
-        lock.withLock { chunkReaderTask }?.cancel()
-        backupOpenTask?.cancel()
-        backupTask?.cancel(with: .normalClosure, reason: nil)
-        backupSession?.invalidateAndCancel()
-        lock.withLock { webSocketTask }?.cancel(with: .normalClosure, reason: nil)
-        lock.withLock { urlSession }?.invalidateAndCancel()
+        let (reader, ws, session, bOpen, bTask, bSession) = lock.withLock {
+            (chunkReaderTask, webSocketTask, urlSession,
+             backupOpenTask, backupTask, backupSession)
+        }
+        reader?.cancel()
+        bOpen?.cancel()
+        bTask?.cancel(with: .normalClosure, reason: nil)
+        bSession?.invalidateAndCancel()
+        ws?.cancel(with: .normalClosure, reason: nil)
+        session?.invalidateAndCancel()
     }
 
     // MARK: - StreamingDictationProviding
