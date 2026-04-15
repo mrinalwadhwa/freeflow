@@ -48,13 +48,38 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
 
     // MARK: - System sound paths
 
-    /// Partial nod: very short, crisp start cue (~0.15s).
-    private static let startSoundPath =
-        "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/head_gestures_partial_nod.caf"
+    /// Candidate paths for the start-recording sound, in preference order.
+    /// The first path that exists on disk is used. The last entry should
+    /// always be a stable `/System/Library/Sounds/` file as a fallback.
+    public static let startSoundCandidates: [String] = [
+        // Preferred: AirPods head-gesture partial nod (macOS 14+).
+        "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/head_gestures_partial_nod.caf",
+        // Fallback: Tink — very short, crisp. Stable since macOS 10.0.
+        "/System/Library/Sounds/Tink.aiff",
+    ]
 
-    /// Partial shake: very short stop cue (~0.13s).
-    private static let stopSoundPath =
-        "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/head_gestures_partial_shake.caf"
+    /// Candidate paths for the stop-recording sound, in preference order.
+    public static let stopSoundCandidates: [String] = [
+        // Preferred: AirPods head-gesture partial shake (macOS 14+).
+        "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/head_gestures_partial_shake.caf",
+        // Fallback: Pop — short, distinct. Stable since macOS 10.0.
+        "/System/Library/Sounds/Pop.aiff",
+    ]
+
+    /// Return the first path in `candidates` that exists on disk, or nil.
+    public static func resolveSoundPath(_ candidates: [String]) -> String? {
+        candidates.first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// List all sound files in `/System/Library/Sounds/` for previewing
+    /// alternative sound choices.
+    public static func availableSystemSounds() -> [String] {
+        let dir = "/System/Library/Sounds"
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
+            return []
+        }
+        return contents.sorted().map { "\(dir)/\($0)" }
+    }
 
     // MARK: - Init
 
@@ -75,11 +100,15 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
         }
 
         #if canImport(AVFoundation)
-            // Pre-load sound files into PCM buffers. If loading fails,
-            // the corresponding buffer stays nil and that cue is silently
-            // skipped at playback time.
-            startBuffer = Self.loadSoundBuffer(from: Self.startSoundPath)
-            stopBuffer = Self.loadSoundBuffer(from: Self.stopSoundPath)
+            // Resolve the first available sound file from the candidate
+            // lists, then pre-load into PCM buffers. If no candidate
+            // exists, the buffer stays nil and playback is silently skipped.
+            if let path = Self.resolveSoundPath(Self.startSoundCandidates) {
+                startBuffer = Self.loadSoundBuffer(from: path)
+            }
+            if let path = Self.resolveSoundPath(Self.stopSoundCandidates) {
+                stopBuffer = Self.loadSoundBuffer(from: path)
+            }
 
             // Pre-warm the playback engine so the first sound has no
             // cold-start latency. The engine stays running and idle,
@@ -138,6 +167,15 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
             lock.withLock {
                 tearDownEngineLocked()
             }
+        #endif
+    }
+
+    /// Play an arbitrary sound file for previewing alternative cues.
+    /// Use `availableSystemSounds()` to list candidates.
+    public func playPreview(path: String) {
+        #if canImport(AVFoundation)
+            guard let buffer = Self.loadSoundBuffer(from: path) else { return }
+            play(buffer)
         #endif
     }
 
