@@ -503,14 +503,22 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                             // Fall through to create a new engine.
                         } else {
                             engine.prepare()
+                            var startError: Error?
                             let startException = ObjCTryCatch {
-                                do { try engine.start() } catch {}
+                                do { try engine.start() } catch { startError = error }
                             }
                             if let startException {
                                 Log.debug(
-                                    "[AudioCapture] engine.start() failed on reuse: "
+                                    "[AudioCapture] engine.start() ObjC exception on reuse: "
                                         + "\(startException.reason ?? startException.name.rawValue), "
                                         + "rebuilding engine"
+                                )
+                                tearDownEngineLocked()
+                                // Fall through to create a new engine.
+                            } else if let startError {
+                                Log.debug(
+                                    "[AudioCapture] engine.start() failed on reuse: "
+                                        + "\(startError), rebuilding engine"
                                 )
                                 tearDownEngineLocked()
                                 // Fall through to create a new engine.
