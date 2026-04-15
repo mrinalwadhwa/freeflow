@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and hotkey registration. Otherwise show the onboarding window so
     /// the user can enter one.
     private func determineLaunchFlow() {
-        if DictationMode.current == .local && DictationMode.isLocalAvailable {
+        if Settings.shared.dictationMode == .local && DictationMode.isLocalAvailable {
             Log.debug("[AppDelegate] Local mode, checking permissions")
             checkPermissions()
         } else if ServiceConfig.shared.isConfigured {
@@ -249,12 +249,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioProvider.setSoundFeedbackProvider(soundFeedbackProvider)
         audioDeviceProvider.setAudioCaptureProvider(audioProvider)
 
-        let language = LanguageSetting.current.languageCode
+        let language = Settings.shared.language.languageCode
         let dictationProvider: any DictationProviding
         let streamingProvider: (any StreamingDictationProviding)?
         let onSessionExpired: (@Sendable () -> Void)?
 
-        if DictationMode.current == .local, #available(macOS 26, *) {
+        if Settings.shared.dictationMode == .local, #available(macOS 26, *) {
             let polisher = FoundationModelChatClient()
             dictationProvider = SpeechAnalyzerDictationProvider(
                 polishChatClient: polisher, language: language)
@@ -275,8 +275,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        let isLocal = DictationMode.current == .local
-        Log.debug("[AppDelegate] setupPipeline: isLocal=\(isLocal), mode=\(DictationMode.current.rawValue)")
+        let isLocal = Settings.shared.dictationMode == .local
+        Log.debug("[AppDelegate] setupPipeline: isLocal=\(isLocal), mode=\(Settings.shared.dictationMode.rawValue)")
         let newPipeline = DictationPipeline(
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
@@ -312,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onSessionExpired = { [weak self] in
             self?.resetAPIKey()
         }
-        controller.viewModel.isPrivateMode = DictationMode.current == .local
+        controller.viewModel.isPrivateMode = Settings.shared.dictationMode == .local
         hudController = controller
     }
 
@@ -383,7 +383,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Switching to cloud requires an API key. If none is stored,
     /// show the onboarding flow so the user can enter one.
     private func togglePrivateMode() {
-        let isCurrentlyLocal = DictationMode.current == .local
+        let isCurrentlyLocal = Settings.shared.dictationMode == .local
 
         if isCurrentlyLocal && !ServiceConfig.shared.isConfigured {
             // No API key — show just the API key entry screen.
@@ -394,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let newMode: DictationMode = isCurrentlyLocal ? .cloud : .local
-        DictationMode.current = newMode
+        Settings.shared.dictationMode = newMode
         Log.debug("[AppDelegate] Private mode toggled: \(newMode.rawValue)")
 
         rebuildPipeline()
@@ -466,7 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Rebuild the pipeline after dictation mode changes.
     private func rebuildPipeline() {
-        Log.debug("[AppDelegate] Rebuilding pipeline for mode: \(DictationMode.current.rawValue)")
+        Log.debug("[AppDelegate] Rebuilding pipeline for mode: \(Settings.shared.dictationMode.rawValue)")
 
         // Tear down the old pipeline and streaming provider before
         // creating new ones to avoid stale references.

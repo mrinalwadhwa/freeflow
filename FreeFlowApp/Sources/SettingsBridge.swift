@@ -217,7 +217,7 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
         shortcuts: [String: String],
         language: String,
         languages: [[String: String]],
-        dictationMode: String = DictationMode.current.rawValue,
+        dictationMode: String = Settings.shared.dictationMode.rawValue,
         localModeAvailable: Bool = DictationMode.isLocalAvailable
     ) {
         pushEvent(

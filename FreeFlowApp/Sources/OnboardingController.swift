@@ -167,7 +167,7 @@ final class OnboardingController {
 
     private func handleSetDictationMode(mode: String) {
         guard let newMode = DictationMode(rawValue: mode) else { return }
-        DictationMode.current = newMode
+        Settings.shared.dictationMode = newMode
     }
 
     private func handleStoreAPIKey(key: String) {

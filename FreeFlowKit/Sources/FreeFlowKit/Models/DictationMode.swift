@@ -20,28 +20,6 @@ public enum DictationMode: String, CaseIterable, Sendable {
         }
     }
 
-    // MARK: - Persistence
-
-    private static let userDefaultsKey = "dictationMode"
-
-    /// The currently selected dictation mode. Reads from UserDefaults
-    /// on each access so changes are picked up immediately.
-    public static var current: DictationMode {
-        get {
-            if let stored = UserDefaults.standard.string(
-                forKey: userDefaultsKey),
-                let mode = DictationMode(rawValue: stored)
-            {
-                return mode
-            }
-            return .cloud
-        }
-        set {
-            UserDefaults.standard.set(
-                newValue.rawValue, forKey: userDefaultsKey)
-        }
-    }
-
     /// Whether on-device mode is available on this system.
     ///
     /// Requires macOS 26+ for SpeechAnalyzer and Foundation Models.

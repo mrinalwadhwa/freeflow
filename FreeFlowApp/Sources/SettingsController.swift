@@ -151,7 +151,7 @@ final class SettingsController {
 
     private func handleGetSettings() {
         let soundEnabled = Settings.shared.soundFeedbackEnabled
-        let language = LanguageSetting.current.rawValue
+        let language = Settings.shared.language.rawValue
 
         // Build the full language list for the dropdown.
         let languages: [[String: String]] = LanguageSetting.allCases.map { setting in
@@ -345,7 +345,7 @@ final class SettingsController {
 
     private func handleSetLanguage(code: String) {
         guard let setting = LanguageSetting(rawValue: code) else { return }
-        LanguageSetting.current = setting
+        Settings.shared.language = setting
 
         if let pipeline {
             Task {
@@ -358,10 +358,10 @@ final class SettingsController {
 
     private func handleSetDictationMode(mode: String) {
         guard let newMode = DictationMode(rawValue: mode) else { return }
-        let oldMode = DictationMode.current
+        let oldMode = Settings.shared.dictationMode
         guard newMode != oldMode else { return }
 
-        DictationMode.current = newMode
+        Settings.shared.dictationMode = newMode
         onDictationModeChanged?()
     }
 

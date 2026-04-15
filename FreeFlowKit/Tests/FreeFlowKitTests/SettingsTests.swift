@@ -291,6 +291,97 @@ struct SettingsTests {
         settings.hotkeySetting = .default
     }
 
+    // MARK: - Language
+
+    @Test("Language defaults to a valid setting")
+    func languageDefault() {
+        UserDefaults.standard.removeObject(forKey: "selectedLanguage")
+        let lang = Settings.shared.language
+        // Should be system locale or English fallback.
+        #expect(LanguageSetting.allCases.contains(lang))
+    }
+
+    @Test("Language round-trips through Settings")
+    func languageRoundTrip() {
+        let settings = Settings.shared
+        settings.language = .french
+        #expect(settings.language == .french)
+
+        settings.language = .tamil
+        #expect(settings.language == .tamil)
+
+        // Restore.
+        UserDefaults.standard.removeObject(forKey: "selectedLanguage")
+    }
+
+    @Test("Language setter posts settingsDidChange notification")
+    func languageNotification() {
+        let settings = Settings.shared
+
+        var receivedKey: String?
+        let observer = NotificationCenter.default.addObserver(
+            forName: .settingsDidChange,
+            object: settings,
+            queue: nil
+        ) { notification in
+            if receivedKey == nil {
+                receivedKey = notification.userInfo?["key"] as? String
+            }
+        }
+
+        settings.language = .german
+
+        NotificationCenter.default.removeObserver(observer)
+
+        #expect(receivedKey == "selectedLanguage")
+
+        // Restore.
+        UserDefaults.standard.removeObject(forKey: "selectedLanguage")
+    }
+
+    // MARK: - Dictation Mode
+
+    @Test("Dictation mode defaults to cloud")
+    func dictationModeDefault() {
+        UserDefaults.standard.removeObject(forKey: "dictationMode")
+        #expect(Settings.shared.dictationMode == .cloud)
+    }
+
+    @Test("Dictation mode round-trips through Settings")
+    func dictationModeRoundTrip() {
+        let settings = Settings.shared
+        settings.dictationMode = .local
+        #expect(settings.dictationMode == .local)
+
+        settings.dictationMode = .cloud
+        #expect(settings.dictationMode == .cloud)
+    }
+
+    @Test("Dictation mode setter posts settingsDidChange notification")
+    func dictationModeNotification() {
+        let settings = Settings.shared
+
+        var receivedKey: String?
+        let observer = NotificationCenter.default.addObserver(
+            forName: .settingsDidChange,
+            object: settings,
+            queue: nil
+        ) { notification in
+            if receivedKey == nil {
+                receivedKey = notification.userInfo?["key"] as? String
+            }
+        }
+
+        settings.dictationMode = .local
+
+        NotificationCenter.default.removeObserver(observer)
+
+        #expect(receivedKey == "dictationMode")
+
+        // Restore.
+        settings.dictationMode = .cloud
+    }
+
     // MARK: - Settings is singleton
 
     @Test("Settings.shared always returns the same instance")

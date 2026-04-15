@@ -188,14 +188,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             privateMode.image = NSImage(
                 systemSymbolName: "lock.shield",
                 accessibilityDescription: nil)
-            if DictationMode.current == .local {
+            if Settings.shared.dictationMode == .local {
                 privateMode.state = .on
             }
             menu.addItem(privateMode)
             privateModeItem = privateMode
 
             let modeStatus = NSMenuItem(
-                title: DictationMode.current == .local
+                title: Settings.shared.dictationMode == .local
                     ? "Transcribing on this Mac"
                     : "Transcribing in the cloud",
                 action: nil,
@@ -505,7 +505,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         languageSubmenuItem.submenu = submenu
         submenu.removeAllItems()
 
-        let current = LanguageSetting.current
+        let current = Settings.shared.language
 
         for setting in LanguageSetting.allCases {
             let item = NSMenuItem(
@@ -562,7 +562,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let setting = LanguageSetting(rawValue: rawValue)
         else { return }
 
-        LanguageSetting.current = setting
+        Settings.shared.language = setting
 
         // Apply the language to the pipeline immediately.
         if let pipeline {

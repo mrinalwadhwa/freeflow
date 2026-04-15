@@ -140,35 +140,11 @@ public enum LanguageSetting: String, CaseIterable, Sendable {
         return rawValue
     }
 
-    // MARK: - Persistence
-
-    private static let userDefaultsKey = "selectedLanguage"
-
-    /// The currently selected language. Reads from UserDefaults on each
-    /// access so changes are picked up immediately.
-    ///
-    /// On first launch (no stored value), defaults to the macOS preferred
-    /// language if it matches a supported language, otherwise English.
-    public static var current: LanguageSetting {
-        get {
-            if let stored = UserDefaults.standard.string(forKey: userDefaultsKey),
-                let setting = LanguageSetting(rawValue: stored)
-            {
-                return setting
-            }
-            // First launch: use system language if supported, else English.
-            return settingFromSystemLocale() ?? .english
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: userDefaultsKey)
-        }
-    }
-
     // MARK: - System locale mapping
 
     /// Map the macOS preferred language to a supported language setting.
     /// Returns nil if the system language is not in our supported set.
-    private static func settingFromSystemLocale() -> LanguageSetting? {
+    public static func settingFromSystemLocale() -> LanguageSetting? {
         guard let preferred = Locale.preferredLanguages.first else { return nil }
         // Locale identifiers can be "en-US", "fr-FR", "zh-Hans", etc.
         // Extract the base language code (before the first hyphen).

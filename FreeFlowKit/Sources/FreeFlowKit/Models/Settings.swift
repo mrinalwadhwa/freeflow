@@ -20,6 +20,8 @@ public final class Settings: @unchecked Sendable {
     private enum Key: String, CaseIterable {
         case soundFeedbackEnabled = "soundFeedbackEnabled"
         case hotkeyConfiguration = "hotkeyConfiguration"
+        case selectedLanguage = "selectedLanguage"
+        case dictationMode = "dictationMode"
         case handsfreeShortcutLabel = "handsfreeShortcutLabel"
         case pasteShortcutLabel = "pasteShortcutLabel"
         case cancelShortcutLabel = "cancelShortcutLabel"
@@ -79,6 +81,52 @@ public final class Settings: @unchecked Sendable {
                     userInfo: ["key": Key.hotkeyConfiguration.rawValue]
                 )
             }
+        }
+    }
+
+    // MARK: - Language
+
+    /// The selected dictation language.
+    /// Defaults to the macOS preferred language if supported, otherwise English.
+    public var language: LanguageSetting {
+        get {
+            if let stored = defaults.string(forKey: Key.selectedLanguage.rawValue),
+                let setting = LanguageSetting(rawValue: stored)
+            {
+                return setting
+            }
+            return LanguageSetting.settingFromSystemLocale() ?? .english
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Key.selectedLanguage.rawValue)
+            NotificationCenter.default.post(
+                name: .settingsDidChange,
+                object: self,
+                userInfo: ["key": Key.selectedLanguage.rawValue]
+            )
+        }
+    }
+
+    // MARK: - Dictation Mode
+
+    /// Whether dictation uses cloud APIs or on-device processing.
+    /// Defaults to cloud.
+    public var dictationMode: DictationMode {
+        get {
+            if let stored = defaults.string(forKey: Key.dictationMode.rawValue),
+                let mode = DictationMode(rawValue: stored)
+            {
+                return mode
+            }
+            return .cloud
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Key.dictationMode.rawValue)
+            NotificationCenter.default.post(
+                name: .settingsDidChange,
+                object: self,
+                userInfo: ["key": Key.dictationMode.rawValue]
+            )
         }
     }
 
