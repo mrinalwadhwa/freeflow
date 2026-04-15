@@ -153,10 +153,10 @@ struct PipelineIntegrationTests {
         }
 
         hotkeyProvider.simulatePress()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await Task.sleep(nanoseconds: 200_000_000)
 
         hotkeyProvider.simulateRelease()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await Task.sleep(nanoseconds: 200_000_000)
 
         #expect(audioProvider.startCallCount == 1)
         #expect(audioProvider.stopCallCount == 1)

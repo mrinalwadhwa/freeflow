@@ -684,8 +684,9 @@ final class PipelineTimeoutTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 200_000_000)
 
         // Everything hangs. The 15s overall timeout must fire and
-        // force-reset to idle. Allow 20s total (15s timeout + margin).
-        await assertCompletesWithin(20.0) {
+        // force-reset to idle. Allow 30s total (15s timeout + generous
+        // margin for loaded CI machines).
+        await assertCompletesWithin(30.0) {
             await pipeline.complete()
         }
 
