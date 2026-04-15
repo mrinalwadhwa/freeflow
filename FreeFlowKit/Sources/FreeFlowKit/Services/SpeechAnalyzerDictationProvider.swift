@@ -63,15 +63,17 @@ public struct SpeechAnalyzerDictationProvider: DictationProviding {
         request.requiresOnDeviceRecognition = true
         request.shouldReportPartialResults = false
 
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await SafeRecognitionContinuation.run { handler in
             recognizer.recognitionTask(with: request) { result, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    handler(nil, error)
                     return
                 }
-                guard let result, result.isFinal else { return }
-                continuation.resume(
-                    returning: result.bestTranscription.formattedString)
+                guard let result, result.isFinal else {
+                    handler(nil, nil)
+                    return
+                }
+                handler(result.bestTranscription.formattedString, nil)
             }
         }
     }
