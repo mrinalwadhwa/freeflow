@@ -62,8 +62,8 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
     public static let stopSoundCandidates: [String] = [
         // Preferred: AirPods head-gesture partial shake (macOS 14+).
         "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/head_gestures_partial_shake.caf",
-        // Fallback: Pop — short, distinct. Stable since macOS 10.0.
-        "/System/Library/Sounds/Pop.aiff",
+        // Fallback: Morse — short, distinct. Stable since macOS 10.0.
+        "/System/Library/Sounds/Morse.aiff",
     ]
 
     /// Return the first path in `candidates` that exists on disk, or nil.
