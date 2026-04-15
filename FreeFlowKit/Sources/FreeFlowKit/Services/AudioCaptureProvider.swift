@@ -47,6 +47,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
     /// once after ambient calibration completes. Near-field mics always
     /// use 1.0 (no gain). Raw peak/ambient RMS values are unaffected
     /// so the silence gate logic is unchanged.
+    private var _droppedFrameCount: Int = 0
     private var _gainFactor: Float = 1.0
 
     /// Target RMS level for gained audio. Quiet speech on a near-field
@@ -279,6 +280,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 let _ = try ensureConverter()
 
                 _isRecording = true
+                _droppedFrameCount = 0
                 return _soundFeedbackProvider
             }
 
@@ -852,7 +854,11 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
             if let error {
                 // Log and skip this chunk rather than crashing.
-                Log.debug("[AudioCapture] Audio conversion error: \(error)")
+                let count = lock.withLock {
+                    _droppedFrameCount += 1
+                    return _droppedFrameCount
+                }
+                Log.debug("[AudioCapture] Audio conversion error (dropped \(count)): \(error)")
                 return
             }
 
