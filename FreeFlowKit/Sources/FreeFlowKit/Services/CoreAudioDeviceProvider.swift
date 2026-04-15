@@ -141,9 +141,9 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 return .nearField
             }
             switch getTransportType(deviceID: id) {
-            case .builtIn, .usb:
+            case .builtIn, .usb, .other:
                 return .farField
-            case .bluetooth, .other:
+            case .bluetooth:
                 return .nearField
             }
         #else

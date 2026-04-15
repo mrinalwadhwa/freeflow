@@ -39,23 +39,24 @@ public struct AudioDevice: Sendable, Equatable, Identifiable {
         self.transportType = transportType
     }
 
-    /// Mic proximity hint for the server-side noise reduction config.
+    /// Mic proximity relative to the speaker's mouth.
     ///
-    /// Maps to the OpenAI Realtime API `input_audio_noise_reduction`
-    /// type field. Built-in and USB mics are far-field (laptop at
-    /// arm's length, desk mic at 1-2 ft). Bluetooth devices are
-    /// near-field (close-talking headset).
+    /// Controls local audio processing (software gain, silence
+    /// threshold) and is forwarded to the streaming dictation provider
+    /// for noise reduction configuration. Only Bluetooth devices are
+    /// near-field (close-talking headset). All others default to
+    /// far-field: built-in mics, USB desk mics, virtual/aggregate
+    /// devices, and unknown transports.
     ///
-    /// USB desk mics (e.g. Blue Yeti) at typical desk distance produce
-    /// speech peaks of only 0.002 RMS — similar to the built-in mic
-    /// and too quiet for reliable transcription without software gain.
-    /// Classifying USB as far-field enables 10-16x gain and server-side
-    /// far-field noise reduction, matching the built-in mic behavior.
+    /// Far-field enables adaptive software gain (clamped at 16x) and
+    /// a fixed silence threshold. The gain is self-correcting: loud
+    /// signals produce a low gain factor, so already-normalized
+    /// virtual device audio is not over-amplified.
     public var micProximity: MicProximity {
         switch transportType {
-        case .builtIn, .usb:
+        case .builtIn, .usb, .other:
             return .farField
-        case .bluetooth, .other:
+        case .bluetooth:
             return .nearField
         }
     }

@@ -89,10 +89,10 @@ struct AudioDeviceTests {
         #expect(device.micProximity == .farField)
     }
 
-    @Test("Other/unknown mic reports near-field proximity")
+    @Test("Other/unknown device defaults to far-field proximity")
     func micProximityOther() {
         let device = AudioDevice(id: 4, name: "Virtual", transportType: .other)
-        #expect(device.micProximity == .nearField)
+        #expect(device.micProximity == .farField)
     }
 
     @Test("MicProximity rawValue matches API field names")
