@@ -44,9 +44,11 @@ public enum AudioLevelAnalyzer {
 
         var sumOfSquares: Double = 0.0
         pcm16.withUnsafeBytes { rawBuffer in
-            let samples = rawBuffer.bindMemory(to: Int16.self)
             for i in 0..<sampleCount {
-                let normalized = Double(samples[i]) / 32768.0
+                let lo = UInt16(rawBuffer[i * 2])
+                let hi = UInt16(rawBuffer[i * 2 + 1])
+                let sample = Int16(bitPattern: lo | (hi << 8))
+                let normalized = Double(sample) / 32768.0
                 sumOfSquares += normalized * normalized
             }
         }

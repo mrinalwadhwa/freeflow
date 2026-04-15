@@ -30,9 +30,10 @@ public enum AudioResampler {
 
         var samples = [Int16](repeating: 0, count: nSamples)
         pcm16Data.withUnsafeBytes { raw in
-            let buf = raw.bindMemory(to: Int16.self)
             for i in 0..<nSamples {
-                samples[i] = Int16(littleEndian: buf[i])
+                let lo = UInt16(raw[i * 2])
+                let hi = UInt16(raw[i * 2 + 1])
+                samples[i] = Int16(bitPattern: lo | (hi << 8))
             }
         }
 

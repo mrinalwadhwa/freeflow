@@ -924,11 +924,14 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
         var output = Data(capacity: pcmData.count)
         pcmData.withUnsafeBytes { rawBuffer in
-            let samples = rawBuffer.bindMemory(to: Int16.self)
             for i in 0..<sampleCount {
-                let amplified = Int32(Float(samples[i]) * gain)
+                let lo = UInt16(rawBuffer[i * 2])
+                let hi = UInt16(rawBuffer[i * 2 + 1])
+                let sample = Int16(bitPattern: lo | (hi << 8))
+                let amplified = Int32(Float(sample) * gain)
                 let clamped = Int16(clamping: amplified)
-                withUnsafeBytes(of: clamped) { output.append(contentsOf: $0) }
+                var le = clamped.littleEndian
+                withUnsafeBytes(of: &le) { output.append(contentsOf: $0) }
             }
         }
         return output
