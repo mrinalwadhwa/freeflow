@@ -106,20 +106,6 @@ public struct HotkeySetting: Codable, Sendable, Equatable {
 
     // MARK: - Display
 
-    // MARK: - Modifier flag constants (device-independent)
-
-    /// Control key modifier flag (NSEvent.ModifierFlags.control.rawValue).
-    private static let controlFlag: UInt = 0x0004_0000
-
-    /// Option key modifier flag (NSEvent.ModifierFlags.option.rawValue).
-    private static let optionFlag: UInt = 0x0008_0000
-
-    /// Shift key modifier flag (NSEvent.ModifierFlags.shift.rawValue).
-    private static let shiftFlag: UInt = 0x0002_0000
-
-    /// Command key modifier flag (NSEvent.ModifierFlags.command.rawValue).
-    private static let commandFlag: UInt = 0x0010_0000
-
     /// Human-readable display name for the hotkey.
     public var displayName: String {
         switch type {
@@ -128,16 +114,16 @@ public struct HotkeySetting: Codable, Sendable, Equatable {
         case .modifierPlusKey:
             var parts: [String] = []
             if let flags = modifierFlags {
-                if flags & Self.controlFlag != 0 {
+                if flags & ShortcutBinding.controlFlag != 0 {
                     parts.append("⌃")
                 }
-                if flags & Self.optionFlag != 0 {
+                if flags & ShortcutBinding.optionFlag != 0 {
                     parts.append("⌥")
                 }
-                if flags & Self.shiftFlag != 0 {
+                if flags & ShortcutBinding.shiftFlag != 0 {
                     parts.append("⇧")
                 }
-                if flags & Self.commandFlag != 0 {
+                if flags & ShortcutBinding.commandFlag != 0 {
                     parts.append("⌘")
                 }
             }
