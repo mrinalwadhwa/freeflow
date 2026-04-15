@@ -338,7 +338,7 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                 // Without this delay, fast clipboard restore can race
                 // with apps that read the pasteboard data asynchronously
                 // after the initial provider callback.
-                Thread.sleep(forTimeInterval: 0.05)
+                Self.mainThreadDelay(seconds: 0.05)
                 Log.debug("[Injection] Paste consumed (lazy provider callback fired)")
                 restorePasteboardContents(pasteboard, items: savedItems)
                 return .consumed
@@ -357,7 +357,7 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                 pasteboard.setString(text, forType: .string)
                 simulatePaste()
                 // Electron apps need extra time to read the pasteboard.
-                Thread.sleep(forTimeInterval: 0.2)
+                Self.mainThreadDelay(seconds: 0.2)
                 restorePasteboardContents(pasteboard, items: savedItems)
                 return .invalidated
             }
@@ -476,6 +476,20 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
             }
         }
     #endif
+
+    // MARK: - Main Thread Delay
+
+    /// Wait for `seconds` while keeping the main run loop responsive.
+    ///
+    /// Use instead of `Thread.sleep` on the main thread so that UI events,
+    /// animations, and pasteboard provider callbacks continue to process
+    /// during the delay.
+    static func mainThreadDelay(seconds: TimeInterval) {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: deadline)
+        }
+    }
 
     // MARK: - Smart Leading Space
 
