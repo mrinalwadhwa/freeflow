@@ -195,7 +195,7 @@ struct OpenAIDictationProviderStubbedTests {
         }
     }
 
-    @Test("429 maps to requestFailed")
+    @Test("429 maps to rateLimited")
     func rateLimited() async throws {
         let session = stubbedSession { request in
             let body = #"{"error":{"message":"rate limit exceeded"}}"#
@@ -211,9 +211,8 @@ struct OpenAIDictationProviderStubbedTests {
         do {
             _ = try await provider.dictate(audio: silentWAV(), context: AppContext.empty)
             Issue.record("expected error")
-        } catch DictationError.requestFailed(let status, let message) {
-            #expect(status == 429)
-            #expect(message.contains("rate limit"))
+        } catch DictationError.rateLimited {
+            // Expected.
         } catch {
             Issue.record("wrong error type: \(error)")
         }

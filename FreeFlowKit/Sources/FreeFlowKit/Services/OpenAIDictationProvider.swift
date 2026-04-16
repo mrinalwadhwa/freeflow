@@ -89,6 +89,8 @@ public struct OpenAIDictationProvider: DictationProviding {
             return try parseTranscript(from: data)
         case 401:
             throw DictationError.authenticationFailed
+        case 429:
+            throw DictationError.rateLimited
         default:
             let message =
                 OpenAIChatClient.extractErrorMessage(data)
