@@ -51,8 +51,11 @@ public final class AccessibilityPermissionProvider: PermissionProviding, @unchec
             // Open System Settings > Privacy & Security > Accessibility
             let url = URL(
                 string:
-                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-            NSWorkspace.shared.open(url)
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            )
+            if let url {
+                NSWorkspace.shared.open(url)
+            }
         #endif
     }
 
