@@ -6,20 +6,31 @@ import Foundation
 /// and to verify context-dependent behavior.
 public final class MockAppContextProvider: AppContextProviding, @unchecked Sendable {
 
+    private let lock = NSLock()
+
     /// The context that will be returned by `readContext()`.
     /// Change this between calls to simulate different app states.
-    public var stubbedContext: AppContext
+    public var stubbedContext: AppContext {
+        get { lock.withLock { _stubbedContext } }
+        set { lock.withLock { _stubbedContext = newValue } }
+    }
+    private var _stubbedContext: AppContext
 
     /// Number of times `readContext()` has been called.
-    public private(set) var readContextCallCount: Int = 0
+    public var readContextCallCount: Int {
+        lock.withLock { _readContextCallCount }
+    }
+    private var _readContextCallCount: Int = 0
 
     public init(context: AppContext = .stub) {
-        self.stubbedContext = context
+        self._stubbedContext = context
     }
 
     public func readContext() async -> AppContext {
-        readContextCallCount += 1
-        return stubbedContext
+        lock.withLock {
+            _readContextCallCount += 1
+            return _stubbedContext
+        }
     }
 }
 
