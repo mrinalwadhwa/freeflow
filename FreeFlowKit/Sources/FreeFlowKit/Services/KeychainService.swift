@@ -68,9 +68,8 @@ public final class KeychainService: @unchecked Sendable {
     private func save(value: String, account: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
 
-        // Delete any existing item first to avoid errSecDuplicateItem.
-        delete(account: account)
-
+        // Try to add first. If the item already exists, update in place.
+        // This avoids a delete-then-add gap where a crash could lose the key.
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -79,8 +78,25 @@ public final class KeychainService: @unchecked Sendable {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
         ]
 
-        let status = SecItemAdd(query as CFDictionary, nil)
-        return status == errSecSuccess
+        let addStatus = SecItemAdd(query as CFDictionary, nil)
+        if addStatus == errSecSuccess { return true }
+
+        if addStatus == errSecDuplicateItem {
+            let matchQuery: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let updateAttributes: [String: Any] = [
+                kSecValueData as String: data,
+            ]
+            let updateStatus = SecItemUpdate(
+                matchQuery as CFDictionary,
+                updateAttributes as CFDictionary)
+            return updateStatus == errSecSuccess
+        }
+
+        return false
     }
 
     private func load(account: String) -> String? {
