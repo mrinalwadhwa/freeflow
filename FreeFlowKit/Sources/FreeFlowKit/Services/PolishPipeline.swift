@@ -402,7 +402,8 @@ public enum PolishPipeline {
     }
 
     public static func buildUserPrompt(
-        _ text: String, context: AppContext, language: String? = nil
+        _ text: String, context: AppContext, language: String? = nil,
+        includeFieldContent: Bool = true
     ) -> String {
         var parts = ["Transcription:\n\(text)"]
 
@@ -419,10 +420,10 @@ public enum PolishPipeline {
         if !windowTitle.isEmpty {
             ctxLines.append("Window: \(windowTitle)")
         }
-        if let url = context.browserURL {
+        if includeFieldContent, let url = context.browserURL {
             ctxLines.append("URL: \(sanitizeContextField(url))")
         }
-        if let content = context.focusedFieldContent {
+        if includeFieldContent, let content = context.focusedFieldContent {
             // cursorPosition is a UTF-16 offset from macOS accessibility
             // APIs (NSString-style). Use the utf16 view for windowing.
             var truncated: String
@@ -446,10 +447,10 @@ public enum PolishPipeline {
             truncated = sanitizeContextField(truncated)
             ctxLines.append("Field content:\n\(truncated)")
         }
-        if let pos = context.cursorPosition {
+        if includeFieldContent, let pos = context.cursorPosition {
             ctxLines.append("Cursor position: \(pos)")
         }
-        if let selected = context.selectedText {
+        if includeFieldContent, let selected = context.selectedText {
             ctxLines.append("Selected text: \(sanitizeContextField(selected))")
         }
 
