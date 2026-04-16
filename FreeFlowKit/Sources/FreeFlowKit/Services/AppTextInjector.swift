@@ -472,6 +472,7 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
 
             pasteboard.clearContents()
 
+            var pasteboardItems: [NSPasteboardItem] = []
             for saved in items {
                 let item = NSPasteboardItem()
                 for type in saved.types {
@@ -479,8 +480,9 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                         item.setData(data, forType: type)
                     }
                 }
-                pasteboard.writeObjects([item])
+                pasteboardItems.append(item)
             }
+            pasteboard.writeObjects(pasteboardItems)
         }
     #endif
 
