@@ -25,6 +25,9 @@ public enum BrowserURLReader {
         "com.microsoft.edgemac",
         "com.brave.Browser",
         "company.thebrowser.Browser",  // Arc
+        "com.vivaldi.Vivaldi",
+        "com.operasoftware.Opera",
+        "app.zen-browser.zen",  // Zen Browser
         "org.mozilla.firefox",
         "org.mozilla.firefoxdeveloperedition",
     ]
