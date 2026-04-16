@@ -105,7 +105,6 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
         // Without .progressiveTranscription, each result is a new
         // chunk of text — just concatenate them all.
         let reader = Task { [weak self] in
-            guard let self else { return }
             var transcript = ""
             do {
                 for try await result in transcriber.results {
@@ -116,8 +115,8 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
 
                     let trimmed = transcript.trimmingCharacters(
                         in: .whitespacesAndNewlines)
-                    self.lock.withLock {
-                        self.collectedText = trimmed
+                    self?.lock.withLock {
+                        self?.collectedText = trimmed
                     }
                 }
             } catch {
