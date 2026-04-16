@@ -22,8 +22,7 @@ public enum Log {
     /// Maximum number of entries retained in the ring buffer.
     private static let maxEntries = 500
 
-    /// Lock protecting the ring buffer. Using `os_unfair_lock` for minimal
-    /// overhead on the hot path (every log call).
+    /// Lock protecting the ring buffer.
     private static let lock = NSLock()
 
     /// Circular buffer of recent log entries.
@@ -52,7 +51,7 @@ public enum Log {
         lock.lock()
         entries.append(Entry(timestamp: now, message: message))
         if entries.count > maxEntries {
-            entries.removeFirst(entries.count - maxEntries)
+            entries.removeFirst()
         }
         lock.unlock()
     }
