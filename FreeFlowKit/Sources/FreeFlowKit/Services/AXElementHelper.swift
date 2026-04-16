@@ -79,6 +79,7 @@ public enum AXElementHelper {
     /// Read a CFRange attribute (e.g. kAXSelectedTextRangeAttribute) from an AXUIElement.
     public static func rangeValue(of attribute: String, from element: AXUIElement) -> CFRange? {
         guard let value = value(of: attribute, from: element) else { return nil }
+        guard CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var range = CFRange(location: 0, length: 0)
         guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
         return range
