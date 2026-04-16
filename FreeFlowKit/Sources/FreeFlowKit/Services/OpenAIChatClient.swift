@@ -10,6 +10,7 @@ public struct OpenAIChatClient: PolishChatClient {
     /// Errors thrown by the chat client.
     public enum ChatError: Error, LocalizedError {
         case httpError(statusCode: Int, message: String?)
+        case networkError(String)
         case invalidResponse
         case emptyContent
 
@@ -17,6 +18,8 @@ public struct OpenAIChatClient: PolishChatClient {
             switch self {
             case .httpError(let status, let message):
                 return "OpenAI chat error \(status): \(message ?? "no details")"
+            case .networkError(let message):
+                return "OpenAI chat network error: \(message)"
             case .invalidResponse:
                 return "Invalid OpenAI chat response"
             case .emptyContent:
@@ -74,7 +77,13 @@ public struct OpenAIChatClient: PolishChatClient {
         request.httpBody = try JSONSerialization.data(
             withJSONObject: body, options: [.sortedKeys])
 
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw ChatError.networkError(error.localizedDescription)
+        }
 
         guard let http = response as? HTTPURLResponse else {
             throw ChatError.invalidResponse
