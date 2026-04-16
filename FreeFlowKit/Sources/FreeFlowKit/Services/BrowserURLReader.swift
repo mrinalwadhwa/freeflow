@@ -222,9 +222,41 @@ public enum BrowserURLReader {
         return AXElementHelper.stringValue(of: kAXValueAttribute, from: field)
     }
 
-    /// Check whether an element's description or title suggests it is an address bar.
+    /// Check whether an element's description, title, or subrole suggests it is an address bar.
     private static func isAddressField(_ element: AXUIElement) -> Bool {
-        let keywords = ["address", "url", "location", "search or enter", "search or type"]
+        // Subrole check is language-independent — Chromium browsers mark
+        // the address bar as AXSearchField.
+        if let subrole = AXElementHelper.subrole(of: element),
+            subrole == "AXSearchField"
+        {
+            return true
+        }
+
+        // Keywords in English plus common macOS localizations.
+        let keywords = [
+            // English
+            "address", "url", "location", "search or enter", "search or type",
+            // German
+            "adresse", "suchen oder adresse",
+            // French
+            "adresse", "rechercher ou saisir",
+            // Spanish
+            "dirección", "buscar o escribir",
+            // Portuguese
+            "endereço", "pesquisar ou digitar",
+            // Italian
+            "indirizzo", "cerca o digita",
+            // Dutch
+            "adres", "zoeken of typen",
+            // Swedish/Norwegian/Danish
+            "adress", "sök eller skriv",
+            // Japanese (partial — AX descriptions vary)
+            "アドレス",
+            // Chinese
+            "地址", "搜索或输入",
+            // Korean
+            "주소", "검색 또는 입력",
+        ]
 
         if let description = AXElementHelper.stringValue(
             of: kAXDescriptionAttribute, from: element)
