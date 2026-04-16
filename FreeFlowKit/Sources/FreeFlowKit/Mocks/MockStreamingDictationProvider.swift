@@ -117,44 +117,40 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     // MARK: - StreamingDictationProviding
 
     public var uncommittedAudioDuration: TimeInterval {
-        stubbedUncommittedAudioDuration
+        lock.withLock { stubbedUncommittedAudioDuration }
     }
 
     public func startStreaming(context: AppContext, language: String?, micProximity: MicProximity)
         async throws
     {
-        lock.withLock {
+        let error: (any Error)? = lock.withLock {
             _startCallCount += 1
             _receivedContexts.append(context)
             _receivedLanguages.append(language)
+            return stubbedStartError
         }
 
-        if let error = stubbedStartError {
-            throw error
-        }
+        if let error { throw error }
     }
 
     public func sendAudio(_ pcmData: Data) async throws {
-        lock.withLock {
+        let error: (any Error)? = lock.withLock {
             _sendCallCount += 1
             _receivedAudioChunks.append(pcmData)
+            return stubbedSendError
         }
 
-        if let error = stubbedSendError {
-            throw error
-        }
+        if let error { throw error }
     }
 
     public func finishStreaming() async throws -> String {
-        lock.withLock {
+        let (error, text): ((any Error)?, String) = lock.withLock {
             _finishCallCount += 1
+            return (stubbedFinishError, stubbedText)
         }
 
-        if let error = stubbedFinishError {
-            throw error
-        }
-
-        return stubbedText
+        if let error { throw error }
+        return text
     }
 
     public func cancelStreaming() async {
@@ -166,17 +162,16 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     public func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
         -> String
     {
-        lock.withLock {
+        let (error, text): ((any Error)?, String?) = lock.withLock {
             _backupCallCount += 1
             _receivedBackupAudio.append(audio)
             _receivedBackupContexts.append(context)
+            return (stubbedBackupError, stubbedBackupText)
         }
 
-        if let error = stubbedBackupError {
-            throw error
-        }
+        if let error { throw error }
 
-        guard let text = stubbedBackupText else {
+        guard let text else {
             throw DictationError.networkError("No backup connection available")
         }
 
