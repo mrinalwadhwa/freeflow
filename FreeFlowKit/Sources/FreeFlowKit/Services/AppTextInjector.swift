@@ -387,7 +387,13 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
             throw InjectionError.allStrategiesFailed(bundleID: "cgevent-source-failed")
         }
 
-        for character in textToInject.utf16 {
+        for scalar in textToInject.unicodeScalars {
+            // Encode the scalar as UTF-16. Characters above U+FFFF
+            // produce a surrogate pair (2 code units) that must be sent
+            // together in a single event so the receiving app sees one
+            // character, not two broken surrogates.
+            var utf16Units = Array(String(scalar).utf16)
+
             guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
             else {
                 continue
@@ -397,9 +403,10 @@ public final class AppTextInjector: TextInjecting, @unchecked Sendable {
                 continue
             }
 
-            var char = character
-            keyDown.keyboardSetUnicodeString(stringLength: 1, unicodeString: &char)
-            keyUp.keyboardSetUnicodeString(stringLength: 1, unicodeString: &char)
+            keyDown.keyboardSetUnicodeString(
+                stringLength: Int(utf16Units.count), unicodeString: &utf16Units)
+            keyUp.keyboardSetUnicodeString(
+                stringLength: Int(utf16Units.count), unicodeString: &utf16Units)
 
             keyDown.post(tap: .cghidEventTap)
             keyUp.post(tap: .cghidEventTap)
