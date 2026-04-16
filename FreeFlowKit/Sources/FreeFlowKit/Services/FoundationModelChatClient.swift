@@ -34,9 +34,19 @@ public struct FoundationModelChatClient: PolishChatClient {
             model: llm,
             instructions: systemPrompt)
 
-        let response = try await session.respond(to: userPrompt)
-        let text = response.content.trimmingCharacters(
-            in: .whitespacesAndNewlines)
+        // Bound the on-device model call so thermal throttling or
+        // degraded Apple Intelligence does not hang the pipeline.
+        // Returns empty string on timeout so the caller falls back to
+        // deterministic polish.
+        let result: String? = await withTimeout(seconds: 10) {
+            guard let response = try? await session.respond(to: userPrompt) else {
+                return ""
+            }
+            return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let text = result else {
+            return ""
+        }
 
         // The on-device model sometimes returns preamble instead of
         // cleaned text. Detect and return empty so the caller falls
