@@ -156,6 +156,23 @@ final class SettingsWindow: NSWindow, WKNavigationDelegate {
         )
     }
 
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        if url.isFileURL {
+            decisionHandler(.allow)
+        } else {
+            decisionHandler(.cancel)
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     // MARK: - Bundled settings
 
     /// Load the bundled settings HTML page from the app bundle.

@@ -147,6 +147,25 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
     }
 
     func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        // Allow bundled file:// resources. Open anything else in the
+        // default browser so external URLs cannot access the bridge.
+        if url.isFileURL {
+            decisionHandler(.allow)
+        } else {
+            decisionHandler(.cancel)
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func webView(
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
