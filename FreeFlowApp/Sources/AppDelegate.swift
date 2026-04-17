@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingController: OnboardingController?
     private var settingsController: SettingsController?
     private var privateModeMonitor: Any?
+    private var privateModeLocalMonitor: Any?
 
     // MARK: - Lifecycle
 
@@ -353,6 +354,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPrivateModeShortcut() {
         guard DictationMode.isLocalAvailable else { return }
 
+        // Remove any existing monitors to avoid duplicates.
+        if let monitor = privateModeMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = privateModeLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+
         privateModeMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: .keyDown
         ) { [weak self] event in
@@ -365,7 +374,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        privateModeLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
             let binding = Settings.shared.privateModeShortcutBinding
             let flags = UInt(event.modifierFlags.rawValue)
             if binding.matches(keyCode: event.keyCode, modifierFlags: flags) {
