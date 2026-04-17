@@ -82,7 +82,7 @@ final class HUDOverlayWindow: NSPanel {
     /// Position the HUD at the bottom center of the screen containing the
     /// mouse cursor. The window size is always fixed; only the origin changes.
     func positionOnCurrentScreen() {
-        let screen = activeScreen()
+        guard let screen = activeScreen() else { return }
         let screenFrame = screen.visibleFrame
         let size = currentSize()
         let x = screenFrame.midX - size.width / 2
@@ -121,7 +121,7 @@ final class HUDOverlayWindow: NSPanel {
         if abs(frame.size.height - needed.height) > 1
             || abs(frame.size.width - needed.width) > 1
         {
-            let screen = activeScreen()
+            guard let screen = activeScreen() else { return }
             let screenFrame = screen.visibleFrame
             let x = screenFrame.midX - needed.width / 2
             let y = screenFrame.origin.y + Self.capsuleBottomInset
@@ -247,12 +247,12 @@ final class HUDOverlayWindow: NSPanel {
         )
     }
 
-    private func activeScreen() -> NSScreen {
+    private func activeScreen() -> NSScreen? {
         // Follow the mouse cursor to match the screen the user is working on.
         let mouseLocation = NSEvent.mouseLocation
         for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
             return screen
         }
-        return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
+        return NSScreen.main ?? NSScreen.screens.first
     }
 }
