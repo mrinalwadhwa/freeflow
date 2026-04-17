@@ -96,7 +96,7 @@ public enum IssueDiagnostics {
         sections.append(
             """
             **Diagnostics:**
-            <!-- Full diagnostics have been copied to your clipboard. Paste (⌘V) below this line. -->
+            <!-- Full diagnostics have been copied to your clipboard. Paste (⌘V) below this line. Review before posting — diagnostics may include window titles and URLs. -->
 
             """)
 
