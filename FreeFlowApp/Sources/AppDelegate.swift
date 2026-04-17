@@ -366,8 +366,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             matching: .keyDown
         ) { [weak self] event in
             let binding = Settings.shared.privateModeShortcutBinding
-            let flags = UInt(event.modifierFlags.rawValue)
-            if binding.matches(keyCode: event.keyCode, modifierFlags: flags) {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if binding.matches(keyCode: event.keyCode, modifierFlags: flags.rawValue) {
                 Task { @MainActor in
                     self?.togglePrivateMode()
                 }
@@ -377,8 +377,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         privateModeLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
             let binding = Settings.shared.privateModeShortcutBinding
-            let flags = UInt(event.modifierFlags.rawValue)
-            if binding.matches(keyCode: event.keyCode, modifierFlags: flags) {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if binding.matches(keyCode: event.keyCode, modifierFlags: flags.rawValue) {
                 Task { @MainActor in
                     self?.togglePrivateMode()
                 }
