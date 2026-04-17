@@ -7,6 +7,9 @@ import WebKit
 /// native code via the OnboardingBridge message handler.
 final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
+    /// Called when the web view finishes loading the onboarding page.
+    var onDidFinishNavigation: (() -> Void)?
+
     private static func log(_ msg: String) {
         #if DEBUG
             Log.debug("[OnboardingWindow] \(msg)")
@@ -136,6 +139,7 @@ final class OnboardingWindow: NSWindow, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Self.log("didFinish: \(webView.url?.absoluteString ?? "nil")")
+        onDidFinishNavigation?()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

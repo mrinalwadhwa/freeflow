@@ -75,12 +75,11 @@ final class OnboardingController {
         bridge.webView = win.webView
         window = win
 
-        window?.loadBundledOnboarding(query: "mode=api-key-only")
-        window?.present()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        window?.onDidFinishNavigation = { [weak self] in
             self?.bridge.pushStepIcons()
         }
+        window?.loadBundledOnboarding(query: "mode=api-key-only")
+        window?.present()
     }
 
     /// Open the onboarding window and load the bundled onboarding page.
@@ -92,14 +91,12 @@ final class OnboardingController {
         bridge.webView = win.webView
         window = win
 
-        window?.loadBundledOnboarding()
-        window?.present()
-
-        // Delay slightly so the web view has loaded before we push.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        window?.onDidFinishNavigation = { [weak self] in
             self?.bridge.pushOnboardingState()
             self?.bridge.pushStepIcons()
         }
+        window?.loadBundledOnboarding()
+        window?.present()
     }
 
     /// Dismiss the onboarding window and clean up.
