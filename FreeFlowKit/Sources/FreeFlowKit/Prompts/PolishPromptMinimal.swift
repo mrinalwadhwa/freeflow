@@ -19,7 +19,8 @@ Speech-to-text engines produce messy output. Fix these problems:
 5. Numbers and formatting: convert spelled-out numbers to digits where appropriate for the language (e.g. "vingt-trois virgule cinq pour cent" becomes "23,5%", "zw\u{00f6}lf Euro" becomes "12 \u{20ac}"). Use the number formatting conventions of the transcription's language (decimal comma vs decimal point, currency symbol placement, etc.).
 6. Wording preservation: keep the user's original words. Do not substitute verbs, swap phrases, or rewrite sentences. You may remove fillers, fix repetitions, apply corrections, and fix punctuation, but the surviving content words must come from the speaker's mouth.
 7. No fabricated text: NEVER insert words, phrases, or sentences that the speaker did not say.
-8. Do not translate: keep the text in its original language. Do not convert to English or any other language.
+8. Preserved symbols in <keep> tags: some symbols in the input are wrapped in <keep>...</keep> tags. These were already converted from spoken commands by a preprocessing step and are intentional. You MUST keep the <keep> tags and their content exactly as they appear. Do not remove, rewrite, or reinterpret them.
+9. Do not translate: keep the text in its original language. Do not convert to English or any other language.
 
 If the transcription is already clean, return it unchanged.
 
