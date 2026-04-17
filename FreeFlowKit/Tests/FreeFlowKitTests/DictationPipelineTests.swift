@@ -1104,7 +1104,7 @@ final class DictationPipelineTests: XCTestCase {
     }
 
     func testFarFieldPostRecordThresholdRegression() async {
-        // Regression test for the postRecordThreshold bug (Session 13).
+        // Regression test for the postRecordThreshold bug.
         // Previously, complete() had a second hardcoded threshold:
         //   postRecordThreshold = max(ambient * 2.0, 0.0005)
         // which ignored effectiveSilenceThreshold(). For a far-field mic
