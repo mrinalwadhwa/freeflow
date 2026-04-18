@@ -18,10 +18,10 @@ https://github.com/user-attachments/assets/da62c769-d56b-4c16-be04-148197536dfa
 
 ## Install
 
-Install the macOS app with [Homebrew](https://brew.sh) or [download the DMG](https://github.com/build-trust/freeflow/releases/latest/download/FreeFlow.dmg) directly.
+Install the macOS app with [Homebrew](https://brew.sh) or [download the DMG](https://github.com/mrinalwadhwa/freeflow/releases/latest/download/FreeFlow.dmg) directly.
 
 ```
-brew install build-trust/freeflow/freeflow
+brew install mrinalwadhwa/freeflow/freeflow
 ```
 
 On first launch, FreeFlow asks for your OpenAI API key and stores it in the macOS
@@ -59,10 +59,10 @@ injected. See [CUSTOMIZE.md](CUSTOMIZE.md).
 Jump in, we'd love your help.
 
 The single most useful contribution right now is
-[mic compatibility data](https://github.com/build-trust/freeflow/issues/2).
+[mic compatibility data](https://github.com/mrinalwadhwa/freeflow/issues/2).
 FreeFlow works well with built-in mics and AirPods, but every USB mic,
 headset, and audio interface is different. The app's "Contribute Mic
 Data" menu item generates a one-click diagnostic report that
 can help us improve accuracy of dictation for everyone.
 
-Want to add or improve support for a language? [Here's how.](https://github.com/build-trust/freeflow/issues/1) Found an app where injection breaks? Open an issue. Code contributions and pull requests are welcome too. [DEVELOP.md](DEVELOP.md) has the build and test guide.
+Want to add or improve support for a language? [Here's how.](https://github.com/mrinalwadhwa/freeflow/issues/1) Found an app where injection breaks? Open an issue. Code contributions and pull requests are welcome too. [DEVELOP.md](DEVELOP.md) has the build and test guide.

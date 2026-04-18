@@ -13,7 +13,7 @@ import Foundation
 public enum IssueDiagnostics {
 
     /// The GitHub repo where issues are filed.
-    private static let repoURL = "https://github.com/build-trust/freeflow/issues/new"
+    private static let repoURL = "https://github.com/mrinalwadhwa/freeflow/issues/new"
 
     /// Build a GitHub issue URL pre-filled with diagnostics.
     ///

@@ -29,7 +29,7 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>FreeFlow uses on-device speech recognition to transcribe your dictation locally.</string>
 	<key>SUFeedURL</key>
-	<string>https://github.com/build-trust/freeflow/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/mrinalwadhwa/freeflow/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>SGVZHUaaj05vmgHozFiH4i1OI8WAAGKCXLLNY0BPZPg=</string>
 </dict>

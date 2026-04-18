@@ -105,7 +105,7 @@ jobs:
           SPARKLE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
-          make appcast DOWNLOAD_URL="https://github.com/build-trust/freeflow/releases/download/${TAG}/"
+          make appcast DOWNLOAD_URL="https://github.com/mrinalwadhwa/freeflow/releases/download/${TAG}/"
 
       - name: Create GitHub Release
         env:

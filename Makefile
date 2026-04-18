@@ -16,7 +16,7 @@ RELEASE_DIR      := releases
 DMG_NAME         := FreeFlow.dmg
 DMG_PATH         := $(RELEASE_DIR)/$(DMG_NAME)
 DMG_STAGING      := build/dmg_contents
-DOWNLOAD_URL     := https://github.com/build-trust/freeflow/releases/latest/download/
+DOWNLOAD_URL     := https://github.com/mrinalwadhwa/freeflow/releases/latest/download/
 SPARKLE_BIN      := $(shell find ~/Library/Developer/Xcode/DerivedData/FreeFlow-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)
 
 # Optional: set KEYCHAIN to a keychain path for CI builds.

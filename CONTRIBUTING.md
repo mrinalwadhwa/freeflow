@@ -1,6 +1,6 @@
 # Contributing to FreeFlow
 
-Thank you for taking time to contribute to [FreeFlow](https://github.com/build-trust/freeflow).
+Thank you for taking time to contribute to [FreeFlow](https://github.com/mrinalwadhwa/freeflow).
 
 We want you to have a great experience making your first contribution.
 This contribution could be anything from a small fix to a typo in our
@@ -10,22 +10,22 @@ enjoy working on and we would love to help!
 ## Where to Start
 
 The single most useful contribution right now is
-[mic compatibility data](https://github.com/build-trust/freeflow/issues/2).
+[mic compatibility data](https://github.com/mrinalwadhwa/freeflow/issues/2).
 FreeFlow works well with built-in mics and AirPods, but every USB mic,
 headset, and audio interface is different. The app's "Contribute Mic
 Data" menu item generates a one-click diagnostic report that can help
 us improve accuracy of dictation for everyone.
 
 Want to add or improve support for a language?
-[Here's how.](https://github.com/build-trust/freeflow/issues/1)
+[Here's how.](https://github.com/mrinalwadhwa/freeflow/issues/1)
 Found an app where injection breaks? Open an issue. Code contributions
 and pull requests are welcome too.
 
 If you would like to contribute but don't know where to start, check out the
 issues labeled
-[`good first issue`](https://github.com/build-trust/freeflow/contribute)
+[`good first issue`](https://github.com/mrinalwadhwa/freeflow/contribute)
 or
-[`help wanted`](https://github.com/build-trust/freeflow/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
+[`help wanted`](https://github.com/mrinalwadhwa/freeflow/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
 
 ## Code of Conduct
 
@@ -33,8 +33,8 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Report a Bug
 
-[Search existing issues](https://github.com/build-trust/freeflow/issues?q=is%3Aissue)
-first, then [open a new one](https://github.com/build-trust/freeflow/issues/new/choose)
+[Search existing issues](https://github.com/mrinalwadhwa/freeflow/issues?q=is%3Aissue)
+first, then [open a new one](https://github.com/mrinalwadhwa/freeflow/issues/new/choose)
 or, even better, a pull request with a fix.
 
 ## Pull Requests

@@ -18,7 +18,7 @@ updates will be sent at least every five days.
 
 If you have not received a reply to your email within 48 hours, or have not
 heard from the security team for the past five days, please open a public
-[tracking issue](https://github.com/build-trust/freeflow/issues/new/choose)
+[tracking issue](https://github.com/mrinalwadhwa/freeflow/issues/new/choose)
 without discussing the vulnerability — just say that you are trying to get a
 hold of someone from the security team.
 

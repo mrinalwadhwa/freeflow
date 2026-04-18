@@ -19,7 +19,7 @@ struct InAppMessage: Codable, Equatable {
 final class InAppMessageService {
 
     private static let messageURL = URL(
-        string: "https://github.com/build-trust/freeflow/releases/latest/download/messages.json"
+        string: "https://github.com/mrinalwadhwa/freeflow/releases/latest/download/messages.json"
     )!
 
     private static let dismissedIDsKey = "inAppMessageDismissedIDs"

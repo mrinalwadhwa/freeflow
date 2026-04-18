@@ -130,7 +130,7 @@ release_app() {
   echo ""
   echo "── Waiting for CI ──"
   echo "The release environment requires your approval."
-  echo "Approve at: https://github.com/build-trust/freeflow/actions"
+  echo "Approve at: https://github.com/mrinalwadhwa/freeflow/actions"
   echo ""
 
   sleep 5
@@ -141,7 +141,7 @@ release_app() {
     exit 1
   fi
 
-  echo "Run: https://github.com/build-trust/freeflow/actions/runs/${RUN_ID}"
+  echo "Run: https://github.com/mrinalwadhwa/freeflow/actions/runs/${RUN_ID}"
   echo ""
 
   gh run watch "$RUN_ID" --exit-status
@@ -180,8 +180,8 @@ release_app() {
   echo "══════════════════════════════════════════════════"
   echo "  Release complete!"
   echo "  Tag:      ${TAG}"
-  echo "  Release:  https://github.com/build-trust/freeflow/releases/tag/${TAG}"
-  echo "  Install:  brew install build-trust/freeflow/freeflow"
+  echo "  Release:  https://github.com/mrinalwadhwa/freeflow/releases/tag/${TAG}"
+  echo "  Install:  brew install mrinalwadhwa/freeflow/freeflow"
   echo "══════════════════════════════════════════════════"
 }
 
@@ -201,7 +201,7 @@ release_image() {
     exit 1
   fi
 
-  echo "Run: https://github.com/build-trust/freeflow/actions/runs/${RUN_ID}"
+  echo "Run: https://github.com/mrinalwadhwa/freeflow/actions/runs/${RUN_ID}"
   echo ""
 
   gh run watch "$RUN_ID" --exit-status

@@ -592,7 +592,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Task {
             let diagnostics = await store.formattedDiagnostics()
             let body = """
-                > See [Microphone compatibility](https://github.com/build-trust/freeflow/issues/2) for context on what this data is used for.
+                > See [Microphone compatibility](https://github.com/mrinalwadhwa/freeflow/issues/2) for context on what this data is used for.
 
                 **Mic and setup:**
                 <!-- e.g. "Blue Yeti USB on MacBook Pro, desk distance" -->
@@ -606,7 +606,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 ```
                 """
             var components = URLComponents(
-                string: "https://github.com/build-trust/freeflow/issues/new")!
+                string: "https://github.com/mrinalwadhwa/freeflow/issues/new")!
             components.queryItems = [
                 URLQueryItem(name: "title", value: "Mic data: "),
                 URLQueryItem(name: "body", value: body),
@@ -631,13 +631,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openCustomizeGuide() {
-        if let url = URL(string: "https://github.com/build-trust/freeflow/blob/main/CUSTOMIZE.md") {
+        if let url = URL(string: "https://github.com/mrinalwadhwa/freeflow/blob/main/CUSTOMIZE.md") {
             NSWorkspace.shared.open(url)
         }
     }
 
     @objc private func openLanguageIssue() {
-        if let url = URL(string: "https://github.com/build-trust/freeflow/issues/1") {
+        if let url = URL(string: "https://github.com/mrinalwadhwa/freeflow/issues/1") {
             NSWorkspace.shared.open(url)
         }
     }
