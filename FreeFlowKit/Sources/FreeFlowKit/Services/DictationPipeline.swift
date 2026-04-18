@@ -791,6 +791,7 @@ public actor DictationPipeline: PipelineProviding {
                         dictatedText = text
                     } catch {
                         Log.debug("[Pipeline] Local finishStreaming failed: \(error)")
+                        await streaming.cancelStreaming()
                         recoveryBox.set(audio: audioBuffer.data, context: context)
                         await coordinator.failDictation()
                         return
@@ -809,6 +810,10 @@ public actor DictationPipeline: PipelineProviding {
                         silenceThreshold: postRecordThreshold,
                         language: self.language
                     )
+
+                    // Clean up the streaming session so the provider
+                    // is ready for the next activate() cycle.
+                    await streaming.cancelStreaming()
 
                     guard let text = streamingResult else {
                         Log.debug("[Pipeline] Both streaming and batch failed")
