@@ -183,7 +183,18 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
         // Wait for the reader to finish collecting results.
         await reader?.value
 
-        let raw = lock.withLock { collectedText }
+        let raw = lock.withLock {
+            let text = collectedText
+            // Clear session state so the next startStreaming sees a
+            // clean provider. Without this, the assert in startStreaming
+            // fires because analyzer is still non-nil.
+            self.analyzer = nil
+            self.transcriber = nil
+            self.readerTask = nil
+            self.collectedText = ""
+            self.audioBytesSent = 0
+            return text
+        }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "" }
 
