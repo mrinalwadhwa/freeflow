@@ -14,6 +14,7 @@ public struct OpenAIDictationProvider: DictationProviding {
     private let model: String
     private let endpoint: URL
     private let polishChatClient: (any PolishChatClient)?
+    private let localPolishClient: (any PolishChatClient)?
     private let polishModel: String
     private let session: URLSession
 
@@ -25,6 +26,7 @@ public struct OpenAIDictationProvider: DictationProviding {
         model: String = "gpt-4o-mini-transcribe",
         endpoint: URL = URL(string: "https://api.openai.com/v1/audio/transcriptions")!,
         polishChatClient: (any PolishChatClient)?,
+        localPolishClient: (any PolishChatClient)? = nil,
         polishModel: String = PolishPipeline.polishModel,
         session: URLSession? = nil
     ) {
@@ -32,6 +34,7 @@ public struct OpenAIDictationProvider: DictationProviding {
         self.model = model
         self.endpoint = endpoint
         self.polishChatClient = polishChatClient
+        self.localPolishClient = localPolishClient
         self.polishModel = polishModel
         if let session {
             self.session = session
@@ -155,32 +158,20 @@ public struct OpenAIDictationProvider: DictationProviding {
         let substituted = PolishPipeline.substituteDictatedPunctuation(raw)
         let stripped = PolishPipeline.stripKeepTags(substituted)
 
-        // Stage 2: skip heuristic.
-        if PolishPipeline.isClean(stripped) {
-            return stripped
-        }
-
-        // Stage 3: LLM refinement (if configured).
         guard let polishChatClient else {
             return PolishPipeline.normalizeFormatting(stripped)
         }
 
-        let userPrompt = PolishPipeline.buildUserPrompt(
-            substituted, context: context, language: language)
-        do {
-            let polished = try await polishChatClient.complete(
-                model: polishModel,
-                systemPrompt: PolishPipeline.systemPrompt(forLanguage: language),
-                userPrompt: userPrompt)
-            if polished.isEmpty {
-                return PolishPipeline.normalizeFormatting(stripped)
-            }
-            return PolishPipeline.normalizeFormatting(
-                PolishPipeline.stripKeepTags(polished))
-        } catch {
-            // LLM failure falls back to regex-cleaned text.
-            return PolishPipeline.normalizeFormatting(stripped)
-        }
+        let result = await PolishPipeline.racePolish(
+            substituted: substituted,
+            stripped: stripped,
+            context: context,
+            language: language,
+            cloudClient: polishChatClient,
+            localClient: localPolishClient,
+            model: polishModel
+        )
+        return result.text
     }
 }
 

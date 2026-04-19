@@ -34,6 +34,7 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
     private let realtimeModel: String
     private let sttModel: String
     private let polishChatClient: (any PolishChatClient)?
+    private let localPolishClient: (any PolishChatClient)?
     private let polishModel: String
     private let chunkingStrategy: ChunkingStrategy
 
@@ -113,6 +114,7 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
             case pending
             case skip = "skip"
             case llmOK = "llm-ok"
+            case llmLocalFallback = "llm-local"
             case llmFailed = "llm-failed"
             case llmEmpty = "llm-empty"
             case noChatClient = "no-llm"
@@ -164,9 +166,12 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
     private var backupOpenedAt: Date?
     private var backupOpenTask: Task<Void, Never>?
 
+    /// Background task that refreshes the backup before it goes stale.
+    private var backupRefreshTask: Task<Void, Never>?
+
     /// Maximum age for an idle backup connection. After this, the backup
     /// is discarded on use and a fresh one is opened.
-    private let maxBackupAge: TimeInterval = 60
+    private let maxBackupAge: TimeInterval = 180
 
     // MARK: - Init
 
@@ -175,6 +180,7 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         realtimeModel: String = "gpt-4o-realtime-preview",
         sttModel: String = "gpt-4o-mini-transcribe",
         polishChatClient: (any PolishChatClient)?,
+        localPolishClient: (any PolishChatClient)? = nil,
         polishModel: String = "gpt-4.1-nano",
         chunkingStrategy: ChunkingStrategy = TimeAndSilenceChunkingStrategy()
     ) {
@@ -182,17 +188,19 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         self.realtimeModel = realtimeModel
         self.sttModel = sttModel
         self.polishChatClient = polishChatClient
+        self.localPolishClient = localPolishClient
         self.polishModel = polishModel
         self.chunkingStrategy = chunkingStrategy
     }
 
     deinit {
-        let (reader, ws, session, bOpen, bTask, bSession) = lock.withLock {
+        let (reader, ws, session, bOpen, bTask, bSession, bRefresh) = lock.withLock {
             (chunkReaderTask, webSocketTask, urlSession,
-             backupOpenTask, backupTask, backupSession)
+             backupOpenTask, backupTask, backupSession, backupRefreshTask)
         }
         reader?.cancel()
         bOpen?.cancel()
+        bRefresh?.cancel()
         bTask?.cancel(with: .normalClosure, reason: nil)
         bSession?.invalidateAndCancel()
         ws?.cancel(with: .normalClosure, reason: nil)
@@ -660,192 +668,6 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         cancelReader?.cancel()
     }
 
-    public func dictateViaBackup(
-        audio: Data, context: AppContext, language: String?
-    ) async throws -> String {
-        let backupStartedAt = Date()
-        let pcm16k = Self.extractPCM(fromWAV: audio)
-        let pcm24k = AudioResampler.resample16kTo24k(pcm16k)
-
-        // Open a dedicated connection for this one-shot request. Do not
-        // consume the warm backup because the pipeline may call this in
-        // parallel with the next session's startStreaming.
-        let (task, session) = try Self.buildWebSocketTask(
-            apiKey: apiKeyProvider(), model: realtimeModel)
-        task.resume()
-        defer {
-            task.cancel(with: .normalClosure, reason: nil)
-            session.invalidateAndCancel()
-        }
-
-        // Configure the session.
-        let update = Self.buildSessionUpdate(
-            sttModel: sttModel,
-            language: language,
-            micProximity: .nearField)
-        try await task.send(.string(update))
-        let setupCompletedAt = Date()
-
-        // Send the audio (extract PCM from WAV, resample, chunk, append).
-        let chunkBytes = 24000 * 2 / 4  // ~250 ms at 24 kHz, 16-bit
-        var offset = 0
-        var chunks = 0
-        while offset < pcm24k.count {
-            let end = min(offset + chunkBytes, pcm24k.count)
-            let chunk = pcm24k.subdata(in: offset..<end)
-            let msg = Self.buildAudioAppend(pcm24k: chunk)
-            try await task.send(.string(msg))
-            chunks += 1
-            offset = end
-        }
-
-        // Commit and wait for the transcript.
-        try await task.send(.string(Self.buildCommit()))
-        let commitSentAt = Date()
-
-        let transcriptTimeout = Self.transcriptTimeout(forAudioBytes: pcm24k.count)
-        let firstDeltaBox: FirstDeltaBox = FirstDeltaBox()
-        let transcript: String
-        do {
-            transcript = try await withThrowingTaskGroup(of: String.self) { group in
-                group.addTask {
-                    try await Self.readTranscriptUntilCompleted(
-                        on: task,
-                        onFirstDelta: { firstDeltaBox.set(Date()) }
-                    )
-                }
-                group.addTask {
-                    try await Task.sleep(
-                        nanoseconds: UInt64(transcriptTimeout * 1_000_000_000))
-                    task.cancel(with: .abnormalClosure, reason: nil)
-                    throw DictationError.networkError(
-                        "Timed out waiting for transcript after \(Int(transcriptTimeout))s")
-                }
-                guard let result = try await group.next() else {
-                    group.cancelAll()
-                    throw DictationError.networkError(
-                        "No result from backup transcript race")
-                }
-                group.cancelAll()
-                return result
-            }
-        } catch {
-            Self.logBackupDictationSummary(
-                startedAt: backupStartedAt,
-                setupCompletedAt: setupCompletedAt,
-                commitSentAt: commitSentAt,
-                firstDelta: firstDeltaBox.value,
-                completedAt: nil,
-                polishStart: nil,
-                polishEnd: nil,
-                polishKind: nil,
-                bytes: pcm24k.count,
-                chunks: chunks,
-                error: error.localizedDescription)
-            throw error
-        }
-        let transcriptCompletedAt = Date()
-
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            Self.logBackupDictationSummary(
-                startedAt: backupStartedAt,
-                setupCompletedAt: setupCompletedAt,
-                commitSentAt: commitSentAt,
-                firstDelta: firstDeltaBox.value,
-                completedAt: transcriptCompletedAt,
-                polishStart: nil,
-                polishEnd: nil,
-                polishKind: "empty",
-                bytes: pcm24k.count,
-                chunks: chunks,
-                error: nil)
-            return ""
-        }
-
-        // Store context for polish.
-        lock.withLock {
-            self.currentContext = context
-            self.currentLanguage = language
-        }
-        let polishStart = Date()
-        let polished = await polish(trimmed)
-        let polishEnd = Date()
-        Self.logBackupDictationSummary(
-            startedAt: backupStartedAt,
-            setupCompletedAt: setupCompletedAt,
-            commitSentAt: commitSentAt,
-            firstDelta: firstDeltaBox.value,
-            completedAt: transcriptCompletedAt,
-            polishStart: polishStart,
-            polishEnd: polishEnd,
-            polishKind: "done",
-            bytes: pcm24k.count,
-            chunks: chunks,
-            error: nil)
-        return polished
-    }
-
-    /// Box holding the first-delta timestamp from the one-shot
-    /// `dictateViaBackup` path. A plain class lets the Sendable
-    /// `onFirstDelta` closure mutate it from the child task.
-    private final class FirstDeltaBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var _value: Date?
-        var value: Date? { lock.withLock { _value } }
-        func set(_ date: Date) {
-            lock.withLock {
-                if _value == nil { _value = date }
-            }
-        }
-    }
-
-    /// Format and log a one-line summary for a `dictateViaBackup` call.
-    /// Separate from `emitSessionSummary` because backup dictations run
-    /// in parallel with the next main session and must not touch the
-    /// shared `currentTiming` slot.
-    private static func logBackupDictationSummary(
-        startedAt: Date,
-        setupCompletedAt: Date,
-        commitSentAt: Date,
-        firstDelta: Date?,
-        completedAt: Date?,
-        polishStart: Date?,
-        polishEnd: Date?,
-        polishKind: String?,
-        bytes: Int,
-        chunks: Int,
-        error: String?
-    ) {
-        func fmt(_ seconds: TimeInterval) -> String {
-            String(format: "%.3f", seconds)
-        }
-
-        var parts: [String] = ["[RealtimeBackupDictate]"]
-        parts.append(
-            "setup=\(fmt(setupCompletedAt.timeIntervalSince(startedAt)))")
-        parts.append("bytes=\(bytes)")
-        parts.append("chunks=\(chunks)")
-        if let firstDelta {
-            parts.append(
-                "first_delta=\(fmt(firstDelta.timeIntervalSince(commitSentAt)))")
-        }
-        if let completedAt {
-            parts.append(
-                "transcript=\(fmt(completedAt.timeIntervalSince(commitSentAt)))")
-        }
-        if let polishStart, let polishEnd, let polishKind {
-            parts.append(
-                "polish=\(polishKind)(\(fmt(polishEnd.timeIntervalSince(polishStart))))")
-        }
-        let end = polishEnd ?? completedAt ?? Date()
-        parts.append("total=\(fmt(end.timeIntervalSince(startedAt)))")
-        if let error {
-            parts.append("error=\"\(error.replacingOccurrences(of: "\"", with: "'"))\"")
-        }
-        Log.debug(parts.joined(separator: " "))
-    }
-
     /// Disconnect and release all connections. Call at app shutdown.
     public func disconnect() async {
         lock.withLock { self.setupTask }?.cancel()
@@ -869,8 +691,7 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
 
     /// Emit a structured single-line summary of the current session's
     /// timing and decisions to the debug log, then clear the timing
-    /// record. Call at the end of `finishStreaming`, on error paths,
-    /// and at the end of `dictateViaBackup`.
+    /// record. Call at the end of `finishStreaming` and on error paths.
     ///
     /// Format (fields without data are omitted):
     ///
@@ -965,6 +786,10 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
                     String(
                         format: "[RealtimeBackup] ready after %.3fs",
                         Date().timeIntervalSince(startedAt)))
+                // Schedule a background refresh so the backup is
+                // replaced before it goes stale. Sleep until 10s
+                // before maxBackupAge, then discard and re-open.
+                self?.scheduleBackupRefresh()
             } catch {
                 self?.lock.withLock {
                     self?.backupOpenTask = nil
@@ -984,6 +809,33 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         }
         if captured == nil {
             openTask.cancel()
+        }
+    }
+
+    /// Schedule a background task that replaces the backup connection
+    /// before it goes stale. Sleeps until 10s before `maxBackupAge`,
+    /// then discards the old connection and opens a fresh one.
+    private func scheduleBackupRefresh() {
+        let refreshDelay = max(10, maxBackupAge - 10)
+        lock.withLock {
+            backupRefreshTask?.cancel()
+        }
+        let task = Task { [weak self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(refreshDelay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            // Only refresh if the backup hasn't been adopted or
+            // replaced by another session in the meantime.
+            let shouldRefresh: Bool = self.lock.withLock {
+                self.backupTask != nil
+            }
+            guard shouldRefresh else { return }
+            Log.debug("[RealtimeBackup] refreshing before staleness")
+            await self.discardBackup()
+            self.warmBackup()
+        }
+        lock.withLock {
+            backupRefreshTask = task
         }
     }
 
@@ -1029,6 +881,8 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
 
         switch outcome {
         case .adopted(let task, let session, let age):
+            // Cancel the refresh task — the backup is now in use.
+            lock.withLock { backupRefreshTask?.cancel(); backupRefreshTask = nil }
             Log.debug(
                 String(
                     format: "[RealtimeBackup] adopt age=%.3fs", age))
@@ -1318,16 +1172,6 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         let substituted = PolishPipeline.substituteDictatedPunctuation(raw)
         let stripped = PolishPipeline.stripKeepTags(substituted)
 
-        if PolishPipeline.isClean(stripped) {
-            if updateTiming {
-                lock.withLock {
-                    self.currentTiming?.polishKind = .skip
-                    self.currentTiming?.polishFinishedAt = Date()
-                }
-            }
-            return stripped
-        }
-
         guard let polishChatClient else {
             if updateTiming {
                 lock.withLock {
@@ -1341,39 +1185,32 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         let (context, language): (AppContext, String?) = lock.withLock {
             (self.currentContext, self.currentLanguage)
         }
-        let userPrompt = PolishPipeline.buildUserPrompt(
-            substituted, context: context, language: language)
-        do {
-            let polished = try await polishChatClient.complete(
-                model: polishModel,
-                systemPrompt: PolishPipeline.systemPrompt(forLanguage: language),
-                userPrompt: userPrompt)
-            if polished.isEmpty {
-                if updateTiming {
-                    lock.withLock {
-                        self.currentTiming?.polishKind = .llmEmpty
-                        self.currentTiming?.polishFinishedAt = Date()
-                    }
-                }
-                return PolishPipeline.normalizeFormatting(stripped)
+
+        let polishResult = await PolishPipeline.racePolish(
+            substituted: substituted,
+            stripped: stripped,
+            context: context,
+            language: language,
+            cloudClient: polishChatClient,
+            localClient: localPolishClient,
+            model: polishModel
+        )
+
+        if updateTiming {
+            let kind: SessionTiming.PolishKind = switch polishResult.source {
+            case .cloud: .llmOK
+            case .local: .llmLocalFallback
+            case .fallback: .llmFailed
             }
-            if updateTiming {
-                lock.withLock {
-                    self.currentTiming?.polishKind = .llmOK
-                    self.currentTiming?.polishFinishedAt = Date()
-                }
+            lock.withLock {
+                self.currentTiming?.polishKind = kind
+                self.currentTiming?.polishFinishedAt = Date()
             }
-            return PolishPipeline.normalizeFormatting(
-                PolishPipeline.stripKeepTags(polished))
-        } catch {
-            if updateTiming {
-                lock.withLock {
-                    self.currentTiming?.polishKind = .llmFailed
-                    self.currentTiming?.polishFinishedAt = Date()
-                }
-            }
-            return PolishPipeline.normalizeFormatting(stripped)
         }
+        if stripped != polishResult.text {
+            Log.debug("[Polish] CHANGED (\(polishResult.source.rawValue)): \"\(stripped)\" → \"\(polishResult.text)\"")
+        }
+        return polishResult.text
     }
 
     // MARK: - WAV helpers

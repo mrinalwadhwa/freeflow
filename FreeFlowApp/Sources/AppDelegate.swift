@@ -265,12 +265,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             let polishClient = OpenAIChatClient(
                 apiKey: ServiceConfig.shared.openAIAPIKey ?? "")
+            // On macOS 26+, create a local polish client to race against
+            // the cloud client. If the cloud is slow, the local model
+            // provides a fallback within ~1.3s max.
+            let localPolisher: (any PolishChatClient)?
+            if #available(macOS 26, *) {
+                localPolisher = FoundationModelChatClient()
+            } else {
+                localPolisher = nil
+            }
             dictationProvider = OpenAIDictationProvider(
                 apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
-                polishChatClient: polishClient)
+                polishChatClient: polishClient,
+                localPolishClient: localPolisher)
             streamingProvider = OpenAIRealtimeProvider(
                 apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
-                polishChatClient: polishClient)
+                polishChatClient: polishClient,
+                localPolishClient: localPolisher)
             onSessionExpired = { [weak self] in
                 Task { @MainActor in self?.resetAPIKey() }
             }
@@ -490,6 +501,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPipeline()
         setupHUD()
         settingsController?.pipeline = pipeline
+
+        // Re-register the hotkey so its closure captures the new pipeline.
+        // Without this, the hotkey continues to drive the old pipeline.
+        hotkeyProvider.unregister()
+        registerHotkey()
     }
 
     // MARK: - Permissions

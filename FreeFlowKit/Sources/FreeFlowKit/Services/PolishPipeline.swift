@@ -206,69 +206,133 @@ public enum PolishPipeline {
         return result
     }
 
-    // MARK: - Stage 2: Clean Transcript Detection
+    // MARK: - Polish Race
 
-    // Filler words and verbal corrections.
-    private static let fillerPattern = try! NSRegularExpression(
-        pattern: #"""
-            \b(
-            um+|uh+|er+|ah+|hmm+
-            |you know|I mean
-            |no wait|no,? wait
-            |actually,? (?:no|wait)
-            |sorry,? I mean
-            |let me rephrase
-            )\b
-            """#.replacingOccurrences(of: "\n", with: ""),
-        options: .caseInsensitive)
+    /// Which polish path produced the result.
+    public enum PolishSource: String, Sendable {
+        /// Cloud LLM (OpenAI) finished within the timeout.
+        case cloud
+        /// Cloud timed out or failed; on-device model provided the result.
+        case local
+        /// Both cloud and local failed; deterministic formatting used.
+        case fallback
+    }
 
-    // Repeated consecutive words or short phrases.
-    private static let repetitionPattern = try! NSRegularExpression(
-        pattern: #"\b(\w+(?:\s+\w+){0,2})\s+\1\b"#,
-        options: .caseInsensitive)
+    /// Result of the polish race, including the polished text and which
+    /// path produced it.
+    public struct PolishResult: Sendable {
+        public let text: String
+        public let source: PolishSource
+    }
 
-    // Spelled-out compound numbers the LLM would format as digits.
-    // Requires two adjacent number-words or a number-word followed by a
-    // quantity marker so isolated words like "one" or "two" don't match.
-    private static let numberWord = """
-        (?:zero|one|two|three|four|five|six|seven|eight|nine|ten\
-        |eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen\
-        |eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy\
-        |eighty|ninety)
-        """
-    private static let multiplier = """
-        (?:hundred|thousand|million|billion|trillion)
-        """
-    private static let quantityMarker = """
-        (?:percent|dollar|dollars)
-        """
-    private static let spelledNumberPattern = try! NSRegularExpression(
-        pattern: #"\b(?:"# + numberWord + #"\s+"# + numberWord
-            + #"|"# + numberWord + #"\s+"# + multiplier
-            + #"|"# + numberWord + #"\s+"# + quantityMarker
-            + #"|"# + multiplier + #"\s+"# + numberWord
-            + #")\b"#,
-        options: .caseInsensitive)
-
-    /// Check if a transcript is clean enough to skip LLM polishing.
+    /// Race cloud and local polish clients, returning the first good
+    /// result within the timeout.
     ///
-    /// Conservative: when in doubt, return false so the LLM gets called.
-    public static func isClean(_ text: String) -> Bool {
-        guard !text.isEmpty else { return false }
+    /// Fire the cloud client immediately. On macOS 26+, fire the local
+    /// client in parallel. If the cloud client finishes within the
+    /// timeout, use its result. Otherwise use the local result. If both
+    /// fail or no local client is available and the cloud times out,
+    /// return the deterministic-polished text.
+    ///
+    /// - Parameters:
+    ///   - substituted: Text after dictated punctuation substitution
+    ///     (with `<keep>` tags). Used to build the LLM prompt.
+    ///   - stripped: Text after tag stripping. Used as fallback and for
+    ///     the `[Polish] CHANGED` diagnostic log.
+    ///   - context: App context for prompt construction.
+    ///   - language: Language code for prompt selection.
+    ///   - cloudClient: The cloud LLM client (OpenAI).
+    ///   - localClient: The on-device LLM client, or nil on macOS < 26.
+    ///   - model: Model identifier for the cloud client.
+    ///   - timeout: Maximum time to wait for the cloud client.
+    public static func racePolish(
+        substituted: String,
+        stripped: String,
+        context: AppContext,
+        language: String?,
+        cloudClient: any PolishChatClient,
+        localClient: (any PolishChatClient)?,
+        model: String = polishModel,
+        timeout: TimeInterval? = nil
+    ) async -> PolishResult {
+        let prompt = systemPrompt(forLanguage: language)
+        let userPrompt = buildUserPrompt(
+            substituted, context: context, language: language)
 
-        // Must start with an uppercase letter.
-        guard let first = text.first, first.isUppercase else { return false }
+        // Scale the cloud timeout with input length. Short dictations
+        // get a tight 1.5s window; longer inputs get proportionally
+        // more time so the cloud LLM can finish without being cut off.
+        let effectiveTimeout: TimeInterval
+        if let timeout {
+            effectiveTimeout = timeout
+        } else {
+            let wordCount = stripped
+                .split(separator: " ").count
+            effectiveTimeout = max(1.5, 1.0 + Double(wordCount) * 0.02)
+        }
 
-        // Must end with sentence-final punctuation.
-        guard let last = text.last, ".!?".contains(last) else { return false }
+        // Start both clients in parallel.
+        let cloudTask = Task {
+            try await cloudClient.complete(
+                model: model, systemPrompt: prompt, userPrompt: userPrompt)
+        }
+        let localTask: Task<String, any Error>? = localClient.map { client in
+            Task {
+                try await client.complete(
+                    model: model, systemPrompt: prompt, userPrompt: userPrompt)
+            }
+        }
 
-        let range = NSRange(text.startIndex..., in: text)
+        // Wait for cloud with timeout.
+        let cloudResult: String? = await withTimeout(seconds: effectiveTimeout) {
+            (try? await cloudTask.value) ?? ""
+        }
 
-        if fillerPattern.firstMatch(in: text, range: range) != nil { return false }
-        if repetitionPattern.firstMatch(in: text, range: range) != nil { return false }
-        if spelledNumberPattern.firstMatch(in: text, range: range) != nil { return false }
+        if let result = cloudResult,
+            !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            localTask?.cancel()
+            return PolishResult(
+                text: normalizeFormatting(stripKeepTags(result)),
+                source: .cloud)
+        }
 
-        return true
+        // Cloud timed out or failed — try local with a bounded wait.
+        // Cap at 3s so a thermally throttled on-device model does not
+        // hang the pipeline indefinitely. Cancel the local task
+        // explicitly on timeout since it's an unstructured Task that
+        // withTimeout's group.cancelAll() can't reach.
+        cloudTask.cancel()
+        if let localTask {
+            let localResult: String? = await withTaskGroup(of: String?.self) { group in
+                group.addTask {
+                    (try? await localTask.value) ?? ""
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    localTask.cancel()
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                localTask.cancel()
+                return first
+            }
+            if let result = localResult,
+                !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                Log.debug("[Polish] Cloud timed out, using local result")
+                return PolishResult(
+                    text: normalizeFormatting(stripKeepTags(result)),
+                    source: .local)
+            }
+        }
+
+        // Both failed — deterministic fallback.
+        Log.debug("[Polish] Both cloud and local failed, using raw text")
+        return PolishResult(
+            text: normalizeFormatting(stripped),
+            source: .fallback)
     }
 
     // MARK: - Keep Tag Processing
