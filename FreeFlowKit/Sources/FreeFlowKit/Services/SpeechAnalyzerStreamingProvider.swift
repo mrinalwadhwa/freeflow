@@ -232,24 +232,22 @@ public final class SpeechAnalyzerStreamingProvider: StreamingDictationProviding,
         let substituted = PolishPipeline.substituteDictatedPunctuation(raw)
         let stripped = PolishPipeline.stripKeepTags(substituted)
 
-        if PolishPipeline.isClean(stripped) {
-            return stripped
-        }
-
         guard let polishChatClient else {
             return PolishPipeline.normalizeFormatting(stripped)
         }
 
+        // Send the tag-stripped text to the local model. The on-device
+        // 3B model does not understand <keep> tags and may strip or
+        // mangle protected symbols.
         do {
             let polished = try await polishChatClient.complete(
                 model: polishModel,
                 systemPrompt: PolishPipeline.systemPromptLocal,
-                userPrompt: substituted)
+                userPrompt: stripped)
             if polished.isEmpty {
                 return PolishPipeline.normalizeFormatting(stripped)
             }
-            return PolishPipeline.normalizeFormatting(
-                PolishPipeline.stripKeepTags(polished))
+            return PolishPipeline.normalizeFormatting(polished)
         } catch {
             return PolishPipeline.normalizeFormatting(stripped)
         }

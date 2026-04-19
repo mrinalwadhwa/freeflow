@@ -86,10 +86,6 @@ public struct SpeechAnalyzerDictationProvider: DictationProviding {
         let substituted = PolishPipeline.substituteDictatedPunctuation(raw)
         let stripped = PolishPipeline.stripKeepTags(substituted)
 
-        if PolishPipeline.isClean(stripped) {
-            return stripped
-        }
-
         guard let polishChatClient else {
             return PolishPipeline.normalizeFormatting(stripped)
         }

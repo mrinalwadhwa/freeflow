@@ -16,7 +16,6 @@ private func runPipeline(
 ) async -> String {
     let substituted = PolishPipeline.substituteDictatedPunctuation(input)
     let stripped = PolishPipeline.stripKeepTags(substituted)
-    if PolishPipeline.isClean(stripped) { return stripped }
     do {
         let raw = try await client.complete(
             model: PolishPipeline.polishModel,
@@ -84,19 +83,6 @@ struct PolishScenarioDumpLocal {
         for s in allScenarios {
             let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
             let stripped = PolishPipeline.stripKeepTags(substituted)
-            if PolishPipeline.isClean(stripped) {
-                let isMatch = s.matches(stripped)
-                if isMatch { matches += 1 }
-                let tag = isMatch ? "MATCH" : "DIFF"
-                print("[\(s.category)] \(tag) [isClean]")
-                print("  Input:    \(s.input)")
-                print("  Output:   \(stripped)")
-                if !isMatch {
-                    print("  Expected: \(s.accepted[0])")
-                }
-                print()
-                continue
-            }
             do {
                 let raw = try await client.complete(
                     model: "",

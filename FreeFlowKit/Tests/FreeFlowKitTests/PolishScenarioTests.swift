@@ -9,7 +9,7 @@ import Testing
 // pipeline should clean up.
 //
 // Three test levels:
-//   1. Deterministic -- Stage 1 regex + isClean gate (always runs)
+//   1. Deterministic -- Stage 1 regex substitution (always runs)
 //   2. Cloud LLM -- full pipeline with OpenAI (FREEFLOW_TEST_OPENAI=1)
 //   3. Local LLM -- Apple Foundation Models (FREEFLOW_TEST_LOCAL_LLM=1)
 //
@@ -17,7 +17,7 @@ import Testing
 // Validators are property-based per category (not exact match).
 // ---------------------------------------------------------------------------
 
-// MARK: - Deterministic Tests (Stage 1 + isClean gate)
+// MARK: - Deterministic Tests (Stage 1)
 
 @Suite("Polish Scenarios -- Stage 1 regex")
 struct PolishScenarioRegexTests {
@@ -52,77 +52,13 @@ struct PolishScenarioRegexTests {
     }
 }
 
-@Suite("Polish Scenarios -- isClean gate")
-struct PolishScenarioIsCleanTests {
-
-    @Test("fillers are detected as dirty")
-    func fillersDetected() {
-        let fillerCases = allScenarios.filter { $0.category == "filler" }
-        for s in fillerCases {
-            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
-            let stripped = PolishPipeline.stripKeepTags(substituted)
-            let isClean = PolishPipeline.isClean(stripped)
-            #expect(
-                !isClean,
-                "Filler input should not be clean: \(s.input)")
-        }
-    }
-
-    @Test("repetitions are detected as dirty")
-    func repetitionsDetected() {
-        let repCases = allScenarios.filter { $0.category == "repetition" }
-        for s in repCases {
-            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
-            let stripped = PolishPipeline.stripKeepTags(substituted)
-            let isClean = PolishPipeline.isClean(stripped)
-            #expect(
-                !isClean,
-                "Repetition input should not be clean: \(s.input)")
-        }
-    }
-
-    @Test("corrections are detected as dirty")
-    func correctionsDetected() {
-        let corrCases = allScenarios.filter { $0.category == "correction" }
-        for s in corrCases {
-            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
-            let stripped = PolishPipeline.stripKeepTags(substituted)
-            let isClean = PolishPipeline.isClean(stripped)
-            #expect(
-                !isClean,
-                "Correction input should not be clean: \(s.input)")
-        }
-    }
-
-    @Test("compound numbers are detected as dirty")
-    func numbersDetected() {
-        let numCases = allScenarios.filter { $0.category == "number" }
-        for s in numCases {
-            let substituted = PolishPipeline.substituteDictatedPunctuation(s.input)
-            let stripped = PolishPipeline.stripKeepTags(substituted)
-            let isClean = PolishPipeline.isClean(stripped)
-            #expect(
-                !isClean,
-                "Number input should not be clean: \(s.input)")
-        }
-    }
-
-    @Test("clean text passes through")
-    func cleanPassthrough() {
-        let cleanCases = allScenarios.filter { $0.category == "clean" }
-        for s in cleanCases {
-            let isClean = PolishPipeline.isClean(s.input)
-            #expect(
-                isClean,
-                "Clean input should be detected as clean: \(s.input)")
-        }
-    }
+@Suite("Polish Scenarios -- deterministic passthrough")
+struct PolishScenarioDeterministicTests {
 
     @Test("wording-preservation inputs with punctuation pass through unchanged")
     func preservePassthrough() {
-        // Only test preserve cases that already have proper punctuation
-        // (ending with period/question mark). Lowercase-only inputs go
-        // through the LLM and are tested in the cloud/local suites.
+        // Preserve cases that already have proper punctuation go through
+        // deterministic stages only (substitution + strip tags + normalize).
         let preserveCases = allScenarios.filter {
             $0.category == "preserve" && $0.input.hasSuffix(".")
         }
@@ -157,7 +93,6 @@ struct PolishScenarioCloudTests {
         let client = OpenAIChatClient(apiKey: apiKey)
         let substituted = PolishPipeline.substituteDictatedPunctuation(input)
         let stripped = PolishPipeline.stripKeepTags(substituted)
-        if PolishPipeline.isClean(stripped) { return stripped }
         let userPrompt = PolishPipeline.buildUserPrompt(
             substituted, context: context)
         let result = try await client.complete(
@@ -449,7 +384,6 @@ struct PolishScenarioLocalTests {
         let client = FoundationModelChatClient()
         let substituted = PolishPipeline.substituteDictatedPunctuation(input)
         let stripped = PolishPipeline.stripKeepTags(substituted)
-        if PolishPipeline.isClean(stripped) { return stripped }
         let result = try await client.complete(
             model: "",
             systemPrompt: PolishPipeline.systemPromptLocal,
