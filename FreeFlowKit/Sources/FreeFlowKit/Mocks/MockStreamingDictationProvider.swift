@@ -15,12 +15,9 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     private var _sendCallCount: Int = 0
     private var _finishCallCount: Int = 0
     private var _cancelCallCount: Int = 0
-    private var _backupCallCount: Int = 0
     private var _receivedContexts: [AppContext] = []
     private var _receivedLanguages: [String?] = []
     private var _receivedAudioChunks: [Data] = []
-    private var _receivedBackupAudio: [Data] = []
-    private var _receivedBackupContexts: [AppContext] = []
 
     /// The text returned by `finishStreaming()`.
     public var stubbedText: String
@@ -37,15 +34,6 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     /// When non-nil, `finishStreaming()` throws this error instead of
     /// returning `stubbedText`.
     public var stubbedFinishError: (any Error)?
-
-    /// The text returned by `dictateViaBackup()`. Defaults to nil,
-    /// which causes the default protocol extension (throws) to be used
-    /// unless this is set.
-    public var stubbedBackupText: String?
-
-    /// An optional error to throw from `dictateViaBackup()`.
-    /// When non-nil, `dictateViaBackup()` throws this error.
-    public var stubbedBackupError: (any Error)?
 
     /// The value returned by `uncommittedAudioDuration`. Defaults to 0.
     public var stubbedUncommittedAudioDuration: TimeInterval = 0
@@ -68,11 +56,6 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     /// Number of times `cancelStreaming()` has been called.
     public var cancelCallCount: Int {
         lock.withLock { _cancelCallCount }
-    }
-
-    /// Number of times `dictateViaBackup()` has been called.
-    public var backupCallCount: Int {
-        lock.withLock { _backupCallCount }
     }
 
     /// Contexts received in each `startStreaming()` call, in order.
@@ -98,16 +81,6 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
     /// Total bytes of audio received across all `sendAudio()` calls.
     public var totalAudioBytesReceived: Int {
         lock.withLock { _receivedAudioChunks.reduce(0) { $0 + $1.count } }
-    }
-
-    /// Audio data received via `dictateViaBackup()`, in order.
-    public var receivedBackupAudio: [Data] {
-        lock.withLock { _receivedBackupAudio }
-    }
-
-    /// Contexts received via `dictateViaBackup()`, in order.
-    public var receivedBackupContexts: [AppContext] {
-        lock.withLock { _receivedBackupContexts }
     }
 
     public init(stubbedText: String = "Mock streaming dictation") {
@@ -159,25 +132,6 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
         }
     }
 
-    public func dictateViaBackup(audio: Data, context: AppContext, language: String?) async throws
-        -> String
-    {
-        let (error, text): ((any Error)?, String?) = lock.withLock {
-            _backupCallCount += 1
-            _receivedBackupAudio.append(audio)
-            _receivedBackupContexts.append(context)
-            return (stubbedBackupError, stubbedBackupText)
-        }
-
-        if let error { throw error }
-
-        guard let text else {
-            throw DictationError.networkError("No backup connection available")
-        }
-
-        return text
-    }
-
     // MARK: - Chunk handler recording
 
     private var _chunkHandler: (@Sendable (String) async -> Void)?
@@ -206,12 +160,9 @@ public final class MockStreamingDictationProvider: StreamingDictationProviding, 
             _sendCallCount = 0
             _finishCallCount = 0
             _cancelCallCount = 0
-            _backupCallCount = 0
             _receivedContexts.removeAll()
             _receivedLanguages.removeAll()
             _receivedAudioChunks.removeAll()
-            _receivedBackupAudio.removeAll()
-            _receivedBackupContexts.removeAll()
             _chunkHandler = nil
         }
     }

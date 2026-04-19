@@ -23,8 +23,8 @@ final class StreamingPipelineTests: XCTestCase {
         return data
     }
 
-    /// Build a slow batch mock so streaming wins the race by default.
-    /// Tests that need batch to win pass their own fast MockDictationProvider.
+    /// Build a batch mock with a delay. Used as the default dictation
+    /// provider in test pipelines where batch is not the focus.
     private func makeSlowBatchProvider() -> MockDictationProvider {
         let batch = MockDictationProvider()
         batch.stubbedDelay = 5.0
@@ -167,25 +167,6 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertGreaterThan(
             streaming.totalAudioBytesReceived, 0,
             "Streaming provider should receive audio data")
-    }
-
-    func testStreamingRunsFallbackInParallel() async {
-        // With parallel fallback, the backup path is attempted alongside
-        // streaming. When the default mock has no backup configured,
-        // it falls through to batch HTTP.
-        let (pipeline, audio, _, dictation, streaming, _, _) = makeStreamingPipeline()
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        XCTAssertEqual(
-            streaming.backupCallCount, 1,
-            "Backup dictation should be attempted in parallel with streaming")
-        XCTAssertEqual(
-            dictation.dictateCallCount, 1,
-            "Batch HTTP should be called as fallback when backup is not available")
     }
 
     func testStreamingReadsContext() async {
@@ -759,192 +740,6 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertNil(streaming.receivedLanguages.first ?? "not nil")
     }
 
-    // MARK: - Backup WebSocket fallback
-
-    func testBackupDictationTriedBeforeBatchHTTP() async {
-        // When the backup is available, it should be tried before batch HTTP.
-        let streaming = MockStreamingDictationProvider(stubbedText: "Primary result")
-        streaming.stubbedBackupText = "Backup result"
-        let dictation = makeSlowBatchProvider()
-        let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline(
-            dictationProvider: dictation, streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        // Backup should have been called.
-        XCTAssertEqual(
-            streaming.backupCallCount, 1,
-            "Backup dictation should be attempted")
-        // Batch HTTP should NOT be called when backup succeeds.
-        XCTAssertEqual(
-            dictation.dictateCallCount, 0,
-            "Batch HTTP should not be called when backup succeeds")
-    }
-
-    func testBackupDictationResultUsedWhenPrimaryFails() async {
-        // When the primary streaming fails, the backup result should be used.
-        let streaming = MockStreamingDictationProvider()
-        streaming.stubbedFinishError = DictationError.networkError("primary dead")
-        streaming.stubbedBackupText = "Backup wins"
-        let dictation = makeSlowBatchProvider()
-        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
-            dictationProvider: dictation, streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        let state = await coordinator.state
-        XCTAssertEqual(state, .idle)
-        XCTAssertEqual(
-            injector.lastInjectedText, "Backup wins",
-            "Backup result should be injected when primary fails")
-    }
-
-    func testBackupFailureFallsToBatchHTTP() async {
-        // When backup fails, batch HTTP should be used as final fallback.
-        let streaming = MockStreamingDictationProvider(stubbedText: "")
-        streaming.stubbedBackupError = DictationError.networkError("no backup")
-        let dictation = MockDictationProvider(stubbedText: "Batch fallback")
-        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
-            dictationProvider: dictation, streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        let state = await coordinator.state
-        XCTAssertEqual(state, .idle)
-        XCTAssertEqual(
-            dictation.dictateCallCount, 1,
-            "Batch HTTP should be called when backup fails")
-        XCTAssertEqual(injector.lastInjectedText, "Batch fallback")
-    }
-
-    func testBackupNotAvailableFallsToBatchHTTP() async {
-        // When no backup text is configured (default mock throws), batch is used.
-        let streaming = MockStreamingDictationProvider(stubbedText: "")
-        // stubbedBackupText is nil by default — mock throws.
-        let dictation = MockDictationProvider(stubbedText: "HTTP result")
-        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
-            dictationProvider: dictation, streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        let state = await coordinator.state
-        XCTAssertEqual(state, .idle)
-        XCTAssertEqual(
-            streaming.backupCallCount, 1,
-            "Backup should be attempted even when not available")
-        XCTAssertEqual(
-            dictation.dictateCallCount, 1,
-            "Batch HTTP should be called when backup is not available")
-        XCTAssertEqual(injector.lastInjectedText, "HTTP result")
-    }
-
-    func testBackupReceivesPCMDataWithoutWAVHeader() async {
-        // The backup should receive raw PCM (no 44-byte WAV header).
-        let streaming = MockStreamingDictationProvider(stubbedText: "Primary")
-        streaming.stubbedBackupText = "Backup"
-        let dictation = makeSlowBatchProvider()
-        let audio = makeStreamingAudioProvider()
-        let (pipeline, _, _, _, _, _, _) = makeStreamingPipeline(
-            audioProvider: audio, dictationProvider: dictation,
-            streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        XCTAssertEqual(streaming.backupCallCount, 1)
-        let backupAudio = streaming.receivedBackupAudio.first
-        XCTAssertNotNil(backupAudio)
-
-        // The stub buffer is WAV-encoded. PCM data = WAV data - 44 byte header.
-        let expectedPCMSize = audio.stubbedBuffer.data.count - 44
-        XCTAssertEqual(
-            backupAudio?.count, expectedPCMSize,
-            "Backup should receive raw PCM without the 44-byte WAV header")
-    }
-
-    func testBackupReceivesContext() async {
-        let ctx = AppContext(
-            bundleID: "com.test.backup",
-            appName: "BackupApp",
-            windowTitle: "Backup Window"
-        )
-        let contextProvider = MockAppContextProvider(context: ctx)
-        let streaming = MockStreamingDictationProvider(stubbedText: "Primary")
-        streaming.stubbedBackupText = "Backup"
-        let dictation = makeSlowBatchProvider()
-        let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline(
-            contextProvider: contextProvider, dictationProvider: dictation,
-            streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        XCTAssertEqual(streaming.receivedBackupContexts.count, 1)
-        let received = streaming.receivedBackupContexts.first
-        XCTAssertEqual(received?.bundleID, "com.test.backup")
-        XCTAssertEqual(received?.appName, "BackupApp")
-    }
-
-    func testBackupSuccessStoresTranscriptInBuffer() async {
-        // When the backup wins, the transcript should be stored in the buffer.
-        let streaming = MockStreamingDictationProvider(stubbedText: "")
-        streaming.stubbedFinishError = DictationError.networkError("primary dead")
-        streaming.stubbedBackupText = "Backup transcript"
-        let dictation = makeSlowBatchProvider()
-        let buffer = TranscriptBuffer()
-        let (pipeline, audio, _, _, _, _, _) = makeStreamingPipeline(
-            dictationProvider: dictation, streamingProvider: streaming,
-            transcriptBuffer: buffer)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        let stored = await buffer.lastTranscript
-        XCTAssertEqual(stored, "Backup transcript")
-    }
-
-    func testBothBackupAndBatchFailSkipsInjection() async {
-        // When both backup and batch fail, no injection should happen.
-        let streaming = MockStreamingDictationProvider(stubbedText: "")
-        streaming.stubbedFinishError = DictationError.networkError("primary dead")
-        streaming.stubbedBackupError = DictationError.networkError("backup dead")
-        let dictation = MockDictationProvider(stubbedText: "")
-        dictation.stubbedError = DictationError.networkError("batch dead")
-        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
-            dictationProvider: dictation, streamingProvider: streaming)
-
-        await pipeline.activate()
-        let emitTask = emitChunksInBackground(audio)
-        await pipeline.complete()
-        emitTask.cancel()
-
-        let state = await coordinator.state
-        XCTAssertEqual(
-            state, .dictationFailed,
-            "All paths failed should enter recovery state")
-        XCTAssertEqual(
-            injector.injectionCount, 0,
-            "No injection should happen when all paths fail")
-    }
-
     // MARK: - Chunk handler wiring
 
     func testPipelineSetsChunkHandlerOnStreamingProvider() async {
@@ -1027,5 +822,102 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertEqual(
             injector.injectionCount, 0,
             "Silent audio should not produce any text injection")
+    }
+
+    // MARK: - Sequential fallback (streaming → batch)
+
+    func testStreamingSuccessSkipsBatch() async {
+        // When streaming succeeds, batch should NOT be called.
+        let streaming = MockStreamingDictationProvider(stubbedText: "Streaming result")
+        let dictation = MockDictationProvider(stubbedText: "Batch result")
+        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
+            dictationProvider: dictation, streamingProvider: streaming)
+
+        await pipeline.activate()
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(
+            dictation.dictateCallCount, 0,
+            "Batch should not be called when streaming succeeds")
+        XCTAssertEqual(injector.lastInjectedText, "Streaming result")
+    }
+
+    func testStreamingFailureFallsToBatchHTTP() async {
+        // When streaming fails, batch HTTP should be called as fallback.
+        let streaming = MockStreamingDictationProvider()
+        streaming.stubbedFinishError = DictationError.networkError("ws died")
+        let dictation = MockDictationProvider(stubbedText: "Batch fallback")
+        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
+            dictationProvider: dictation, streamingProvider: streaming)
+
+        await pipeline.activate()
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(
+            dictation.dictateCallCount, 1,
+            "Batch should be called as fallback when streaming fails")
+        XCTAssertEqual(injector.lastInjectedText, "Batch fallback")
+    }
+
+    func testBothStreamingAndBatchFailSkipInjection() async {
+        // When both streaming and batch fail, no text should be injected.
+        let streaming = MockStreamingDictationProvider()
+        streaming.stubbedFinishError = DictationError.networkError("ws died")
+        let dictation = MockDictationProvider()
+        dictation.stubbedError = DictationError.networkError("http died")
+        let (pipeline, audio, _, _, _, injector, coordinator) = makeStreamingPipeline(
+            dictationProvider: dictation, streamingProvider: streaming)
+
+        await pipeline.activate()
+        let emitTask = emitChunksInBackground(audio)
+        await pipeline.complete()
+        emitTask.cancel()
+
+        let state = await coordinator.state
+        XCTAssertEqual(state, .dictationFailed)
+        XCTAssertEqual(
+            injector.injectionCount, 0,
+            "No text should be injected when both paths fail")
+    }
+
+    // MARK: - Audio setup failure during complete
+
+    func testAudioSetupFailureDuringCompleteResetsToIdle() async {
+        // Simulate: activate() starts audio setup which takes 1s then
+        // fails. complete() is called 50ms later while setup is still
+        // running. The coordinator should end in .idle, not get stuck
+        // in .processing.
+        let audio = makeStreamingAudioProvider()
+        audio.stubbedStartDelay = 1.0
+        audio.stubbedStartError = NSError(
+            domain: "test", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "BT negotiation failed"])
+
+        let coordinator = RecordingCoordinator()
+        let (pipeline, _, _, _, _, injector, _) = makeStreamingPipeline(
+            audioProvider: audio, coordinator: coordinator)
+
+        await pipeline.activate()
+        let state1 = await coordinator.state
+        XCTAssertEqual(state1, .recording)
+
+        // complete() while audio setup is still sleeping for 1s.
+        await pipeline.complete()
+
+        let state = await coordinator.state
+        XCTAssertEqual(
+            state, .idle,
+            "Coordinator should be idle after audio setup failure, not stuck in processing")
+        XCTAssertEqual(
+            injector.injectionCount, 0,
+            "No text should be injected when audio setup fails")
     }
 }

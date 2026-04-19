@@ -35,6 +35,12 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     /// so existing tests are unaffected.
     public var enablePCMStream: Bool = false
 
+    /// When non-nil, `startRecording()` sleeps for this duration then
+    /// throws the error. Simulates BT negotiation timeout or hardware
+    /// failure.
+    public var stubbedStartDelay: TimeInterval = 0
+    public var stubbedStartError: (any Error)?
+
     private var _pcmAudioStream: AsyncStream<Data>?
     private var pcmContinuation: AsyncStream<Data>.Continuation?
 
@@ -103,6 +109,13 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     }
 
     public func startRecording() async throws {
+        if stubbedStartDelay > 0 {
+            try await Task.sleep(
+                nanoseconds: UInt64(stubbedStartDelay * 1_000_000_000))
+        }
+        if let error = stubbedStartError {
+            throw error
+        }
         lock.withLock {
             _isRecording = true
             _startCallCount += 1

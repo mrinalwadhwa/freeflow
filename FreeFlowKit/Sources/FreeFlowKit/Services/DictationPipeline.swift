@@ -101,6 +101,10 @@ public actor DictationPipeline: PipelineProviding {
     /// Whether the current recording session is using streaming mode.
     private var isStreamingSession: Bool = false
 
+    /// Set by performAudioSetup when startRecording fails. Checked by
+    /// complete() to skip dictation and reset immediately.
+    private var audioSetupFailed: Bool = false
+
     /// Thread-safe flag set by the chunk handler when at least one
     /// intermediate chunk has been injected. Read in `complete()` to
     /// decide whether the backup/batch race is safe.
@@ -233,6 +237,7 @@ public actor DictationPipeline: PipelineProviding {
         )
 
         recordingStartedAt = Date()
+        audioSetupFailed = false
 
         // State is now .recording — return immediately so the HUD can animate.
         // Audio setup runs in a detached task so it does not execute on the
@@ -317,7 +322,7 @@ public actor DictationPipeline: PipelineProviding {
             }
             pendingContext?.cancel()
             pendingContext = nil
-            await coordinator.reset()
+            audioSetupFailed = true
             return
         }
 
@@ -611,6 +616,17 @@ public actor DictationPipeline: PipelineProviding {
             audioSetupTask = nil
         }
 
+        // If audio setup failed (e.g. BT negotiation timeout), there
+        // is no audio to transcribe. Reset and return immediately.
+        if audioSetupFailed {
+            Log.debug("[Pipeline] Audio setup failed, skipping dictation")
+            audioSetupFailed = false
+            isStreamingSession = false
+            _ = try? await audioProvider.stopRecording()
+            await coordinator.reset()
+            return
+        }
+
         let useStreaming = isStreamingSession
         let forwardingTask = audioForwardingTask
         audioForwardingTask = nil
@@ -797,31 +813,47 @@ public actor DictationPipeline: PipelineProviding {
                         return
                     }
                 } else {
-                    // No chunks fired yet (short session). Race
-                    // streaming and batch in parallel for low latency.
-                    Log.debug("[Pipeline] finishing streaming session (with parallel batch)")
+                    // No chunks fired yet (short session). Finish
+                    // streaming first; fall back to batch HTTP on failure.
+                    Log.debug("[Pipeline] finishing streaming session")
 
-                    let streamingResult = await raceStreamingAndBatch(
-                        streaming: streaming,
-                        audioBuffer: audioBuffer,
-                        context: context,
-                        dictationProvider: dictationProvider,
-                        minimumAudioDuration: minimumAudioDuration,
-                        silenceThreshold: postRecordThreshold,
-                        language: self.language
-                    )
+                    var text: String?
+                    do {
+                        let result = try await streaming.finishStreaming()
+                        let trimmed = result.trimmingCharacters(
+                            in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            text = result
+                            Log.debug("[Pipeline] Streaming completed")
+                        }
+                    } catch {
+                        Log.debug("[Pipeline] Streaming failed: \(error)")
+                    }
 
                     // Clean up the streaming session so the provider
                     // is ready for the next activate() cycle.
                     await streaming.cancelStreaming()
 
-                    guard let text = streamingResult else {
+                    // Fall back to batch HTTP if streaming failed or
+                    // returned empty.
+                    if text == nil {
+                        Log.debug("[Pipeline] Falling back to batch HTTP")
+                        text = await batchDictate(
+                            audioBuffer: audioBuffer,
+                            context: context,
+                            dictationProvider: dictationProvider,
+                            minimumAudioDuration: minimumAudioDuration,
+                            silenceThreshold: postRecordThreshold,
+                            coordinator: coordinator,
+                            recoveryBox: recoveryBox
+                        )
+                    }
+
+                    guard let finalText = text else {
                         Log.debug("[Pipeline] Both streaming and batch failed")
-                        recoveryBox.set(audio: audioBuffer.data, context: context)
-                        await coordinator.failDictation()
                         return
                     }
-                    dictatedText = text
+                    dictatedText = finalText
                 }
             } else {
                 // Batch mode: send the complete audio buffer to /dictate.
@@ -1016,232 +1048,6 @@ public actor DictationPipeline: PipelineProviding {
         }
 
         await coordinator.reset()
-    }
-
-    // MARK: - Parallel Streaming + Batch
-
-    /// Race streaming and batch dictation in parallel.
-    ///
-    /// Start both paths concurrently and return the result from whichever
-    /// succeeds first. If streaming wins, cancel the batch task. If batch
-    /// wins (streaming timed out or failed), use the batch result.
-    ///
-    /// Returns nil if both paths fail. When the batch HTTP path returns a
-    /// 401 auth error, the pipeline transitions to `.sessionExpired` and
-    /// invokes the `onSessionExpired` callback before returning nil.
-    private func raceStreamingAndBatch(
-        streaming: StreamingDictationProviding,
-        audioBuffer: AudioBuffer,
-        context: AppContext,
-        dictationProvider: DictationProviding,
-        minimumAudioDuration: TimeInterval,
-        silenceThreshold: Float,
-        language: String? = nil
-    ) async -> String? {
-        // Check audio validity before starting either path.
-        guard !audioBuffer.data.isEmpty, audioBuffer.duration >= minimumAudioDuration else {
-            Log.debug(
-                "[Pipeline] Audio too short (\(audioBuffer.duration)s), skipping dictation")
-            return nil
-        }
-
-        // Reject silent or noise-only audio before sending to either path.
-        // AirPods noise cancellation can produce a subtle floor of sound
-        // that the Realtime API misinterprets as speech (e.g. "You.",
-        // "Thanks for watching!"). The client-side silence gate catches this.
-        let rms = AudioLevelAnalyzer.rmsLevel(of: audioBuffer)
-        Log.debug(
-            "[Pipeline] Audio RMS: \(rms), threshold: \(silenceThreshold), "
-                + "duration: \(String(format: "%.2f", audioBuffer.duration))s")
-        if rms <= silenceThreshold {
-            Log.debug(
-                "[Pipeline] Audio below silence threshold, skipping dictation")
-            return nil
-        }
-
-        // Extract raw PCM data from the WAV buffer for the backup path.
-        // The AudioBuffer contains a WAV file (44-byte RIFF header + PCM).
-        // The backup WebSocket expects raw PCM chunks, not WAV.
-        let pcmData: Data
-        if audioBuffer.data.count > 44 {
-            pcmData = audioBuffer.data.subdata(in: 44..<audioBuffer.data.count)
-        } else {
-            pcmData = audioBuffer.data
-        }
-
-        let t0 = CFAbsoluteTimeGetCurrent()
-
-        // Thread-safe box to propagate an auth-error flag out of the
-        // continuation closure. The detached tasks write to it under
-        // its internal lock; the outer scope reads it after the
-        // continuation returns (by which time both tasks have finished).
-        final class AuthErrorFlag: @unchecked Sendable {
-            private let lock = NSLock()
-            private var _value = false
-            func set() { lock.withLock { _value = true } }
-            var isSet: Bool { lock.withLock { _value } }
-        }
-        let authError = AuthErrorFlag()
-
-        // Race streaming (primary) and backup WebSocket with true
-        // first-to-finish semantics.
-        //
-        // The backup path runs a full session on the standby WebSocket
-        // (start → audio → stop → transcript_done) instead of the
-        // slower HTTP batch POST. Expected latency: 0.3–0.9s (backup)
-        // vs 1–2.5s (batch HTTP).
-        //
-        // If the backup is not available (nil, no connection), fall back
-        // to batch HTTP. This should be rare since both independent
-        // WebSocket connections dying simultaneously is unlikely.
-        //
-        // We use detached tasks + a checked continuation because
-        // structured concurrency (TaskGroup, async let) waits for ALL
-        // children before the scope exits, even after cancelAll(). If
-        // one child is stuck in a non-cancellable await (e.g.
-        // URLSessionWebSocketTask.receive()), the group blocks forever.
-        // Detached tasks have no such constraint — the continuation
-        // resumes as soon as either task delivers a result.
-        let winner: String? = await withCheckedContinuation { continuation in
-            let lock = NSLock()
-            var resumed = false
-            var streamingResult: String?
-            var fallbackResult: String?
-            var gotStreaming = false
-            var gotFallback = false
-
-            func tryResume(preferredText: String?, source: String) {
-                let alreadyResumed = lock.withLock {
-                    let was = resumed
-                    if !was { resumed = true }
-                    return was
-                }
-                if !alreadyResumed {
-                    let t1 = CFAbsoluteTimeGetCurrent()
-                    Log.debug(
-                        "[Pipeline] Using \(source) result (\(String(format: "%.2f", t1 - t0))s)")
-                    continuation.resume(returning: preferredText)
-                }
-            }
-
-            func checkBothDone() {
-                // Called after one path finishes. If both paths finished
-                // but neither had usable text, resume with whatever we have.
-                let (done, sr, fr): (Bool, String?, String?) = lock.withLock {
-                    (gotStreaming && gotFallback, streamingResult, fallbackResult)
-                }
-                guard done else { return }
-                let fallback = sr ?? fr
-                let alreadyResumed = lock.withLock {
-                    let was = resumed
-                    if !was { resumed = true }
-                    return was
-                }
-                if !alreadyResumed {
-                    let t1 = CFAbsoluteTimeGetCurrent()
-                    Log.debug(
-                        "[Pipeline] Both paths done, no winner (\(String(format: "%.2f", t1 - t0))s)"
-                    )
-                    continuation.resume(returning: fallback)
-                }
-            }
-
-            let streamingTask = Task.detached {
-                do {
-                    let result = try await streaming.finishStreaming()
-                    Log.debug("[Pipeline] Streaming completed")
-                    lock.withLock {
-                        streamingResult = result
-                        gotStreaming = true
-                    }
-                    if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        tryResume(preferredText: result, source: "streaming")
-                    } else {
-                        checkBothDone()
-                    }
-                } catch {
-                    Log.debug("[Pipeline] Streaming failed: \(error)")
-                    lock.withLock {
-                        streamingResult = nil
-                        gotStreaming = true
-                    }
-                    checkBothDone()
-                }
-            }
-
-            // Fallback path: try backup WebSocket first, then batch HTTP.
-            let fallbackTask = Task.detached {
-                // Attempt the backup WebSocket path first. This runs a
-                // full session on the standby connection (~0.3–0.9s).
-                do {
-                    let result = try await streaming.dictateViaBackup(
-                        audio: pcmData, context: context, language: language)
-                    Log.debug("[Pipeline] Backup dictation completed")
-                    lock.withLock {
-                        fallbackResult = result
-                        gotFallback = true
-                    }
-                    if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        tryResume(preferredText: result, source: "backup")
-                    } else {
-                        checkBothDone()
-                    }
-                    return
-                } catch {
-                    Log.debug(
-                        "[Pipeline] Backup dictation failed: \(error), falling back to batch HTTP")
-                }
-
-                // Backup unavailable or failed — fall back to batch HTTP.
-                do {
-                    let result = try await dictationProvider.dictate(
-                        audio: audioBuffer.data, context: context)
-                    Log.debug("[Pipeline] Batch HTTP completed")
-                    lock.withLock {
-                        fallbackResult = result
-                        gotFallback = true
-                    }
-                    if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        tryResume(preferredText: result, source: "batch")
-                    } else {
-                        checkBothDone()
-                    }
-                } catch let error as DictationError where error == .authenticationFailed {
-                    Log.debug("[Pipeline] Batch HTTP returned 401")
-                    authError.set()
-                    lock.withLock {
-                        fallbackResult = nil
-                        gotFallback = true
-                    }
-                    checkBothDone()
-                } catch {
-                    Log.debug("[Pipeline] Batch HTTP failed: \(error)")
-                    lock.withLock {
-                        fallbackResult = nil
-                        gotFallback = true
-                    }
-                    checkBothDone()
-                }
-            }
-
-            // Suppress unused variable warnings. The tasks are kept
-            // alive by the closures capturing the continuation; we
-            // don't need to explicitly cancel the loser because the
-            // extra network call is acceptable for reliability.
-            _ = streamingTask
-            _ = fallbackTask
-        }
-
-        // The batch HTTP path is the definitive 401 signal. WebSocket
-        // paths surface auth failures as generic connection errors
-        // (close code 4001), but the batch endpoint returns a clean
-        // HTTP 401 that the provider maps to .authenticationFailed.
-        if authError.isSet && winner == nil {
-            await notifySessionExpired()
-            return nil
-        }
-
-        return winner
     }
 
     // MARK: - Batch Dictation Helper
