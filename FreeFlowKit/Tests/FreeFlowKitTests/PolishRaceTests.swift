@@ -56,8 +56,10 @@ struct PolishRaceTests {
 
     @Test("local wins when cloud slow")
     func localWinsWhenCloudSlow() async {
-        let cloud = DelayedPolishClient(result: "Cloud polished", delay: 2.0)
-        let local = DelayedPolishClient(result: "Local polished", delay: 0.1)
+        // Cloud takes 10s, local is instant. After the 0.5s cloud
+        // timeout, the post-timeout race should pick local immediately.
+        let cloud = DelayedPolishClient(result: "Cloud polished", delay: 10.0)
+        let local = DelayedPolishClient(result: "Local polished", delay: 0.0)
         let result = await race(cloud: cloud, local: local, timeout: 0.5)
         #expect(result.text == "Local polished")
         #expect(result.source == .local)
@@ -88,18 +90,18 @@ struct PolishRaceTests {
         #expect(result.source == .fallback)
     }
 
-    @Test("local timeout prevents hang when local is slow")
-    func localTimeoutPreventsHang() async {
-        // Cloud times out at 0.3s, local takes 10s (simulating thermal throttle).
-        // racePolish should not wait 10s — it should cap the local wait.
-        let cloud = DelayedPolishClient(result: "Cloud polished", delay: 2.0)
-        let local = DelayedPolishClient(result: "Local polished", delay: 10.0)
+    @Test("polish cap prevents hang when both are slow")
+    func polishCapPreventsHang() async {
+        // Both cloud (30s) and local (30s) are stuck. The polish cap
+        // (8s for 2 words) should terminate the race, not wait 30s.
+        let cloud = DelayedPolishClient(result: "Cloud polished", delay: 30.0)
+        let local = DelayedPolishClient(result: "Local polished", delay: 30.0)
         let start = Date()
-        let result = await race(cloud: cloud, local: local, timeout: 0.3)
+        let result = await race(cloud: cloud, local: local, timeout: 0.5)
         let elapsed = Date().timeIntervalSince(start)
-        // Should fall back to raw within ~3-4s (cloud timeout + local timeout),
-        // not hang for 10s.
-        #expect(elapsed < 6.0, "Should not wait for slow local client")
+        // Cap for 2 words: max(8.0, 5.0 + 2*0.05) = 8.0s
+        // Total: 0.5s cloud timeout + 8s cap = ~8.5s
+        #expect(elapsed < 12.0, "Should not wait for both stuck clients")
         #expect(result.source == .fallback)
     }
 }

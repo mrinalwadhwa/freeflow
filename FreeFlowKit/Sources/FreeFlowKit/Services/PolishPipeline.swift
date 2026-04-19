@@ -262,14 +262,20 @@ public enum PolishPipeline {
         // Scale the cloud timeout with input length. Short dictations
         // get a tight 1.5s window; longer inputs get proportionally
         // more time so the cloud LLM can finish without being cut off.
+        let wordCount = stripped.split(separator: " ").count
         let effectiveTimeout: TimeInterval
         if let timeout {
             effectiveTimeout = timeout
         } else {
-            let wordCount = stripped
-                .split(separator: " ").count
-            effectiveTimeout = max(1.5, 1.0 + Double(wordCount) * 0.02)
+            effectiveTimeout = max(2.0, 1.5 + Double(wordCount) * 0.03)
         }
+
+        // Compute the polish cap early so we can log it.
+        let polishCap = max(8.0, 5.0 + Double(wordCount) * 0.05)
+        Log.debug(
+            String(format: "[Polish] race: %d words, timeout=%.1fs, cap=%.1fs, local=%@",
+                   wordCount, effectiveTimeout, polishCap,
+                   localClient != nil ? "yes" : "no"))
 
         // Start both clients in parallel.
         let cloudTask = Task {
@@ -283,49 +289,73 @@ public enum PolishPipeline {
             }
         }
 
-        // Wait for cloud with timeout.
-        let cloudResult: String? = await withTimeout(seconds: effectiveTimeout) {
-            (try? await cloudTask.value) ?? ""
-        }
+        // Race cloud, local, and timeouts using detached tasks with a
+        // single checked continuation. Structured concurrency (TaskGroup)
+        // waits for ALL children before the scope exits, even after
+        // cancelAll(). Unstructured Task.value blocks until the task
+        // completes regardless of the caller's cancellation. Detached
+        // tasks + a continuation avoid both: the continuation resumes
+        // as soon as any path delivers a result.
+        //
+        // Priority order:
+        //   1. Cloud finishes (any time) → use cloud
+        //   2. After effectiveTimeout: local finishes → use local
+        //   3. After polishCap: give up → deterministic fallback
+        let winner: (String, PolishSource)? = await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
 
-        if let result = cloudResult,
-            !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            localTask?.cancel()
-            return PolishResult(
-                text: normalizeFormatting(stripKeepTags(result)),
-                source: .cloud)
-        }
-
-        // Cloud timed out or failed — try local with a bounded wait.
-        // Cap at 3s so a thermally throttled on-device model does not
-        // hang the pipeline indefinitely. Cancel the local task
-        // explicitly on timeout since it's an unstructured Task that
-        // withTimeout's group.cancelAll() can't reach.
-        cloudTask.cancel()
-        if let localTask {
-            let localResult: String? = await withTaskGroup(of: String?.self) { group in
-                group.addTask {
-                    (try? await localTask.value) ?? ""
+            func tryResume(_ value: (String, PolishSource)?) {
+                let alreadyResumed = lock.withLock {
+                    let was = resumed
+                    if !was { resumed = true }
+                    return was
                 }
-                group.addTask {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    localTask.cancel()
-                    return nil
+                if !alreadyResumed {
+                    cloudTask.cancel()
+                    localTask?.cancel()
+                    continuation.resume(returning: value)
                 }
-                let first = await group.next() ?? nil
-                group.cancelAll()
-                localTask.cancel()
-                return first
             }
-            if let result = localResult,
-                !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
+
+            // Cloud: accepted any time (highest priority).
+            Task.detached {
+                if let r = try? await cloudTask.value,
+                    !r.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                { tryResume((r, .cloud)) }
+            }
+
+            // Local (macOS 26+): wait for cloud preference window,
+            // then accept the first local result.
+            if let localTask {
+                Task.detached {
+                    try? await Task.sleep(
+                        nanoseconds: UInt64(effectiveTimeout * 1_000_000_000))
+                    if let r = try? await localTask.value,
+                        !r.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    { tryResume((r, .local)) }
+                }
+            }
+
+            // Hard cap: give up after polishCap seconds. On macOS < 26
+            // (no local client) this also serves as the cloud timeout.
+            let capTimeout = localTask != nil
+                ? polishCap
+                : effectiveTimeout
+            Task.detached {
+                try? await Task.sleep(
+                    nanoseconds: UInt64(capTimeout * 1_000_000_000))
+                tryResume(nil)
+            }
+        }
+
+        if let (text, source) = winner {
+            if source == .local {
                 Log.debug("[Polish] Cloud timed out, using local result")
-                return PolishResult(
-                    text: normalizeFormatting(stripKeepTags(result)),
-                    source: .local)
             }
+            return PolishResult(
+                text: normalizeFormatting(stripKeepTags(text)),
+                source: source)
         }
 
         // Both failed — deterministic fallback.
