@@ -630,12 +630,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func openCustomizeGuide() {
-        if let url = URL(string: "https://github.com/mrinalwadhwa/freeflow/blob/main/CUSTOMIZE.md") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     @objc private func openLanguageIssue() {
         if let url = URL(string: "https://github.com/mrinalwadhwa/freeflow/issues/1") {
             NSWorkspace.shared.open(url)

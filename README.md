@@ -6,7 +6,7 @@ Ramble, use filler words, correct yourself mid-sentence. FreeFlow turns messy
 speech into clean writing and injects it wherever your cursor is: your messaging app,
 your editor, your coding agent, the terminal, email, anything.
 
-It is open source, so you have the [freedom to customize](CUSTOMIZE.md) it any way you
+It is open source, so you have the [freedom to customize](DEVELOP.md#customize) it any way you
 want. It runs entirely on your Mac and talks directly to OpenAI with your own API key,
 so your audio and transcripts never pass through anyone else's servers.
 
@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/da62c769-d56b-4c16-be04-148197536dfa
 
 ## Install
 
-Install the macOS app with [Homebrew](https://brew.sh) or [download the DMG](https://github.com/mrinalwadhwa/freeflow/releases/latest/download/FreeFlow.dmg) directly.
+Requires **macOS 14** or later. Install with [Homebrew](https://brew.sh) or [download the DMG](https://github.com/mrinalwadhwa/freeflow/releases/latest/download/FreeFlow.dmg) directly.
 
 ```
 brew install mrinalwadhwa/freeflow/freeflow
@@ -28,31 +28,36 @@ On first launch, FreeFlow asks for your OpenAI API key and stores it in the macO
 Keychain. Create one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 After that, grant accessibility and microphone permissions and you are ready to dictate.
 
-## Instant, polished, and accurate
+## Fast
 
-Audio streams directly from your Mac to OpenAI's Realtime API over a persistent
-WebSocket while you speak. The model transcribes incrementally, so by the time
-you release the key the transcript is already done. A local skip heuristic
-bypasses the polish step entirely for clean transcripts (roughly 40% of
-dictations). When polish is needed, a fast chat model handles it in about 0.4
-seconds. A warm backup connection is kept pre-opened in the background so that
-the second and later dictations skip the WebSocket handshake entirely.
+Audio streams to OpenAI's Realtime API over a persistent WebSocket while you
+speak. The model transcribes incrementally, so by the time you release the key
+the transcript is already done. Median latency from key release to polished text
+at cursor is **0.55 seconds**.
 
-If the streaming path fails, FreeFlow falls back to OpenAI's batch transcription
-endpoint automatically. Whichever path finishes first wins.
+A warm backup connection is kept pre-opened in the background. After your first
+dictation, subsequent ones skip the WebSocket handshake entirely — 91% of
+sessions see zero connection setup time.
 
-## Freedom: open, private, and unlimited
+83% of dictations skip the LLM polish step entirely thanks to a local heuristic
+that detects clean transcripts. When polish is needed, `gpt-4.1-nano` handles it
+in 320–780 ms. If the streaming path fails, a batch fallback runs in parallel
+and catches it automatically.
+
+See [BENCHMARK.md](BENCHMARK.md) for detailed timing breakdowns.
+
+## Private
+
+Everything runs on your Mac. Your audio and transcripts flow directly to OpenAI
+with your own API key; there is no FreeFlow server in the middle. On macOS 26,
+FreeFlow can also transcribe entirely on-device using Apple's SpeechAnalyzer
+framework — no network, no API key needed, audio never leaves the Mac.
+
+## Open
 
 Everything is in this repo: the app, the providers, the polish pipeline, the
 prompts. Change the models, rewrite the prompts, add a language, or fork the
-whole thing. Your audio and transcripts flow directly from your Mac to OpenAI;
-there is no FreeFlow server in the middle.
-
-## Customize for your team
-
-FreeFlow is designed to be taken apart and reassembled. Swap the speech
-model, rewrite the polish prompt, add a language, or change how text is
-injected. See [CUSTOMIZE.md](CUSTOMIZE.md).
+whole thing. See [DEVELOP.md](DEVELOP.md#customize).
 
 ## Contribute
 

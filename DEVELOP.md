@@ -1,6 +1,12 @@
 # Develop
 
-Build, test, and understand the FreeFlow codebase.
+Build, test, customize, and understand the FreeFlow codebase.
+
+## Prerequisites
+
+- macOS 14+
+- Xcode 16+
+- [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ## Build
 
@@ -29,6 +35,65 @@ dictation pipeline, streaming and batch OpenAI providers, the polish
 pipeline, audio capture, device switching, text injection, Keychain
 storage, and the recording state machine. Protocols for every provider
 enable dependency injection in tests.
+
+## Customize
+
+FreeFlow is designed to be taken apart and reassembled. Edit code,
+rebuild, and use the rebuilt binary.
+
+### Change a prompt
+
+The polish prompts are inlined as string literals in
+`FreeFlowKit/Sources/FreeFlowKit/Services/PolishPipeline.swift`:
+
+| Constant | What it controls |
+|----------|-----------------|
+| `systemPromptEnglish` | English: filler removal, list formatting, dictated punctuation, corrections, number formatting, wording preservation |
+| `systemPromptMinimal` | All other languages: light cleanup that preserves original phrasing |
+
+Open `PolishPipeline.swift` and add a rule. For example, to make the
+polish step produce British English:
+
+    11. British English: use British spelling conventions. "organize" becomes
+        "organise", "color" becomes "colour", "center" becomes "centre", etc.
+
+Or to format code identifiers in backticks:
+
+    11. Code identifiers: when the speaker mentions a function, variable,
+        class name, or file path, wrap it in backticks. "the render function"
+        becomes "the `render` function".
+
+Add your rule at the end of the numbered list, before the final
+instructions about language preservation and output format.
+
+### Change a model
+
+Four constants control the entire AI pipeline. They are the default
+argument values on the provider initializers:
+
+| Constant | File | Default | What it does |
+|----------|------|---------|-------------|
+| `realtimeModel` | `OpenAIRealtimeProvider.swift` | `gpt-4o-realtime-preview` | Streaming speech-to-text via the Realtime API |
+| `sttModel` | `OpenAIRealtimeProvider.swift` | `gpt-4o-mini-transcribe` | Transcription model within the Realtime session |
+| `model` | `OpenAIDictationProvider.swift` | `gpt-4o-mini-transcribe` | Batch transcription model (used as fallback) |
+| `polishModel` | both providers | `gpt-4.1-nano` | Text cleanup after transcription |
+
+Change the string, rebuild, done.
+
+### Rebuild
+
+    make generate   # Regenerate Xcode project
+    make build      # Build the app
+
+The debug build is at
+`~/Library/Developer/Xcode/DerivedData/FreeFlow-*/Build/Products/Debug/FreeFlow.app`.
+Launch it directly or replace your installed app with the rebuilt one.
+
+Everything else in `FreeFlowKit/Sources/FreeFlowKit/Services/` is open
+to modification: audio capture, device switching, text injection, the
+dictation pipeline state machine, even the Realtime protocol message
+construction. The test suite covers every provider and pipeline stage so
+regressions are caught quickly.
 
 ## App icon
 
