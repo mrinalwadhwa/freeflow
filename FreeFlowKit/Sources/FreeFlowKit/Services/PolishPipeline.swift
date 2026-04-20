@@ -257,7 +257,7 @@ public enum PolishPipeline {
     ) async -> PolishResult {
         let prompt = systemPrompt(forLanguage: language)
         let userPrompt = buildUserPrompt(
-            substituted, context: context, language: language)
+            substituted, context: .empty, language: language)
 
         // Scale the cloud timeout with input length. Short dictations
         // get a tight 1.5s window; longer inputs get proportionally

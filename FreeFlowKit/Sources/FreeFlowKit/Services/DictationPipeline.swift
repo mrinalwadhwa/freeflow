@@ -470,6 +470,7 @@ public actor DictationPipeline: PipelineProviding {
     }
 
     public func complete() async {
+        let completeEnteredAt = CFAbsoluteTimeGetCurrent()
         Log.debug("[Pipeline] complete() entering")
         let currentState = await coordinator.state
         guard currentState == .recording else {
@@ -644,7 +645,8 @@ public actor DictationPipeline: PipelineProviding {
             [
                 pendingContext, audioProvider, dictationProvider, streamingProvider,
                 textInjector, coordinator, minimumAudioDuration, transcriptBuffer,
-                earlyThreshold, micDiagnosticStore, recoveryBox
+                earlyThreshold, micDiagnosticStore, recoveryBox,
+                completeEnteredAt
             ] in
             let t0 = CFAbsoluteTimeGetCurrent()
 
@@ -936,6 +938,7 @@ public actor DictationPipeline: PipelineProviding {
                     + " dictate=\(fmt(t4 - t1))"
                     + " inject=\(fmt(t5 - t4))"
                     + " total=\(fmt(t5 - t0))"
+                    + " e2e=\(fmt(t5 - completeEnteredAt))"
                     + " audio=\(audioKB)KB/\(fmt(audioBuffer.duration))"
                     + " mode=\(mode)"
             )

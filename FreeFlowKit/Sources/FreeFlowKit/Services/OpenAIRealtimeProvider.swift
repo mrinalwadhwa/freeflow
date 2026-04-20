@@ -1017,7 +1017,9 @@ public final class OpenAIRealtimeProvider: StreamingDictationProviding, @uncheck
         language: String?,
         micProximity: MicProximity
     ) -> String {
-        var transcription: [String: Any] = ["model": sttModel]
+        var transcription: [String: Any] = [
+            "model": sttModel,
+        ]
         if let language {
             transcription["language"] = language
         }
