@@ -17,7 +17,7 @@ public enum PolishPipeline {
 
     // MARK: - Configuration
 
-    public static let polishModel = "gpt-4.1-nano"
+    public static let polishModel = "gpt-5.4-nano"
 
     // MARK: - Stage 1: Dictated Punctuation Substitution
 
