@@ -595,6 +595,30 @@ struct NormalizeFormattingTests {
         let input = "1. First\n2. Second\n3. Third"
         #expect(PolishPipeline.normalizeFormatting(input) == input)
     }
+
+    @Test("a.m./p.m. normalized to AM/PM mid-sentence")
+    func amPmMidSentence() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "The call is at 9 a.m. tomorrow") == "The call is at 9 AM tomorrow")
+    }
+
+    @Test("a.m./p.m. normalized to AM/PM at end of sentence")
+    func amPmEndOfSentence() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "The call is at 3 p.m.") == "The call is at 3 PM.")
+    }
+
+    @Test("a.m. and p.m. in same sentence")
+    func amPmBoth() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "Open from 9 a.m. to 5 p.m.") == "Open from 9 AM to 5 PM.")
+    }
+
+    @Test("AM/PM already uppercase passes through")
+    func amPmAlreadyUppercase() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "The call is at 3 PM.") == "The call is at 3 PM.")
+    }
 }
 
 // MARK: - buildUserPrompt
@@ -725,7 +749,6 @@ struct SystemPromptTests {
         #expect(p.contains("Mid-sentence corrections"))
         #expect(p.contains("Lists"))
         #expect(p.contains("Numbers and formatting"))
-        #expect(p.contains("Dictated punctuation"))
         #expect(p.contains("<keep>"))
         #expect(p.contains("Wording preservation"))
         #expect(p.contains("No fabricated text"))

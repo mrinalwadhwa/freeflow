@@ -368,6 +368,80 @@ struct PolishScenarioCloudTests {
                 "Multilingual should produce output: \(s.input)")
         }
     }
+
+    @Test("keep tags preserve symbols through polish")
+    func keepTags() async throws {
+        for s in allScenarios where s.category == "keep-tag" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                s.matches(result),
+                "Keep-tag should match accepted: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("two-item lists stay inline")
+    func twoItemLists() async throws {
+        for s in allScenarios where s.category == "two-item-list" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                !result.contains("\n"),
+                "Two-item list should stay inline: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("lists without speaker lead-in have no fabricated intro")
+    func noLeadInLists() async throws {
+        let fabricatedIntros = [
+            "Here are", "The items are:", "Please note:",
+            "The following", "Items:", "List:",
+        ]
+        for s in allScenarios where s.category == "no-leadin-list" {
+            let result = try await polishWithCloud(s.input)
+            for intro in fabricatedIntros {
+                #expect(
+                    !result.hasPrefix(intro),
+                    "Should not fabricate lead-in '\(intro)': \(s.input), got: \(result)")
+            }
+        }
+    }
+
+    @Test("contractions preserved, not expanded")
+    func contractions() async throws {
+        let pairs = [
+            ("I'll", "I will"), ("we'll", "we will"),
+            ("we're", "we are"), ("it's", "it is"),
+            ("they've", "they have"), ("we've", "we have"),
+            ("can't", "cannot"), ("doesn't", "does not"),
+        ]
+        for s in allScenarios where s.category == "contraction" {
+            let result = try await polishWithCloud(s.input)
+            for (contraction, expanded) in pairs where s.input.contains(contraction) {
+                #expect(
+                    !result.contains(expanded),
+                    "Should keep '\(contraction)' not expand to '\(expanded)': \(s.input), got: \(result)")
+            }
+        }
+    }
+
+    @Test("small numbers converted to digits")
+    func smallNumbers() async throws {
+        for s in allScenarios where s.category == "small-number" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result.contains(where: { $0.isNumber }),
+                "Small numbers should be digits: \(s.input), got: \(result)")
+        }
+    }
+
+    @Test("ordinal numbers converted to digits")
+    func ordinals() async throws {
+        for s in allScenarios where s.category == "ordinal" {
+            let result = try await polishWithCloud(s.input)
+            #expect(
+                result.contains(where: { $0.isNumber }),
+                "Ordinals should be digits: \(s.input), got: \(result)")
+        }
+    }
 }
 
 // MARK: - Local LLM Tests (Apple Foundation Models, gated)

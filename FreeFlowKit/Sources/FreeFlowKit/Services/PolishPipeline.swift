@@ -443,6 +443,19 @@ public enum PolishPipeline {
             of: "(?<=\\w)\\\\\\\\(?=\\w)", with: "\\\\",
             options: .regularExpression)
 
+        // Normalize a.m./p.m. to AM/PM.
+        // Mid-sentence (followed by space): just replace, drop the dot.
+        // End of sentence (followed by end-of-string or newline): restore
+        // the period that did double duty as abbreviation and sentence end.
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= )"#, with: "AM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?=$|\n)"#, with: "AM.", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= )"#, with: "PM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?=$|\n)"#, with: "PM.", options: .regularExpression)
+
         // Process line by line.
         // Strip trailing whitespace and normalize bullet items per line.
         let lines = result.split(

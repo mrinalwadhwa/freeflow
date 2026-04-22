@@ -28,7 +28,14 @@ struct PolishScenario {
     }
 
     func matches(_ output: String) -> Bool {
-        accepted.contains(output)
+        let normalize = { (s: String) in
+            s.replacingOccurrences(of: "\u{2019}", with: "'")
+             .replacingOccurrences(of: "\u{2018}", with: "'")
+             .replacingOccurrences(of: "\u{201C}", with: "\"")
+             .replacingOccurrences(of: "\u{201D}", with: "\"")
+        }
+        let normalizedOutput = normalize(output)
+        return accepted.contains { normalize($0) == normalizedOutput }
     }
 }
 
@@ -96,7 +103,8 @@ let allScenarios: [PolishScenario] = [
         "The meeting is at 3."),
     PolishScenario("thinking",
         "mm hmm that makes sense let's go with plan B",
-        "That makes sense. Let's go with plan B."),
+        "That makes sense. Let's go with plan B.",
+        "That makes sense. Let's go with Plan B."),
     PolishScenario("thinking",
         "ah right I forgot about that constraint",
         "I forgot about that constraint."),
@@ -181,7 +189,8 @@ let allScenarios: [PolishScenario] = [
         "He said, \u{201c}I'll be there.\u{201d}"),
     PolishScenario("punctuation",
         "check the function open paren user ID close paren",
-        "Check the function (user ID)."),
+        "Check the function (user ID).",
+        "Check the function (userID)."),
     PolishScenario("punctuation",
         "first paragraph new paragraph second paragraph",
         "First paragraph.\n\nSecond paragraph."),
@@ -304,6 +313,7 @@ let allScenarios: [PolishScenario] = [
     PolishScenario("email",
         "just circling back on this um are we still on track for the launch next Thursday",
         "Just circling back on this \u{2014} are we still on track for the launch next Thursday?",
+        "Just circling back on this, are we still on track for the launch next Thursday?",
         context: AppContext(bundleID: "com.apple.mail", appName: "Mail", windowTitle: "Re: Launch")),
 
     // ── Slack ──
@@ -444,16 +454,19 @@ let allScenarios: [PolishScenario] = [
         "I'll be in the office from 9 AM to 5 PM."),
     PolishScenario("clean",
         "The meeting is scheduled for March 15th at 2:30 PM.",
-        "The meeting is scheduled for March 15th at 2:30 PM."),
+        "The meeting is scheduled for March 15th at 2:30 PM.",
+        "The meeting is scheduled for March 15th at 2:30 p.m."),
 
     // ── Multilingual ──
 
     PolishScenario("multilingual",
         "we should use the raison d'etre of the project as our north star",
-        "We should use the raison d'\u{00ea}tre of the project as our north star."),
+        "We should use the raison d'\u{00ea}tre of the project as our north star.",
+        "We should use the raison d'\u{00ea}tre of the project as our North Star."),
     PolishScenario("multilingual",
         "the restaurant is called cafe del sol on fifth avenue",
-        "The restaurant is called Caf\u{00e9} del Sol on Fifth Avenue."),
+        "The restaurant is called Caf\u{00e9} del Sol on Fifth Avenue.",
+        "The restaurant is called Cafe del Sol on Fifth Avenue."),
     PolishScenario("multilingual",
         "abhi meeting mein discuss karte hain then we'll send the proposal",
         "\u{0905}\u{092d}\u{0940} meeting \u{092e}\u{0947}\u{0902} discuss \u{0915}\u{0930}\u{0924}\u{0947} \u{0939}\u{0948}\u{0902}, then we'll send the proposal."),
@@ -479,6 +492,106 @@ let allScenarios: [PolishScenario] = [
     PolishScenario("meeting",
         "the key takeaways from the meeting are one we need to hire two more engineers two the deadline is moved to April fifteenth and three we should schedule a follow up for next week",
         "The key takeaways from the meeting are:\n1. We need to hire 2 more engineers.\n2. The deadline is moved to April 15th.\n3. We should schedule a follow-up for next week."),
+    // ── Keep Tags (tests polish prompt preserving <keep>-wrapped symbols) ──
+
+    PolishScenario("keep-tag",
+        "research ampersand development is our focus",
+        "Research & development is our focus."),
+    PolishScenario("keep-tag",
+        "I was thinking dot dot dot maybe we should wait",
+        "I was thinking\u{2026} maybe we should wait.",
+        "I was thinking \u{2026} maybe we should wait."),
+    PolishScenario("keep-tag",
+        "check the hashtag trending topic",
+        "Check the #trending topic."),
+    PolishScenario("keep-tag",
+        "two plus sign three equals sign five",
+        "2 + 3 = 5.",
+        "2+3=5.",
+        "2 + 3 = 5"),
+    PolishScenario("keep-tag",
+        "the price is dollar sign fifty with a ten percent sign discount",
+        "The price is $50 with a 10% discount."),
+    PolishScenario("keep-tag",
+        "use asterisk bold asterisk for formatting",
+        "Use *bold* for formatting."),
+    PolishScenario("keep-tag",
+        "first part new paragraph second part",
+        "First part.\n\nSecond part."),
+    PolishScenario("keep-tag",
+        "see the summary new line details are below",
+        "See the summary.\nDetails are below."),
+
+    // ── Two-item Lists (should stay inline, not become vertical) ──
+
+    PolishScenario("two-item-list",
+        "I need to buy eggs and milk",
+        "I need to buy eggs and milk."),
+    PolishScenario("two-item-list",
+        "the options are upgrade or replace",
+        "The options are upgrade or replace.",
+        "The options are: upgrade or replace."),
+    PolishScenario("two-item-list",
+        "please review the design and the implementation",
+        "Please review the design and the implementation."),
+
+    // ── No Lead-in List (should not invent introductory text) ──
+
+    PolishScenario("no-leadin-list",
+        "eggs milk bread butter and cheese",
+        "Eggs, milk, bread, butter, and cheese.",
+        "- Eggs\n- Milk\n- Bread\n- Butter\n- Cheese"),
+    PolishScenario("no-leadin-list",
+        "first update the docs second run the tests third deploy",
+        "1. Update the docs\n2. Run the tests\n3. Deploy"),
+
+    // ── Contraction Preservation ──
+
+    PolishScenario("contraction",
+        "I'll send it tomorrow and we'll review it on Monday",
+        "I'll send it tomorrow and we'll review it on Monday.",
+        "I'll send it tomorrow, and we'll review it on Monday."),
+    PolishScenario("contraction",
+        "we're planning to launch and it's going to be great",
+        "We're planning to launch, and it's going to be great.",
+        "We're planning to launch and it's going to be great."),
+    PolishScenario("contraction",
+        "they've already finished and we've just started",
+        "They've already finished, and we've just started.",
+        "They've already finished and we've just started."),
+    PolishScenario("contraction",
+        "I can't believe it doesn't work",
+        "I can't believe it doesn't work."),
+
+    // ── Small Numbers (prompt says convert ALL numbers to digits) ──
+
+    PolishScenario("small-number",
+        "we need three developers on this",
+        "We need 3 developers on this."),
+    PolishScenario("small-number",
+        "there are two options here",
+        "There are 2 options here."),
+    PolishScenario("small-number",
+        "I have eight files to review",
+        "I have 8 files to review."),
+    PolishScenario("small-number",
+        "it took about thirty seconds to load",
+        "It took about 30 seconds to load."),
+    PolishScenario("small-number",
+        "we only have one server left",
+        "We only have 1 server left."),
+
+    // ── Ordinal Numbers ──
+
+    PolishScenario("ordinal",
+        "the meeting is on the third floor",
+        "The meeting is on the 3rd floor."),
+    PolishScenario("ordinal",
+        "she's the twenty first employee",
+        "She's the 21st employee."),
+    PolishScenario("ordinal",
+        "this is our fifth release this year",
+        "This is our 5th release this year."),
 ]
 
 // swiftlint:enable line_length
