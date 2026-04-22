@@ -592,6 +592,71 @@ let allScenarios: [PolishScenario] = [
     PolishScenario("ordinal",
         "this is our fifth release this year",
         "This is our 5th release this year."),
+
+    // ── Tamil ──
+
+    PolishScenario("fillers-ta",
+        "அது வந்து நமக்கு இதை update பண்ணணும்",
+        "நமக்கு இதை update பண்ணணும்."),
+    PolishScenario("fillers-ta",
+        "ம்ம்ம் இது ரொம்ப முக்கியம்",
+        "இது ரொம்ப முக்கியம்."),
+    PolishScenario("fillers-ta",
+        "அப்படின்னா நாம இதை நாளைக்குள் முடிக்கணும்",
+        "நாம இதை நாளைக்குள் முடிக்கணும்."),
+
+    PolishScenario("corrections-ta",
+        "report ராகுலுக்கு அனுப்பு இல்லை இல்லை அமித்துக்கு அனுப்பு",
+        "report அமித்துக்கு அனுப்பு."),
+    PolishScenario("corrections-ta",
+        "meeting இரண்டு மணிக்கு அப்படின்னா மூன்று மணிக்கு இருக்கு",
+        "meeting மூன்று மணிக்கு இருக்கு.", "meeting 3 மணிக்கு இருக்கு."),
+
+    PolishScenario("numbers-ta",
+        "budget இருபது லட்சம் ரூபாய்",
+        "budget ₹20,00,000.", "budget ₹2000000.", "budget ₹2M."),
+    PolishScenario("numbers-ta",
+        "இதோட விலை ஐம்பத்து ஐந்து ரூபாய் ஐம்பது பைசா",
+        "இதோட விலை ₹55.50.", "இதோட விலை 55.50 ரூபாய்."),
+    PolishScenario("numbers-ta",
+        "எனக்கு முப்பத்திரண்டு வயசு",
+        "எனக்கு 32 வயசு."),
+
+    PolishScenario("punctuation-ta",
+        "வணக்கம் team comma எனக்கு update வேண்டும் full stop",
+        "வணக்கம் team, எனக்கு update வேண்டும்."),
+    PolishScenario("punctuation-ta",
+        "இது சரியா question mark",
+        "இது சரியா?"),
+
+    PolishScenario("lists-ta",
+        "நமக்கு இந்த வேலைகள் செய்யணும் முதல் login bug சரி பண்ணு இரண்டாவது புதிய feature பண்ணு மூன்றாவது test எழுது",
+        "நமக்கு இந்த வேலைகள் செய்யணும்:\n1. login bug சரி பண்ணு\n2. புதிய feature பண்ணு\n3. test எழுது"),
+    PolishScenario("lists-ta",
+        "meetingல மூணு பேர் இருந்தாங்க ராகுல் அமித் சுமித்",
+        "meetingல மூணு பேர் இருந்தாங்க:\n- ராகுல்\n- அமித்\n- சுமித்"),
+
+    PolishScenario("code-switching-ta",
+        "database update பண்ணிட்டு அப்புறம் server restart பண்ணு",
+        "database update பண்ணிட்டு அப்புறம் server restart பண்ணு."),
+    PolishScenario("code-switching-ta",
+        "இந்த புதிய release ஓட deployment எப்போ",
+        "இந்த புதிய release ஓட deployment எப்போ?", "இந்த புதிய release ஓட deployment எப்போ."),
+
+    PolishScenario("repetitions-ta",
+        "எனக்கு எனக்கு தோணுது நமக்கு நமக்கு இன்னும் time வேணும்",
+        "எனக்கு தோணுது நமக்கு இன்னும் time வேணும்."),
+
+    PolishScenario("no-translate-ta",
+        "நான் இப்ப office போறேன் அப்புறம் call பண்றேன்",
+        "நான் இப்ப office போறேன் அப்புறம் call பண்றேன்."),
+
+    PolishScenario("preserve-ta",
+        "டா என்ன பண்ணிட்டு இருக்கே",
+        "டா என்ன பண்ணிட்டு இருக்கே?", "டா என்ன பண்ணிட்டு இருக்கே."),
+    PolishScenario("preserve-ta",
+        "சரி அப்புறம் பேசலாம்",
+        "சரி அப்புறம் பேசலாம்."),
 ]
 
 // swiftlint:enable line_length
