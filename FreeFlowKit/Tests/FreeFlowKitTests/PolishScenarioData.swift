@@ -592,6 +592,71 @@ let allScenarios: [PolishScenario] = [
     PolishScenario("ordinal",
         "this is our fifth release this year",
         "This is our 5th release this year."),
+
+    // ── Hindi ──
+
+    PolishScenario("fillers-hi",
+        "उम मुझे लगता है कि हमें अपडेट करना चाहिए",
+        "मुझे लगता है कि हमें अपडेट करना चाहिए।"),
+    PolishScenario("fillers-hi",
+        "मतलब लाइक ये बहुत ज़रूरी है",
+        "ये बहुत ज़रूरी है।"),
+    PolishScenario("fillers-hi",
+        "अं वो क्या है ना हमें कल तक इसे खत्म करना होगा",
+        "हमें कल तक इसे खत्म करना होगा।"),
+
+    PolishScenario("corrections-hi",
+        "रिपोर्ट राहुल को भेजो नहीं रुकिए अमित को भेजो",
+        "रिपोर्ट अमित को भेजो।"),
+    PolishScenario("corrections-hi",
+        "मीटिंग दो बजे माफ़ करिए तीन बजे है",
+        "मीटिंग तीन बजे है।", "मीटिंग 3 बजे है।"),
+
+    PolishScenario("numbers-hi",
+        "बजट बीस लाख रुपये है",
+        "बजट ₹20,00,000 है।", "बजट ₹2000000 है।", "बजट ₹2M है।"),
+    PolishScenario("numbers-hi",
+        "इसका दाम पचपन रुपये और पचास पैसे है",
+        "इसका दाम ₹55.50 है।", "इसका दाम 55.50 रुपये है।"),
+    PolishScenario("numbers-hi",
+        "मेरी उम्र बत्तीस साल है",
+        "मेरी उम्र 32 साल है।"),
+
+    PolishScenario("punctuation-hi",
+        "नमस्ते टीम अल्पविराम मुझे अपडेट चाहिए पूर्ण विराम",
+        "नमस्ते टीम, मुझे अपडेट चाहिए।"),
+    PolishScenario("punctuation-hi",
+        "क्या यह सही है प्रश्नवाचक चिन्ह",
+        "क्या यह सही है?"),
+
+    PolishScenario("lists-hi",
+        "हमें ये काम करने हैं पहला लॉगिन बग ठीक करो दूसरा नया फीचर बनाओ तीसरा टेस्ट लिखो",
+        "हमें ये काम करने हैं:\n1. लॉगिन बग ठीक करो\n2. नया फीचर बनाओ\n3. टेस्ट लिखो"),
+    PolishScenario("lists-hi",
+        "मीटिंग में तीन लोग थे राहुल अमित और सुमित",
+        "मीटिंग में तीन लोग थे:\n- राहुल\n- अमित\n- सुमित"),
+
+    PolishScenario("code-switching-hi",
+        "डेटाबेस को अपडेट कर दो और फिर सर्वर को रिस्टार्ट कर दो",
+        "डेटाबेस को अपडेट कर दो और फिर सर्वर को रिस्टार्ट कर दो।"),
+    PolishScenario("code-switching-hi",
+        "ये न्यू रिलीज़ का deployment कब होगा",
+        "ये न्यू रिलीज़ का deployment कब होगा?", "ये न्यू रिलीज़ का deployment कब होगा।"),
+
+    PolishScenario("repetitions-hi",
+        "मुझे मुझे लगता है कि हमें हमें और समय चाहिए",
+        "मुझे लगता है कि हमें और समय चाहिए।"),
+
+    PolishScenario("no-translate-hi",
+        "I am going to the market to buy some groceries",
+        "I am going to the market to buy some groceries."),
+
+    PolishScenario("preserve-hi",
+        "भाई ये क्या कर रहा है",
+        "भाई ये क्या कर रहा है?", "भाई ये क्या कर रहा है।"),
+    PolishScenario("preserve-hi",
+        "ठीक है फिर मिलते हैं",
+        "ठीक है फिर मिलते हैं।"),
 ]
 
 // swiftlint:enable line_length
