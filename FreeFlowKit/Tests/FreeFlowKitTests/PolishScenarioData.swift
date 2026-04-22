@@ -592,6 +592,71 @@ let allScenarios: [PolishScenario] = [
     PolishScenario("ordinal",
         "this is our fifth release this year",
         "This is our 5th release this year."),
+
+    // ── Kannada ──
+
+    PolishScenario("fillers-kn",
+        "ಅದು ಹೀಗೆ ಅಂದ್ರೆ ನಮಗೆ ಇದನ್ನು ಅಪ್ಡೇಟ್ ಮಾಡಬೇಕು",
+        "ನಮಗೆ ಇದನ್ನು ಅಪ್ಡೇಟ್ ಮಾಡಬೇಕು."),
+    PolishScenario("fillers-kn",
+        "ಅಮ್ಮ ಅಲ್ವಾ ಇದು ತುಂಬಾ ಮುಖ್ಯ",
+        "ಇದು ತುಂಬಾ ಮುಖ್ಯ."),
+    PolishScenario("fillers-kn",
+        "ಹಂಗೇ ನಮಗೆ ನಾಳೆ ಒಳಗೆ ಇದನ್ನು ಮುಗಿಸಬೇಕು",
+        "ನಮಗೆ ನಾಳೆ ಒಳಗೆ ಇದನ್ನು ಮುಗಿಸಬೇಕು."),
+
+    PolishScenario("corrections-kn",
+        "ರಿಪೋರ್ಟ್ ರಾಹುಲ್ ಗೆ ಕಳುಹಿಸಿ ಇಲ್ಲ ಇಲ್ಲ ಅಮಿತ್ ಗೆ ಕಳುಹಿಸಿ",
+        "ರಿಪೋರ್ಟ್ ಅಮಿತ್ ಗೆ ಕಳುಹಿಸಿ."),
+    PolishScenario("corrections-kn",
+        "ಮೀಟಿಂಗ್ ಎರಡು ಗಂಟೆಗೆ ಅಂದರೆ ಮೂರು ಗಂಟೆಗೆ ಇದೆ",
+        "ಮೀಟಿಂಗ್ ಮೂರು ಗಂಟೆಗೆ ಇದೆ.", "ಮೀಟಿಂಗ್ 3 ಗಂಟೆಗೆ ಇದೆ."),
+
+    PolishScenario("numbers-kn",
+        "ಬಜೆಟ್ ಇಪ್ಪತ್ತು ಲಕ್ಷ ರೂಪಾಯಿ",
+        "ಬಜೆಟ್ ₹20,00,000.", "ಬಜೆಟ್ ₹2000000.", "ಬಜೆಟ್ ₹2M."),
+    PolishScenario("numbers-kn",
+        "ಇದರ ಬೆಲೆ ಐವತ್ತೈದು ರೂಪಾಯಿ ಐವತ್ತು ಪೈಸೆ",
+        "ಇದರ ಬೆಲೆ ₹55.50.", "ಇದರ ಬೆಲೆ 55.50 ರೂಪಾಯಿ."),
+    PolishScenario("numbers-kn",
+        "ನನ್ನ ವಯಸ್ಸು ಮೂವತ್ತೆರಡು ವರ್ಷ",
+        "ನನ್ನ ವಯಸ್ಸು 32 ವರ್ಷ."),
+
+    PolishScenario("punctuation-kn",
+        "ನಮಸ್ಕಾರ ತಂಡ ಅಲ್ಪವಿರಾಮ ನನಗೆ ಅಪ್ಡೇಟ್ ಬೇಕು ಪೂರ್ಣವಿರಾಮ",
+        "ನಮಸ್ಕಾರ ತಂಡ, ನನಗೆ ಅಪ್ಡೇಟ್ ಬೇಕು."),
+    PolishScenario("punctuation-kn",
+        "ಇದು ಸರಿಯೇ ಪ್ರಶ್ನಾರ್ಥಕ ಚಿಹ್ನೆ",
+        "ಇದು ಸರಿಯೇ?"),
+
+    PolishScenario("lists-kn",
+        "ನಮಗೆ ಈ ಕೆಲಸಗಳನ್ನು ಮಾಡಬೇಕು ಮೊದಲಿಗೆ ಲಾಗಿನ್ ಬಗ್ ಸರಿಪಡಿಸಿ ಎರಡನೆಯದು ಹೊಸ ಫೀಚರ್ ಮಾಡಿ ಮೂರನೆಯದು ಟೆಸ್ಟ್ ಬರೆಯಿರಿ",
+        "ನಮಗೆ ಈ ಕೆಲಸಗಳನ್ನು ಮಾಡಬೇಕು:\n1. ಲಾಗಿನ್ ಬಗ್ ಸರಿಪಡಿಸಿ\n2. ಹೊಸ ಫೀಚರ್ ಮಾಡಿ\n3. ಟೆಸ್ಟ್ ಬರೆಯಿರಿ"),
+    PolishScenario("lists-kn",
+        "ಮೀಟಿಂಗ್ ನಲ್ಲಿ ಮೂವರು ಇದ್ದರು ರಾಹುಲ್ ಅಮಿತ್ ಮತ್ತು ಸುಮಿತ್",
+        "ಮೀಟಿಂಗ್ ನಲ್ಲಿ ಮೂವರು ಇದ್ದರು:\n- ರಾಹುಲ್\n- ಅಮಿತ್\n- ಸುಮಿತ್"),
+
+    PolishScenario("code-switching-kn",
+        "ಡೇಟಾಬೇಸ್ ಅಪ್ಡೇಟ್ ಮಾಡಿ ನಂತರ server restart ಮಾಡಿ",
+        "ಡೇಟಾಬೇಸ್ ಅಪ್ಡೇಟ್ ಮಾಡಿ ನಂತರ server restart ಮಾಡಿ."),
+    PolishScenario("code-switching-kn",
+        "ಈ ಹೊಸ release ನ deployment ಯಾವಾಗ",
+        "ಈ ಹೊಸ release ನ deployment ಯಾವಾಗ?", "ಈ ಹೊಸ release ನ deployment ಯಾವಾಗ."),
+
+    PolishScenario("repetitions-kn",
+        "ನನಗೆ ನನಗೆ ಅನಿಸುತ್ತದೆ ನಾವು ನಾವು ಇನ್ನೂ ಸಮಯ ಬೇಕು",
+        "ನನಗೆ ಅನಿಸುತ್ತದೆ ನಾವು ಇನ್ನೂ ಸಮಯ ಬೇಕು."),
+
+    PolishScenario("no-translate-kn",
+        "ನಾನು ಈಗ office ಗೆ ಹೋಗುತ್ತಿದ್ದೇನೆ ನಂತರ call ಮಾಡುತ್ತೇನೆ",
+        "ನಾನು ಈಗ office ಗೆ ಹೋಗುತ್ತಿದ್ದೇನೆ ನಂತರ call ಮಾಡುತ್ತೇನೆ."),
+
+    PolishScenario("preserve-kn",
+        "ಮಗಾ ಇದು ಏನ್ ಮಾಡ್ತಿದಿಯಾ",
+        "ಮಗಾ ಇದು ಏನ್ ಮಾಡ್ತಿದಿಯಾ?", "ಮಗಾ ಇದು ಏನ್ ಮಾಡ್ತಿದಿಯಾ."),
+    PolishScenario("preserve-kn",
+        "ಸರಿ ನಂತರ ಮಾತಾಡೋಣ",
+        "ಸರಿ ನಂತರ ಮಾತಾಡೋಣ."),
 ]
 
 // swiftlint:enable line_length
