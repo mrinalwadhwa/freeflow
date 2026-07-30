@@ -10,6 +10,14 @@
       }
     },
     {
+      "identity" : "mlx-audio-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Blaizzy/mlx-audio-swift",
+      "state" : {
+        "revision" : "4266f988d170a83017d1e82e2e4654602f277f1d"
+      }
+    },
+    {
       "identity" : "mlx-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ml-explore/mlx-swift",
@@ -25,6 +33,15 @@
       "state" : {
         "revision" : "1c05248bb0899e2a7a4962b84d319cf12f4e12aa",
         "version" : "3.31.3"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "b6496a74a087257ef5e6da1c5b29a447a60f5bd7",
+        "version" : "2.9.4"
       }
     },
     {

@@ -31,6 +31,45 @@ struct DictationCompositionFactoryTests {
         #expect(composition.onSessionExpired == nil)
     }
 
+    @Test("Local STT defaults to the current Nemotron path")
+    func localSTTDefaultsToNemotron() {
+        #expect(
+            DictationCompositionFactory.localSTTKind(environment: [:])
+                == .nemotron)
+    }
+
+    @Test("Cohere MLX is selected only by the internal flag")
+    func cohereMLXSelection() {
+        #expect(
+            DictationCompositionFactory.localSTTKind(
+                environment: ["UNRAMBLE_LOCAL_STT": " cohere-mlx "])
+                == .cohereMLX)
+        #expect(
+            DictationCompositionFactory.localSTTKind(
+                environment: ["UNRAMBLE_LOCAL_STT": "cohere"])
+                == .nemotron)
+    }
+
+    @Test("Nemotron keeps the existing eleven-second polish cap")
+    func nemotronUnitPolicy() {
+        let policy = DictationCompositionFactory.localUnitPolicy(
+            for: .nemotron)
+
+        #expect(
+            policy.maximumUnitBytes
+                == 11 * LocalUnitPolicy.sourceBytesPerSecond)
+    }
+
+    @Test("Cohere gives Qwen complete thoughts with a bounded fallback")
+    func cohereUnitPolicy() {
+        let policy = DictationCompositionFactory.localUnitPolicy(
+            for: .cohereMLX)
+
+        #expect(
+            policy.maximumUnitBytes
+                == 90 * LocalUnitPolicy.sourceBytesPerSecond)
+    }
+
     @Test("Cycle interval defaults to three seconds without an override")
     func cycleIntervalDefault() {
         #expect(DictationCompositionFactory.cycleInterval(from: [:]) == 3)

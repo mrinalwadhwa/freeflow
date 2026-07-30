@@ -14,6 +14,10 @@ public struct DictationComposition {
 /// no connection until the backend is used); local construction resolves the
 /// on-device model directories and wires the MLX engines.
 public enum DictationCompositionFactory {
+    enum LocalSTTKind: Equatable {
+        case nemotron
+        case cohereMLX
+    }
 
     /// Cloud composition: OpenAI streaming transcription with a batch fallback.
     public static func makeCloud(
@@ -35,7 +39,8 @@ public enum DictationCompositionFactory {
     public static func makeLocal(
         modelManager: LocalModelManager,
         bundledModelsRoot: URL?,
-        cycleInterval: TimeInterval
+        cycleInterval: TimeInterval,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> DictationComposition {
         guard let qwenModelPath = modelManager.resolveModelDirectory(
             modelID: "qwen3-0.6b-4bit", file: "model.safetensors",
@@ -51,17 +56,35 @@ public enum DictationCompositionFactory {
                 "Required local model is missing: "
                     + "qwen3-0.6b-4bit-polish-adapter")
         }
-        guard let nemotronPath = modelManager.resolveModelDirectory(
-            modelID: "nemotron-speech-streaming-en-0.6b-coreml",
-            file: "nemotron_coreml_560ms/tokenizer.json",
-            bundledModelsRoot: bundledModelsRoot
-        ) else {
-            fatalError(
-                "Required local model is missing: "
-                    + "nemotron-speech-streaming-en-0.6b-coreml")
+        let sttKind = localSTTKind(environment: environment)
+        let sttEngine: any LocalStreamingRecognizer
+        switch sttKind {
+        case .nemotron:
+            guard let nemotronPath = modelManager.resolveModelDirectory(
+                modelID: "nemotron-speech-streaming-en-0.6b-coreml",
+                file: "nemotron_coreml_560ms/tokenizer.json",
+                bundledModelsRoot: bundledModelsRoot
+            ) else {
+                fatalError(
+                    "Required local model is missing: "
+                        + "nemotron-speech-streaming-en-0.6b-coreml")
+            }
+            sttEngine = NemotronEngine(
+                modelManager: modelManager, modelPath: nemotronPath)
+        case .cohereMLX:
+            guard let coherePath = modelManager.resolveModelDirectory(
+                modelID: "cohere-transcribe-03-2026-mlx-4bit",
+                file: "model.safetensors",
+                bundledModelsRoot: bundledModelsRoot
+            ) else {
+                fatalError(
+                    "Required local model is missing: "
+                        + "cohere-transcribe-03-2026-mlx-4bit")
+            }
+            sttEngine = CohereMLXEngine(
+                modelDirectory: URL(
+                    fileURLWithPath: coherePath, isDirectory: true))
         }
-        let sttEngine = NemotronEngine(
-            modelManager: modelManager, modelPath: nemotronPath)
         let llmEngine = MLXLLMEngine(
             name: "Qwen3 0.6B Polish",
             modelDirectory: URL(
@@ -75,6 +98,9 @@ public enum DictationCompositionFactory {
             streaming: LocalStreamingProvider(
                 sttEngine: sttEngine, polishChatClient: polisher,
                 cycleInterval: cycleInterval,
+                unitPolicy: localUnitPolicy(for: sttKind),
+                polishBatchTokenLimit:
+                    sttKind == .cohereMLX ? 256 : nil,
                 loadSTT: { try await runtime.loadSTT() }))
         return DictationComposition(
             backend: backend,
@@ -82,6 +108,27 @@ public enum DictationCompositionFactory {
             localRuntime: runtime)
     }
     #endif
+
+    static func localSTTKind(
+        environment: [String: String]
+    ) -> LocalSTTKind {
+        let value = environment["UNRAMBLE_LOCAL_STT"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return value == "cohere-mlx" ? .cohereMLX : .nemotron
+    }
+
+    static func localUnitPolicy(for sttKind: LocalSTTKind) -> LocalUnitPolicy {
+        switch sttKind {
+        case .nemotron:
+            return LocalUnitPolicy()
+        case .cohereMLX:
+            // Cohere already returns coherent, punctuated text. Close work
+            // often enough to hide Qwen latency while the user keeps speaking;
+            // sentence-aware batching keeps this audio boundary out of Qwen.
+            return LocalUnitPolicy(maximumUnitSeconds: 90)
+        }
+    }
 
     /// Resolve the streaming cycle interval, honoring a positive
     /// `UNRAMBLE_CYCLE_INTERVAL` override and defaulting to three seconds.

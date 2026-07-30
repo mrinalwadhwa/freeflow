@@ -9,12 +9,25 @@ MODEL_PYTHON="$MODEL_VENV/bin/python3"
 MODEL_HF="$MODEL_VENV/bin/hf"
 ADAPTER_SOURCE="$ROOT_DIR/UnrambleApp/ModelSources/qwen3-0.6b-4bit-polish-adapter"
 ADAPTER_NAME="qwen3-0.6b-4bit-polish-adapter"
+COHERE_NAME="cohere-transcribe-03-2026-mlx-4bit"
 NEMOTRON_NAME="nemotron-speech-streaming-en-0.6b-coreml"
 QWEN_NAME="qwen3-0.6b-4bit"
+COHERE_REPO="beshkenadze/cohere-transcribe-03-2026-mlx-4bit"
+COHERE_REV="104bc4391b5b1a12b040859793d7148525e1a08c"
 NEMOTRON_REPO="mrinalwadhwa/nemotron-speech-streaming-en-0.6b-coreml"
 NEMOTRON_REV="c812c6604ec09800084fa8c38bacb6748239c48c"
 QWEN_REPO="mrinalwadhwa/Qwen3-0.6B-4bit"
 QWEN_REV="44c9f61dea041165b988662ba914dbfef0e0d096"
+COHERE_FILES=(
+    config.json
+    conversion_summary.json
+    key_map.json
+    model.safetensors
+    preprocessor_config.json
+    special_tokens_map.json
+    tokenizer.model
+    tokenizer_config.json
+)
 QWEN_FILES=(
     added_tokens.json
     config.json
@@ -56,6 +69,14 @@ c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680  qwen3-0.6b-4bi
 aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4  qwen3-0.6b-4bit/tokenizer.json
 253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0  qwen3-0.6b-4bit/tokenizer_config.json
 ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910  qwen3-0.6b-4bit/vocab.json
+f5f4e46ea8a74e4e868d08504cb212afca7abfe55cd900d9b677bb2f9a1c210b  cohere-transcribe-03-2026-mlx-4bit/config.json
+f3f763b9ff233b194df209277ab670d7768745f92eab0efb52b769991743b159  cohere-transcribe-03-2026-mlx-4bit/conversion_summary.json
+42cf585ab25335db650b353abcaa9d219d51a04ef04eae5869de6122e85a7be8  cohere-transcribe-03-2026-mlx-4bit/key_map.json
+5284ab5b678da720da092604323c7ce82cffe544e42b2da95064fbc85e281609  cohere-transcribe-03-2026-mlx-4bit/model.safetensors
+9f297d330646ecc8ebb9dc5784f48b7c35b118c913e306a1ccd0192f2c976332  cohere-transcribe-03-2026-mlx-4bit/preprocessor_config.json
+1814ce01458ff6a72b04a6618e75f18ce627be4dc17619cd3a7cd7f71e137f0f  cohere-transcribe-03-2026-mlx-4bit/special_tokens_map.json
+6d21e6a83b2d0d3e1241a7817e4bef8eb63bcb7cfe4a2675af9a35ff3bbf0e14  cohere-transcribe-03-2026-mlx-4bit/tokenizer.model
+0dfeb3eeba07bccaa1b4bf78f3135ad3059acf8d18f681675832b285ac0035b0  cohere-transcribe-03-2026-mlx-4bit/tokenizer_config.json
 EOF
 }
 
@@ -109,7 +130,10 @@ download() {
         --revision "$NEMOTRON_REV" --local-dir "$MODEL_DIR/$NEMOTRON_NAME"
     "$MODEL_HF" download "$QWEN_REPO" "${QWEN_FILES[@]}" \
         --revision "$QWEN_REV" --local-dir "$MODEL_DIR/$QWEN_NAME"
+    "$MODEL_HF" download "$COHERE_REPO" "${COHERE_FILES[@]}" \
+        --revision "$COHERE_REV" --local-dir "$MODEL_DIR/$COHERE_NAME"
     rm -rf "$MODEL_DIR/$NEMOTRON_NAME/.cache" "$MODEL_DIR/$QWEN_NAME/.cache" \
+        "$MODEL_DIR/$COHERE_NAME/.cache" \
         "$MODEL_DIR/$NEMOTRON_NAME/nemotron_coreml_560ms/decoder_joint.mlmodelc"
     cp -R "$ADAPTER_SOURCE" "$MODEL_DIR/$ADAPTER_NAME"
     verify "$MODEL_DIR"

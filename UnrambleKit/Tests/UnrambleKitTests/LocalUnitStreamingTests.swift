@@ -79,6 +79,31 @@ struct LocalUnitStreamingTests {
         #expect(result.lowercased().contains("bravo"))
     }
 
+    @Test("A bounded rolling recognizer survives ordinary hard pauses")
+    func rollingRecognizerIsNotResetAtHardPause() async throws {
+        let recognizer = MultiSessionRecognizer(
+            ["one rolling transcript"],
+            preservesContextAcrossHardPauses: true)
+        let provider = LocalStreamingProvider(
+            sttEngine: recognizer,
+            polishChatClient: EchoPolishClient(),
+            cycleInterval: 100.0 / Double(LocalUnitPolicy.sourceBytesPerSecond),
+            unitPolicy: LocalUnitPolicy(
+                minimumSpeechBytes: 100, softPauseSilenceBytes: 40,
+                hardPauseSilenceBytes: 80, maximumUnitBytes: 1_000_000),
+            silenceThreshold: 0.01)
+
+        _ = try await provider.replayCapturedAudio(
+            speech(200) + silence(100) + speech(200) + silence(100),
+            sessionID: DictationSessionID(),
+            context: .empty,
+            language: nil,
+            micProximity: .farField,
+            silenceThreshold: 0.01)
+
+        #expect(recognizer.sessionCount == 1)
+    }
+
     @Test("A size-cap close does not reset recognition")
     func sizeCapCloseDoesNotReset() async throws {
         let recognizer = MultiSessionRecognizer(["only unit charlie"])
@@ -103,6 +128,97 @@ struct LocalUnitStreamingTests {
 
         #expect(recognizer.sessionCount == 1)
         #expect(result.lowercased().contains("charlie"))
+    }
+
+    @Test("Sentence-aware batches defer an incomplete trailing phrase")
+    func sentenceAwareBatchesDeferIncompleteTail() {
+        let batches = LocalStreamingProvider.sentenceAwarePolishBatches(
+            "First sentence. Second sentence. unfinished thought",
+            maximumEstimatedTokens: 7,
+            includeTrailingFragment: false)
+
+        #expect(batches == [
+            .init(text: "First sentence.", usesModel: true),
+            .init(text: "Second sentence.", usesModel: true),
+            .init(text: "unfinished thought", usesModel: false),
+        ])
+    }
+
+    @Test("Complete sentence prefix preserves the exact unstable tail")
+    func completeSentencePrefixPreservesUnstableTail() {
+        let split = LocalStreamingProvider.splitCompleteSentencePrefix(
+            "Stable sentence.  unstable phrase")
+
+        #expect(split.complete == "Stable sentence.")
+        #expect(split.trailing == "unstable phrase")
+    }
+
+    @Test("Live prefix keeps two complete sentences provisional")
+    func livePrefixKeepsTwoSentencesProvisional() {
+        let split = LocalStreamingProvider.splitCompleteSentencePrefix(
+            "Stable one. Stable two. Provisional three. Provisional four. tail",
+            holdingBack: 2)
+
+        #expect(split.complete == "Stable one. Stable two.")
+        #expect(
+            split.trailing
+                == "Provisional three. Provisional four. tail")
+    }
+
+    @Test("Final sentence-aware batch includes the trailing phrase")
+    func finalSentenceAwareBatchIncludesTrailingPhrase() {
+        let batches = LocalStreamingProvider.sentenceAwarePolishBatches(
+            "Complete sentence. unfinished thought",
+            maximumEstimatedTokens: 20,
+            includeTrailingFragment: true)
+
+        #expect(batches == [
+            .init(
+                text: "Complete sentence. unfinished thought",
+                usesModel: true),
+        ])
+    }
+
+    @Test("An oversized sentence bypasses the model without splitting")
+    func oversizedSentenceBypassesModel() {
+        let sentence = "This single sentence is deliberately too large."
+        let batches = LocalStreamingProvider.sentenceAwarePolishBatches(
+            sentence,
+            maximumEstimatedTokens: 3,
+            includeTrailingFragment: false)
+
+        #expect(batches == [
+            .init(text: sentence, usesModel: false),
+        ])
+    }
+
+    @Test("Qwen never receives an incomplete size-cap suffix")
+    func qwenDefersIncompleteSizeCapSuffix() async throws {
+        let client = RecordingPolishClient()
+        let recognizer = ScriptRecognizer([
+            "First stable. Second stable. Third provisional. unfinished",
+            "First stable. Second stable. Third corrected. unfinished thought ends.",
+        ])
+        let provider = LocalStreamingProvider(
+            sttEngine: recognizer,
+            polishChatClient: client,
+            cycleInterval: 100.0 / Double(LocalUnitPolicy.sourceBytesPerSecond),
+            unitPolicy: LocalUnitPolicy(
+                minimumSpeechBytes: 2, softPauseSilenceBytes: 2,
+                hardPauseSilenceBytes: 4, maximumUnitBytes: 100),
+            polishBatchTokenLimit: 20,
+            silenceThreshold: 0.01)
+
+        let result = try await provider.replayForTesting(speech(200))
+
+        #expect(client.inputs == [
+            "First stable.",
+            "Second stable.",
+            "Third corrected. Unfinished thought ends.",
+        ])
+        #expect(
+            result
+                == "First stable. Second stable. Third corrected. Unfinished thought ends.")
     }
 
     @Test("Replay silence threshold controls low-energy pause detection")
@@ -250,6 +366,20 @@ private final class EchoPolishClient: PolishChatClient, @unchecked Sendable {
     ) async throws -> String { userPrompt }
 }
 
+private final class RecordingPolishClient: PolishChatClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+
+    var inputs: [String] { lock.withLock { recorded } }
+
+    func complete(
+        model: String, systemPrompt: String, userPrompt: String
+    ) async throws -> String {
+        lock.withLock { recorded.append(userPrompt) }
+        return userPrompt
+    }
+}
+
 /// Finalizes its input as one sentence — capitalize the first letter, end with
 /// a period — the way the real model terminates whatever fragment it is given.
 private final class SentenceFinalizingClient: PolishChatClient, @unchecked Sendable {
@@ -286,9 +416,17 @@ private final class MultiSessionRecognizer: LocalStreamingRecognizer, @unchecked
 
     private let lock = NSLock()
     private let scripts: [String]
+    private let preservesContextAcrossHardPauses: Bool
     private var created = 0
 
-    init(_ scripts: [String]) { self.scripts = scripts }
+    init(
+        _ scripts: [String],
+        preservesContextAcrossHardPauses: Bool = false
+    ) {
+        self.scripts = scripts
+        self.preservesContextAcrossHardPauses =
+            preservesContextAcrossHardPauses
+    }
 
     var sessionCount: Int { lock.withLock { created } }
 
@@ -299,16 +437,27 @@ private final class MultiSessionRecognizer: LocalStreamingRecognizer, @unchecked
             created += 1
             return scripts.isEmpty ? "" : scripts[index]
         }
-        return FixedSession(transcript: script)
+        return FixedSession(
+            transcript: script,
+            preservesContextAcrossHardPauses:
+                preservesContextAcrossHardPauses)
     }
 }
 
 /// A session that returns one fixed transcript once it has been fed.
 private final class FixedSession: LocalRecognitionSession {
     private let text: String
+    let preservesContextAcrossHardPauses: Bool
     private var fed = false
 
-    init(transcript: String) { self.text = transcript }
+    init(
+        transcript: String,
+        preservesContextAcrossHardPauses: Bool = false
+    ) {
+        self.text = transcript
+        self.preservesContextAcrossHardPauses =
+            preservesContextAcrossHardPauses
+    }
 
     func feed(_ samples: [Float]) throws { fed = true }
     func transcript() -> String { fed ? text : "" }

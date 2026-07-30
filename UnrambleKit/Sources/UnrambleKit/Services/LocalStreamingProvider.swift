@@ -9,8 +9,8 @@ import Foundation
 /// transcript. Nothing is injected mid-stream; `finishStreaming` closes the
 /// final unit and returns the whole polished transcript for one injection.
 ///
-/// A pause bounds each unit so the polish model sees short input and stays
-/// faithful.
+/// Acoustic pauses normally keep each unit coherent. A model-specific size cap
+/// prevents an uninterrupted unit from growing without bound.
 public final class LocalStreamingProvider: LocalAudioReplayProviding,
     @unchecked Sendable
 {
@@ -23,6 +23,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     private let polishModel: String
     private let cycleInterval: TimeInterval
     private let unitPolicy: LocalUnitPolicy
+    private let polishBatchTokenLimit: Int?
     private var silenceThreshold: Float
 
     // MARK: - State (guarded by lock)
@@ -104,6 +105,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         polishModel: String = PolishPipeline.polishModel,
         cycleInterval: TimeInterval = 3,
         unitPolicy: LocalUnitPolicy = LocalUnitPolicy(),
+        polishBatchTokenLimit: Int? = nil,
         silenceThreshold: Float? = nil,
         loadSTT: (@Sendable () async throws -> Void)? = nil
     ) {
@@ -113,6 +115,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         self.polishModel = polishModel
         self.cycleInterval = cycleInterval
         self.unitPolicy = unitPolicy
+        self.polishBatchTokenLimit = polishBatchTokenLimit
         self.silenceThreshold = silenceThreshold
             ?? AudioLevelAnalyzer.minimumAcceptedSpeechRMS
     }
@@ -746,23 +749,40 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             }
         }
 
+        // Cohere revises the live edge as overlapping windows arrive. When
+        // sentence-aware batching is active, commit only the complete-sentence
+        // prefix and leave the unstable trailing phrase in the recognizer
+        // transcript for the next cycle. Nemotron keeps its existing carry
+        // behavior because its transcript is prefix-monotonic.
+        let sentenceAware = polishBatchTokenLimit != nil
+        let rawSplit = sentenceAware
+            ? Self.splitCompleteSentencePrefix(unit, holdingBack: 2)
+            : (complete: unit, trailing: "")
+
         // Prepend the held sentence so a sentence split across this boundary is
         // re-polished whole; the model, seeing the full clause, decides where
         // the real sentence break is. Dedup any span the unit re-recognizes from
         // the carry (a size-cap soft-close can fall mid-word and the recognizer,
         // not reset, re-emits it).
+        let polishUnit = rawSplit.complete
         let combined = heldCarry.isEmpty
-            ? unit
-            : Self.joinCarryUnit(carry: heldCarry, unit: unit)
+            ? polishUnit
+            : Self.joinCarryUnit(carry: heldCarry, unit: polishUnit)
 
         let polishStart = CFAbsoluteTimeGetCurrent()
-        let polished = await polishWithPreceding(
-            combined, preceding: preceding, context: context)
+        let polished = combined.isEmpty
+            ? ""
+            : await polishWithPreceding(
+                combined, preceding: preceding, context: context)
         let polishElapsed = CFAbsoluteTimeGetCurrent() - polishStart
 
-        // Commit every sentence but the last; hold the last until the next unit
-        // (or finish) confirms it is complete.
-        let (commit, splitCarry) = Self.splitTrailingSentence(polished)
+        // Cohere's input already ends on a complete sentence, so commit the
+        // whole bounded result. Nemotron keeps its provisional last sentence.
+        let split = sentenceAware
+            ? (committed: polished, carry: "")
+            : Self.splitTrailingSentence(polished)
+        let commit = split.committed
+        let splitCarry = split.carry
         var newCarry = splitCarry
 
         // Seam guard: when a unit boundary falls mid-sentence, `combined` ends in
@@ -775,7 +795,9 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         // prepends and completes it. (A pre-polish strip of the fragment was
         // tried and reverted: it made polish trim now-trailing hedges — "so bear
         // with me", "I think" — a worse, content-dropping regression.)
-        let inputTail = Self.splitTrailingSentence(combined).carry
+        let inputTail = sentenceAware
+            ? ""
+            : Self.splitTrailingSentence(combined).carry
             .trimmingCharacters(in: .whitespaces)
         if Self.isUnterminatedFragment(inputTail),
             let drop = Self.droppedTailSuffix(
@@ -800,8 +822,11 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         // already recognized, bounding memory across a long dictation. Build
         // the fresh session outside the lock because it can throw; a size-cap
         // close is not safe to reset (it can fall mid-word).
-        let fresh: (any LocalRecognitionSession)? =
+        let shouldResetRecognition =
             boundary == .hardPause
+            && !session.preservesContextAcrossHardPauses
+        let fresh: (any LocalRecognitionSession)? =
+            shouldResetRecognition
             ? try? sttEngine.makeRecognitionSession() : nil
 
         let published = lock.withLock {
@@ -813,7 +838,10 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 committedPolished = Self.joinPolished(committedPolished, commit)
             }
             carry = newCarry
-            if boundary == .hardPause, let fresh {
+            if boundary == .hardPause, let fresh,
+                rawSplit.trailing.trimmingCharacters(
+                    in: .whitespacesAndNewlines).isEmpty
+            {
                 recognitionSession = fresh
                 let end = accumulatedAudio.count
                 accumulatedAudio = fedBytes < end
@@ -822,13 +850,23 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 unitStartByte = 0
                 committedTranscript = ""
             } else {
-                // Hold a straddling break-command starter out of the committed
-                // baseline so the next unit re-emits it whole.
-                committedTranscript = heldStarter.isEmpty
-                    ? trimmed
-                    : trimmed.replacingOccurrences(
-                        of: #"\s*\bnew\s*$"#, with: "",
-                        options: [.regularExpression, .caseInsensitive])
+                if sentenceAware {
+                    // Advance only through the stable complete-sentence prefix.
+                    // The deferred tail remains outside the baseline and is
+                    // therefore re-emitted—possibly revised—next cycle.
+                    committedTranscript = rawSplit.trailing.isEmpty
+                        ? trimmed
+                        : String(trimmed.dropLast(rawSplit.trailing.count))
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    // Hold a straddling break-command starter out of the
+                    // committed baseline so the next unit re-emits it whole.
+                    committedTranscript = heldStarter.isEmpty
+                        ? trimmed
+                        : trimmed.replacingOccurrences(
+                            of: #"\s*\bnew\s*$"#, with: "",
+                            options: [.regularExpression, .caseInsensitive])
+                }
                 unitStartByte = fedBytes
             }
             trailingSilenceBytes = 0
@@ -836,7 +874,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         }
         guard published else { return }
 
-        Log.debug("[LocalStreaming] Closed unit (\(unitText.count) chars, reset=\(boundary == .hardPause), stt=\(String(format: "%.2f", sttElapsed))s polish=\(String(format: "%.2f", polishElapsed))s)")
+        Log.debug("[LocalStreaming] Closed unit (\(unitText.count) chars, reset=\(shouldResetRecognition && fresh != nil), stt=\(String(format: "%.2f", sttElapsed))s polish=\(String(format: "%.2f", polishElapsed))s)")
 
         // Debug-only unit trace. Logs dictated content, so it is compiled out
         // of Release — see `ProductionSurfaceTests`.
@@ -873,6 +911,118 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
 
     private static let sentenceBoundary = try! NSRegularExpression(
         pattern: #"([.!?]["'”’)\]]?\s+|\n+)"#)
+
+    private static let completeSentenceBoundary = try! NSRegularExpression(
+        pattern: #"([.!?]["'”’)\]]?(?:\s+|$)|\n+)"#)
+
+    /// Return the largest prefix ending at a complete sentence and the exact
+    /// trailing substring after it. Preserve the trailing substring verbatim so
+    /// callers can leave it outside the committed recognizer baseline.
+    static func splitCompleteSentencePrefix(
+        _ text: String,
+        holdingBack provisionalSentenceCount: Int = 0
+    ) -> (complete: String, trailing: String) {
+        precondition(provisionalSentenceCount >= 0)
+        let ns = text as NSString
+        let matches = completeSentenceBoundary.matches(
+            in: text, range: NSRange(location: 0, length: ns.length))
+        guard matches.count > provisionalSentenceCount else {
+            return ("", text)
+        }
+        let stable = matches[matches.count - provisionalSentenceCount - 1]
+        let split = stable.range.location + stable.range.length
+        return (
+            ns.substring(to: split)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            ns.substring(from: split))
+    }
+
+    struct PolishBatch: Equatable {
+        let text: String
+        let usesModel: Bool
+    }
+
+    /// Split text into complete-sentence model inputs below a conservative
+    /// token estimate. Keep an incomplete trailing phrase out of the model
+    /// until more speech arrives. A single oversized sentence falls back to
+    /// deterministic formatting rather than being cut at an arbitrary word.
+    static func sentenceAwarePolishBatches(
+        _ text: String,
+        maximumEstimatedTokens: Int,
+        includeTrailingFragment: Bool
+    ) -> [PolishBatch] {
+        precondition(maximumEstimatedTokens > 0)
+        let ns = text as NSString
+        let matches = completeSentenceBoundary.matches(
+            in: text, range: NSRange(location: 0, length: ns.length))
+        let completeSplit = splitCompleteSentencePrefix(text)
+
+        var completeSentences: [String] = []
+        var start = 0
+        for match in matches {
+            let end = match.range.location + match.range.length
+            let sentence = ns.substring(
+                with: NSRange(location: start, length: end - start))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sentence.isEmpty { completeSentences.append(sentence) }
+            start = end
+        }
+        let trailing = completeSplit.trailing
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var result: [PolishBatch] = []
+        var current = ""
+
+        func appendCurrent() {
+            guard !current.isEmpty else { return }
+            result.append(PolishBatch(text: current, usesModel: true))
+            current = ""
+        }
+
+        for sentence in completeSentences {
+            let candidate = joinPolished(current, sentence)
+            if estimatedTokenCount(candidate) <= maximumEstimatedTokens {
+                current = candidate
+                continue
+            }
+            appendCurrent()
+            if estimatedTokenCount(sentence) <= maximumEstimatedTokens {
+                current = sentence
+            } else {
+                result.append(PolishBatch(text: sentence, usesModel: false))
+            }
+        }
+
+        if includeTrailingFragment, !trailing.isEmpty {
+            let candidate = joinPolished(current, trailing)
+            if estimatedTokenCount(candidate) <= maximumEstimatedTokens {
+                current = candidate
+            } else {
+                appendCurrent()
+                result.append(PolishBatch(
+                    text: trailing,
+                    usesModel:
+                        estimatedTokenCount(trailing)
+                        <= maximumEstimatedTokens))
+            }
+        }
+        appendCurrent()
+
+        if !includeTrailingFragment, !trailing.isEmpty {
+            result.append(PolishBatch(text: trailing, usesModel: false))
+        }
+        return result
+    }
+
+    /// Estimate Qwen input tokens without coupling the streaming layer to a
+    /// concrete tokenizer. Three UTF-8 bytes per token is conservative for
+    /// English dictation; the word count prevents whitespace-heavy text from
+    /// appearing artificially cheap.
+    static func estimatedTokenCount(_ text: String) -> Int {
+        let byteEstimate = (text.utf8.count + 2) / 3
+        let wordEstimate = text.split(whereSeparator: \.isWhitespace).count
+        return max(byteEstimate, wordEstimate)
+    }
 
     /// Split polished text into the part to commit (every sentence but the
     /// last) and the last sentence to hold. The model terminates every unit,
@@ -1182,6 +1332,63 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         _ raw: String, preceding: String, context: AppContext,
         finalFlush: Bool = false
     ) async -> String {
+        guard let tokenLimit = polishBatchTokenLimit else {
+            return await polishSingleUnit(
+                raw, preceding: preceding, context: context,
+                finalFlush: finalFlush, maxResamples: nil)
+        }
+
+        let batches = Self.sentenceAwarePolishBatches(
+            raw,
+            maximumEstimatedTokens: tokenLimit,
+            includeTrailingFragment: finalFlush)
+        var result = ""
+        var batchPreceding = preceding
+        var finalResamplesRemaining = finalFlush ? 2 : Int.max
+
+        for batch in batches {
+            let polished: String
+            if batch.usesModel {
+                let resamples = finalFlush
+                    ? min(2, finalResamplesRemaining) : nil
+                polished = await polishSingleUnit(
+                    batch.text,
+                    preceding: batchPreceding,
+                    context: context,
+                    finalFlush: finalFlush,
+                    maxResamples: resamples)
+                if finalFlush {
+                    finalResamplesRemaining -= resamples ?? 0
+                }
+            } else if finalFlush || Self.endsAtSentenceBoundary(batch.text) {
+                polished = await PolishPipeline.polish(
+                    batch.text,
+                    chatClient: nil,
+                    model: polishModel,
+                    tone: PolishPipeline.toneLabel(for: context.bundleID),
+                    precedingText: batchPreceding.isEmpty
+                        ? context.focusedFieldContent : batchPreceding,
+                    breakMode: .commandsOnly,
+                    finalFlush: finalFlush)
+            } else {
+                // Preserve an unfinished suffix verbatim. The next unit
+                // prepends it and Qwen sees it only after Cohere has supplied
+                // a complete sentence.
+                polished = batch.text
+            }
+            result = Self.joinPolished(result, polished)
+            batchPreceding = Self.joinPolished(preceding, result)
+        }
+        return result
+    }
+
+    private func polishSingleUnit(
+        _ raw: String,
+        preceding: String,
+        context: AppContext,
+        finalFlush: Bool,
+        maxResamples: Int?
+    ) async -> String {
         let precedingText = preceding.isEmpty
             ? context.focusedFieldContent
             : preceding
@@ -1192,6 +1399,14 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             tone: PolishPipeline.toneLabel(for: context.bundleID),
             precedingText: precedingText,
             breakMode: .commandsOnly,
-            finalFlush: finalFlush)
+            finalFlush: finalFlush,
+            maxResamples: maxResamples)
+    }
+
+    private static func endsAtSentenceBoundary(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(
+            in: CharacterSet(charactersIn: " \t\n\"'”’)]"))
+        guard let last = trimmed.last else { return false }
+        return ".!?".contains(last)
     }
 }

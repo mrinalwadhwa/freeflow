@@ -32,6 +32,10 @@ extension LocalSTTEngine {
 /// A session has one owner. Calls must be serialized in recording order.
 public protocol LocalRecognitionSession: AnyObject {
 
+    /// Whether a bounded recognizer retains the context it needs across an
+    /// acoustic hard pause. Ordinary streaming decoders are reset there.
+    var preservesContextAcrossHardPauses: Bool { get }
+
     /// Accept normalized 16 kHz mono samples in recording order.
     func feed(_ samples: [Float]) throws
 
@@ -45,6 +49,10 @@ public protocol LocalRecognitionSession: AnyObject {
 
     /// Flush buffered samples and return the complete transcript.
     func finish() throws -> String
+}
+
+extension LocalRecognitionSession {
+    public var preservesContextAcrossHardPauses: Bool { false }
 }
 
 /// A local recognizer that creates independent incremental sessions.

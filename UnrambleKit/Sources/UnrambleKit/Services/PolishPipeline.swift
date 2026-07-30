@@ -2056,7 +2056,8 @@ public enum PolishPipeline {
         tone: String? = nil,
         precedingText: String? = nil,
         breakMode: BreakMode = .expandBeforeModel,
-        finalFlush: Bool = false
+        finalFlush: Bool = false,
+        maxResamples: Int? = nil
     ) async -> String {
         let casual = tone == "casual"
         let substituted = substituteDictatedPunctuation(
@@ -2068,7 +2069,8 @@ public enum PolishPipeline {
             return await polishUnit(
                 substituted: substituted, chatClient: chatClient,
                 model: model, tone: tone, precedingText: precedingText,
-                casual: casual, stripModelBreaks: false).text
+                casual: casual, stripModelBreaks: false,
+                maxResamples: maxResamples ?? 2).text
         }
 
         // Per-chunk streaming polish: keep only commanded breaks. Split at
@@ -2092,7 +2094,8 @@ public enum PolishPipeline {
             return await polishUnit(
                 substituted: segments[0].text, chatClient: chatClient,
                 model: model, tone: tone, precedingText: precedingText,
-                casual: casual, stripModelBreaks: true).text
+                casual: casual, stripModelBreaks: true,
+                maxResamples: maxResamples ?? 2).text
         }
 
         var result = ""
@@ -2106,7 +2109,8 @@ public enum PolishPipeline {
         // stack into a long post-release wait. Streaming units (finalFlush
         // false) stay unbounded — their resamples are absorbed while the user
         // is still speaking.
-        var resampleBudget = finalFlush ? finalizeResampleBudget : Int.max
+        var resampleBudget = maxResamples
+            ?? (finalFlush ? finalizeResampleBudget : Int.max)
         for segment in segments {
             // Trim the segment so its first character is the real word:
             // a leading space left by the split would otherwise defeat the

@@ -22,7 +22,11 @@ import Testing
 //   /tmp/unramble-replay-dir      contents: directory of sample WAVs (required;
 //                                 the recordings are not in the repository)
 //   /tmp/unramble-replay-only     contents: a WAV basename to replay alone
+//   /tmp/unramble-replay-selection newline-separated WAV basenames
 //   /tmp/unramble-replay-step-ms  contents: audio fed per cycle (default 3000)
+//   /tmp/unramble-replay-stt      `nemotron` or `cohere-mlx`
+//   /tmp/unramble-replay-polish-token-limit optional estimated-token limit;
+//                                 Cohere defaults to the production value, 256
 //
 // Output: /tmp/unramble-streaming-replay.log — the reconstructed editor text
 // and an independent whole-file raw STT baseline.
@@ -66,6 +70,11 @@ struct StreamingReplay {
         var wavs = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path))
             ?? []).filter { $0.hasSuffix(".wav") }.sorted()
         if let only { wavs = wavs.filter { $0 == only } }
+        if let selected = readFlag("/tmp/unramble-replay-selection") {
+            let names = Set(
+                selected.split(whereSeparator: \.isNewline).map(String.init))
+            wavs = wavs.filter(names.contains)
+        }
         guard !wavs.isEmpty else {
             Issue.record("no matching WAVs under \(dir.path)")
             return
@@ -76,8 +85,19 @@ struct StreamingReplay {
             return
         }
         let modelManager = LocalModelManager(modelsDirectory: modelsDir)
-        let nemotron = NemotronEngine(modelManager: modelManager)
-        try await nemotron.load()
+        let sttMode = readFlag("/tmp/unramble-replay-stt") ?? "nemotron"
+        let polishTokenLimit = Int(
+            readFlag("/tmp/unramble-replay-polish-token-limit") ?? "")
+            ?? (sttMode == "cohere-mlx" ? 256 : nil)
+        let recognizer: any LocalStreamingRecognizer
+        if sttMode == "cohere-mlx" {
+            recognizer = CohereMLXEngine(
+                modelDirectory: modelManager.modelPath(
+                    for: "cohere-transcribe-03-2026-mlx-4bit"))
+        } else {
+            recognizer = NemotronEngine(modelManager: modelManager)
+        }
+        try await recognizer.load()
 
         // Adapter selection: an explicit /tmp/unramble-replay-adapter-path wins;
         // else /tmp/unramble-replay-no-adapter forces base; else the pack adapter.
@@ -103,17 +123,22 @@ struct StreamingReplay {
             name: "Qwen3 0.6B Polish",
             modelDirectory: modelManager.modelPath(for: "qwen3-0.6b-4bit"),
             adapterDirectory: adapterURL)
-        let client = MLXPolishClient(engine: engine, timeoutSeconds: 30)
+        let polishTimeout = max(
+            1,
+            Double(readFlag("/tmp/unramble-replay-polish-timeout-sec") ?? "")
+                ?? 30)
+        let client = MLXPolishClient(
+            engine: engine, timeoutSeconds: polishTimeout)
 
         let log = ReplayLog(path: "/tmp/unramble-streaming-replay.log")
-        log.log("=== streaming replay (\(wavs.count) files, adapter=\(hasAdapter), step=\(stepMS)ms) ===\n")
+        log.log("=== streaming replay (\(wavs.count) files, stt=\(sttMode), adapter=\(hasAdapter), step=\(stepMS)ms, polishTimeout=\(polishTimeout)s, polishTokenLimit=\(polishTokenLimit.map(String.init) ?? "none")) ===\n")
 
         for name in wavs {
             let wav = try Data(contentsOf: dir.appendingPathComponent(name))
             guard wav.count > 44 else { continue }
             let pcm = wav.subdata(in: WAVEncoder.headerSize..<wav.count)
             let rawTranscript = try LocalRecognitionFixtureSupport.recognize(
-                wavData: wav, using: nemotron)
+                wavData: wav, using: recognizer)
 
             // The recognizer is deterministic, so the raw STT is fixed; polish
             // is not, so repeat to measure its run-to-run error rate. Each run
@@ -122,9 +147,10 @@ struct StreamingReplay {
             for run in 0..<repeats {
                 Log.debug("[[WAV]] \(name)")
                 let provider = LocalStreamingProvider(
-                    sttEngine: nemotron, polishChatClient: client,
+                    sttEngine: recognizer, polishChatClient: client,
                     cycleInterval: Double(stepMS) / 1000,
-                    unitPolicy: policy)
+                    unitPolicy: policy,
+                    polishBatchTokenLimit: polishTokenLimit)
                 let result = try await provider.replayForTesting(pcm)
 
                 var editor = ""
@@ -140,7 +166,7 @@ struct StreamingReplay {
             }
         }
 
-        await nemotron.unload()
+        await recognizer.unload()
         await engine.unload()
     }
 

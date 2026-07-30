@@ -4,9 +4,9 @@ import Foundation
 /// Decisions use admitted 16 kHz mono PCM16 source bytes rather than wall-clock
 /// time so buffering and scheduler delays cannot move where a unit ends.
 ///
-/// A unit closes on an acoustic pause or on a size cap. The cap bounds the
-/// polish input so the on-device model stays faithful on long, unpunctuated
-/// speech. A pause long enough to be a `hardPause` is also a safe point to reset
+/// A unit closes on an acoustic pause or on a model-specific size cap. The cap
+/// prevents polish input from growing without bound when speech has no usable
+/// pause. A pause long enough to be a `hardPause` is also a safe point to reset
 /// recognition state, because no spoken word spans it; a size-cap close is not,
 /// because it can fall mid-word.
 public struct LocalUnitPolicy: Equatable, Sendable {
@@ -77,8 +77,8 @@ public struct LocalUnitPolicy: Equatable, Sendable {
         {
             return .softClose
         }
-        // A unit that never pauses still closes at the cap to keep the polish
-        // input small; without a pause it is not safe to reset state.
+        // A unit that never pauses still closes at the cap to bound the polish
+        // input; without a pause it is not safe to reset state.
         if unitByteCount >= maximumUnitBytes {
             return .softClose
         }

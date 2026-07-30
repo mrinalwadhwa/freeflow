@@ -18,8 +18,14 @@ let package = Package(
             url: "https://github.com/ml-explore/mlx-swift-lm",
             exact: "3.31.3"),
         .package(
+            url: "https://github.com/ml-explore/mlx-swift",
+            exact: "0.31.6"),
+        .package(
             url: "https://github.com/huggingface/swift-transformers",
             exact: "1.3.0"),
+        .package(
+            url: "https://github.com/Blaizzy/mlx-audio-swift",
+            revision: "4266f988d170a83017d1e82e2e4654602f277f1d"),
     ],
     targets: [
         .target(
@@ -31,6 +37,8 @@ let package = Package(
             name: "UnrambleKit",
             dependencies: [
                 "ObjCExceptionCatcher",
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXAudioSTT", package: "mlx-audio-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
