@@ -43,6 +43,8 @@ targets:
       - path: UnrambleApp/Resources/models
         buildPhase: resources
         type: folder
+      - path: LICENSE
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: Unramble

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2040" height="690" viewBox="0 0 2040 690">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0L8 4L0 8Z" fill="#dddddd"/>
+    </marker>
+  </defs>
+  <rect width="2040" height="690" fill="#000000"/>
+  <g fill="none" stroke="#dddddd" stroke-width="3">
+    <path d="M426 339H569V192H641" marker-end="url(#arrow)"/>
+    <path d="M426 339H569V486H641" marker-end="url(#arrow)"/>
+    <path d="M1392 192H1469V339H1560" marker-end="url(#arrow)"/>
+    <path d="M1392 486H1469V339"/>
+  </g>
+  <g fill="#151515" stroke="#393939" stroke-width="3">
+    <rect x="647" y="89" width="745" height="206" rx="14"/>
+    <rect x="647" y="383" width="745" height="206" rx="14"/>
+  </g>
+  <g font-family="Menlo, Monaco, monospace" text-anchor="middle">
+    <text x="1020" y="157" fill="#eeeeee" font-size="36" font-weight="700">Incognito</text>
+    <text x="1020" y="201" fill="#777777" font-size="27" letter-spacing="2">ON YOUR MAC</text>
+    <text x="1020" y="259" fill="#aaaaaa" font-size="29">Cohere Transcribe → Qwen3 0.6B</text>
+    <text x="1020" y="451" fill="#eeeeee" font-size="36" font-weight="700">Cloud</text>
+    <text x="1020" y="495" fill="#777777" font-size="27" letter-spacing="2">OVER THE INTERNET</text>
+    <text x="1020" y="553" fill="#aaaaaa" font-size="29">gpt-4o-mini-transcribe → gpt-realtime</text>
+    <text x="270" y="352" fill="#eeeeee" font-size="36" font-weight="700">hold ⌥ + speak</text>
+    <text x="1782" y="352" fill="#eeeeee" font-size="36" font-weight="700">text at your cursor</text>
+    <text x="1020" y="655" fill="#aaaaaa" font-size="29">Press ^⇧M to switch between modes.</text>
+  </g>
+</svg>

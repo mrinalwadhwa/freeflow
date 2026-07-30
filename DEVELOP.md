@@ -53,8 +53,8 @@ recognizer:
 
 ```mermaid
 flowchart LR
-    A[16 kHz microphone PCM] --> N[Nemotron Core ML session]
-    N --> R[Running raw transcript]
+    A[16 kHz microphone PCM] --> C[Cohere MLX rolling recognition]
+    C --> R[Stable raw transcript]
     R --> Q[Fine-tuned Qwen polish via MLX]
     Q --> I[Rolling chunks and final tail injection]
 ```
@@ -110,8 +110,8 @@ defaults:
 | `sttModel` | `OpenAIStreamingProvider.swift` | `gpt-4o-mini-transcribe` | Realtime transcription |
 | `model` | `OpenAIFileTranscriber.swift` | `gpt-4o-mini-transcribe` | HTTP fallback transcription |
 
-The local Nemotron and Qwen repository revisions, selected files, and hashes
-are pinned in `scripts/models.sh`. The fine-tuned adapter source is tracked at
+The local Cohere and Qwen repository revisions, selected files, and hashes are
+pinned in `scripts/models.sh`. The fine-tuned adapter source is tracked at
 `UnrambleApp/ModelSources/qwen3-0.6b-4bit-polish-adapter`; rerun `make models`
 after changing it so the generated pack receives the current adapter bytes.
 

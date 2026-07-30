@@ -31,39 +31,52 @@ struct DictationCompositionFactoryTests {
         #expect(composition.onSessionExpired == nil)
     }
 
-    @Test("Local STT defaults to the current Nemotron path")
-    func localSTTDefaultsToNemotron() {
-        #expect(
-            DictationCompositionFactory.localSTTKind(environment: [:])
-                == .nemotron)
-    }
+    #if arch(arm64)
+    @Test("Local composition uses the bundled Cohere model")
+    func localCompositionUsesCohere() throws {
+        let modelsRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: modelsRoot) }
 
-    @Test("Cohere MLX is selected only by the internal flag")
-    func cohereMLXSelection() {
-        #expect(
-            DictationCompositionFactory.localSTTKind(
-                environment: ["UNRAMBLE_LOCAL_STT": " cohere-mlx "])
-                == .cohereMLX)
-        #expect(
-            DictationCompositionFactory.localSTTKind(
-                environment: ["UNRAMBLE_LOCAL_STT": "cohere"])
-                == .nemotron)
-    }
+        for (directory, file) in [
+            ("qwen3-0.6b-4bit", "model.safetensors"),
+            (
+                "qwen3-0.6b-4bit-polish-adapter",
+                "adapters.safetensors"
+            ),
+            (
+                "cohere-transcribe-03-2026-mlx-4bit",
+                "model.safetensors"
+            ),
+        ] {
+            let modelDirectory = modelsRoot.appendingPathComponent(
+                directory, isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: modelDirectory, withIntermediateDirectories: true)
+            _ = FileManager.default.createFile(
+                atPath: modelDirectory.appendingPathComponent(file).path,
+                contents: Data())
+        }
 
-    @Test("Nemotron keeps the existing eleven-second polish cap")
-    func nemotronUnitPolicy() {
-        let policy = DictationCompositionFactory.localUnitPolicy(
-            for: .nemotron)
+        let composition = DictationCompositionFactory.makeLocal(
+            modelManager: LocalModelManager(
+                modelsDirectory: modelsRoot.appendingPathComponent("unused")),
+            bundledModelsRoot: modelsRoot,
+            cycleInterval: 3)
 
+        guard case .local = composition.backend else {
+            Issue.record("expected a local backend")
+            return
+        }
         #expect(
-            policy.maximumUnitBytes
-                == 11 * LocalUnitPolicy.sourceBytesPerSecond)
+            composition.localRuntime?.sttEngine.name
+                == "Cohere Transcribe 03-2026 MLX")
     }
+    #endif
 
     @Test("Cohere gives Qwen complete thoughts with a bounded fallback")
     func cohereUnitPolicy() {
-        let policy = DictationCompositionFactory.localUnitPolicy(
-            for: .cohereMLX)
+        let policy = DictationCompositionFactory.localUnitPolicy
 
         #expect(
             policy.maximumUnitBytes

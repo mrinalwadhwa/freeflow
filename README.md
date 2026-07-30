@@ -17,9 +17,9 @@ in the cloud. So every word you dictate, whether to an agent, an email, or a
 terminal, first goes to someone else's servers.
 
 That's changed. Small, open-weight models are now good enough, and fast.
-Unramble runs them locally on your Mac: NVIDIA's 0.6B Nemotron transcribes your
-speech, and a fine-tuned 0.6B Qwen3 cleans it up. Your voice never leaves your
-machine.
+Unramble runs them locally on your Mac: Cohere Transcribe turns your speech
+into text, and a fine-tuned 0.6B Qwen3 cleans it up. Your voice never leaves
+your machine.
 
 ## Demo (sound on 🔊)
 
@@ -42,9 +42,9 @@ Press `Ctrl + Shift + M` to switch between modes at any time.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-it-works-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset=".github/assets/how-it-works-light.png">
-    <img alt="How Unramble works: hold Right Option and speak; Incognito (on-device Nemotron Speech and Qwen3) or Cloud (OpenAI); text lands at your cursor" src=".github/assets/how-it-works-light.png" width="100%">
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-it-works-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset=".github/assets/how-it-works-light.svg">
+    <img alt="How Unramble works: hold Right Option and speak; Incognito uses on-device Cohere Transcribe and Qwen3, while Cloud uses OpenAI; text lands at your cursor" src=".github/assets/how-it-works-light.svg" width="100%">
   </picture>
 </p>
 

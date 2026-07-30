@@ -22,6 +22,8 @@ ci BufferedPasteOwnershipTests
 ci BuildUserPromptTests
 ci CloudDictationLiveHarnessTests
 ci CloudReplay
+ci CohereRollingRecognitionSessionTests
+ci CohereTranscriptAssemblerTests
 ci CollapseWordRepetitionTests
 ci ConcurrentCancelSafetyTests
 ci ContentLossCorrectionTests
@@ -63,13 +65,13 @@ ci LocalStreamingProviderTests
 ci LocalStreamingSeamTests
 ci LocalUnitPolicyTests
 ci LocalUnitStreamingTests
+ci MLXLLMEngineTests
+ci MLXPolishClientTests
 ci MergeDollarsAndCentsTests
 ci MicDiagnosticStoreTests
 ci MicrophoneCaptureCoordinatorTests
 ci MicrophonePreviewClientTests
 ci MicrophoneWAVCollectorTests
-ci MLXLLMEngineTests
-ci MLXPolishClientTests
 ci MockAudioDeviceProviderTests
 ci MockBatchProviderTests
 ci MockStreamingProviderContractTests

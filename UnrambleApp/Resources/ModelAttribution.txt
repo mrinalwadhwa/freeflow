@@ -1,0 +1,16 @@
+Unramble includes the following on-device model weights:
+
+Cohere Transcribe 03-2026
+Copyright Cohere and Cohere Labs
+https://huggingface.co/CohereLabs/cohere-transcribe-03-2026
+
+The bundled 4-bit MLX conversion comes from:
+https://huggingface.co/beshkenadze/cohere-transcribe-03-2026-mlx-4bit
+Revision: 104bc4391b5b1a12b040859793d7148525e1a08c
+
+Qwen3 0.6B
+Copyright Alibaba Cloud
+https://huggingface.co/Qwen/Qwen3-0.6B
+
+These models are distributed under the Apache License 2.0. The complete
+license is included in this app as LICENSE.
