@@ -1559,7 +1559,6 @@ final class StreamingPipelineTests: XCTestCase {
 
     func testExplicitCancelInvalidatesManualCompleteSuspendedDuringSetup() async {
         let setupGate = SuspensionGate()
-        let cancelCompletion = AsyncCompletionProbe()
         let audio = GatedStartAudioProvider(startGate: setupGate)
         let dictation = MockBatchProvider(stubbedText: "Late dictation")
         let streaming = MockStreamingProvider(stubbedText: "Late streaming result")
@@ -1582,19 +1581,17 @@ final class StreamingPipelineTests: XCTestCase {
             .processing, coordinator: coordinator)
         XCTAssertTrue(processingStarted)
 
-        let cancelTask = Task {
-            await pipeline.cancel()
-            await cancelCompletion.markCompleted()
-        }
+        let cancelTask = Task { await pipeline.cancel() }
         let cancellationEntered = await waitUntil {
             streaming.cancelAttemptCount > 0
         }
         XCTAssertTrue(cancellationEntered)
-        let completedBeforeSetupRelease = await cancelCompletion.hasCompleted()
-        XCTAssertFalse(completedBeforeSetupRelease)
 
-        await setupGate.release()
         await cancelTask.value
+        // Explicit cancellation force-resets pre-capture setup, which releases
+        // the provider's gate. Keep this idempotent release for the mock while
+        // asserting the lifecycle no longer depends on test scheduling.
+        await setupGate.release()
         await completeTask.value
 
         let state = await coordinator.state
@@ -4126,6 +4123,8 @@ final class StreamingPipelineTests: XCTestCase {
             streamingProvider: streaming)
 
         await pipeline.activate()
+        let captureStarted = await waitUntil { audio.startCallCount == 1 }
+        XCTAssertTrue(captureStarted)
         let emitTask = emitChunksInBackground(audio)
         await pipeline.complete()
         emitTask.cancel()
