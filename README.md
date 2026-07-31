@@ -31,41 +31,9 @@ https://github.com/user-attachments/assets/05f74a08-c986-4c6d-a4f9-951bb300efd2
 
 ## Try it
 
-Speak naturally. Unramble removes filler sounds while preserving what you
-meant.
-
-> **You say:** “Hmm, I think the best approach would be to refactor first.”
->
-> **Unramble writes:** “I think the best approach would be to refactor first.”
-
-Say punctuation when you need it.
-
-> **You say:** “I was thinking, dot dot dot, maybe we should wait.”
->
-> **Unramble writes:** “I was thinking… maybe we should wait.”
-
-Speak numbers as you normally would.
-
-> **You say:** “It costs ninety-nine dollars and ninety-nine cents.”
->
-> **Unramble writes:** “It costs $99.99.”
-
-For a vertical list, introduce it and say `first`, `second`, and `third`.
-
-> **You say:** “The priorities are first fix the login bug, second add caching,
-> third write documentation.”
->
-> **Unramble writes:**
->
-> 1. Fix the login bug
-> 2. Add caching
-> 3. Write documentation
-
-### Hands-free mode
-
-For longer dictations, press `Ctrl + Option + H` once to start recording and
-again to stop. You do not need to hold the dictation key. You can change this
-shortcut in Settings.
+Read the [dictation examples](EXAMPLES.md) to learn how to create lists, speak
+punctuation, format numbers, correct yourself in Cloud mode, and dictate
+hands-free.
 
 ## How it works
 
