@@ -63,8 +63,8 @@ discover_lanes() {
     done < <(
         (cd "$PACKAGE_DIR" && "$SWIFT_BIN" test list 2>/dev/null) \
             | sed -E 's#/.*$##' \
-            | sort -u
-    ) | sort -u
+            | LC_ALL=C sort -u
+    ) | LC_ALL=C sort -u
 }
 
 update_inventory() {
