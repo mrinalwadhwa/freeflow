@@ -194,7 +194,7 @@ if [[ "${FAKE_REQUIRE_SKIP:-0}" == "1" && -z "$skip_pattern" ]]; then
     exit 67
 fi
 if [[ "${FAKE_REQUIRE_BOUNDED_PARALLEL:-0}" == "1"
-    && "$workers" != "2" ]]
+    && "$workers" != "8" ]]
 then
     printf 'fake-swift: CI did not bound test parallelization\n' >&2
     exit 68

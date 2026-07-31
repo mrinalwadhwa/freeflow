@@ -148,7 +148,7 @@ run_swift_tests() {
                 | grep -q -- '--experimental-maximum-parallelization-width'
             then
                 swift_args+=(
-                    --experimental-maximum-parallelization-width 2
+                    --experimental-maximum-parallelization-width 8
                 )
             fi
             ;;
