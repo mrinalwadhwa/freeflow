@@ -152,6 +152,7 @@ set -euo pipefail
 shift
 output=""
 locked=0
+serialized=0
 skip_pattern=""
 while (( $# > 0 )); do
     case "$1" in
@@ -169,6 +170,10 @@ while (( $# > 0 )); do
             locked=1
             shift
             ;;
+        --no-parallel)
+            serialized=1
+            shift
+            ;;
         *)
             printf 'fake-swift: unexpected argument: %s\n' "$1" >&2
             exit 64
@@ -183,6 +188,10 @@ fi
 if [[ "${FAKE_REQUIRE_SKIP:-0}" == "1" && -z "$skip_pattern" ]]; then
     printf 'fake-swift: CI did not supply a skip filter\n' >&2
     exit 67
+fi
+if [[ "${FAKE_REQUIRE_SERIAL:-0}" == "1" && "$serialized" != "1" ]]; then
+    printf 'fake-swift: CI did not disable test parallelization\n' >&2
+    exit 68
 fi
 if [[ "${FAKE_ASSERT_CI_CLEAN:-0}" == "1" ]]; then
     if env | grep -Eq '^(UNRAMBLE_TEST_|UNRAMBLE_MLX_TESTS=|OPENAI_API_KEY=|SWIFT_ACTIVE_COMPILATION_CONDITIONS=)'; then
@@ -314,6 +323,7 @@ test_ci_clears_environment() {
         FAKE_SWIFT_XML="$TEMP_DIR/valid.xml" \
         FAKE_ASSERT_CI_CLEAN=1 \
         FAKE_REQUIRE_LOCKED=1 \
+        FAKE_REQUIRE_SERIAL=1 \
         FAKE_REQUIRE_SKIP=1 \
         UNRAMBLE_TEST_OPENAI=1 \
         UNRAMBLE_TEST_UNLISTED_FUTURE_GATE=1 \

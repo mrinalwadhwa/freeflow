@@ -140,7 +140,11 @@ run_swift_tests() {
             ;;
         ci)
             clear_ci_environment
-            swift_args+=(--disable-automatic-resolution --skip "$CI_SKIP_REGEX")
+            swift_args+=(
+                --disable-automatic-resolution
+                --no-parallel
+                --skip "$CI_SKIP_REGEX"
+            )
             ;;
         os)
             clear_ci_environment
