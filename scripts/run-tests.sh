@@ -142,9 +142,15 @@ run_swift_tests() {
             clear_ci_environment
             swift_args+=(
                 --disable-automatic-resolution
-                --no-parallel
                 --skip "$CI_SKIP_REGEX"
             )
+            if "$SWIFT_BIN" test --help 2>&1 \
+                | grep -q -- '--experimental-maximum-parallelization-width'
+            then
+                swift_args+=(
+                    --experimental-maximum-parallelization-width 2
+                )
+            fi
             ;;
         os)
             clear_ci_environment
