@@ -1,8 +1,16 @@
 import Foundation
+import ObjCExceptionCatcher
 
 #if canImport(AVFoundation)
     import AVFoundation
 #endif
+
+enum SoundFeedbackOperationGuard {
+    static func run(_ operation: () -> Void) -> String? {
+        guard let exception = ObjCTryCatch(operation) else { return nil }
+        return exception.reason ?? exception.name.rawValue
+    }
+}
 
 /// Play short sound cues at recording start and stop transitions.
 ///
@@ -196,25 +204,38 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
             buffer: AVAudioPCMBuffer,
             engine: AVAudioEngine
         ) {
-            // Convert the buffer to the engine's output format if needed.
-            let targetFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-            let playBuffer: AVAudioPCMBuffer
-            if buffer.format.sampleRate == targetFormat.sampleRate
-                && buffer.format.channelCount == targetFormat.channelCount
-                && buffer.format.commonFormat == targetFormat.commonFormat
-            {
-                playBuffer = buffer
-            } else if let converted = Self.convert(buffer, to: targetFormat) {
-                playBuffer = converted
-            } else {
-                return
+            let failure = SoundFeedbackOperationGuard.run {
+                // Convert the buffer to the engine's output format if needed.
+                let targetFormat =
+                    engine.mainMixerNode.outputFormat(forBus: 0)
+                let playBuffer: AVAudioPCMBuffer
+                if buffer.format.sampleRate == targetFormat.sampleRate
+                    && buffer.format.channelCount == targetFormat.channelCount
+                    && buffer.format.commonFormat == targetFormat.commonFormat
+                {
+                    playBuffer = buffer
+                } else if let converted = Self.convert(
+                    buffer, to: targetFormat)
+                {
+                    playBuffer = converted
+                } else {
+                    return
+                }
+
+                player.stop()
+                player.scheduleBuffer(
+                    playBuffer, at: nil, options: [],
+                    completionHandler: nil)
+                player.play()
             }
 
-            player.stop()
-            player.scheduleBuffer(
-                playBuffer, at: nil, options: [],
-                completionHandler: nil)
-            player.play()
+            if let failure {
+                Log.debug(
+                    "[SoundFeedback] Playback route failed: \(failure); "
+                        + "discarding feedback engine"
+                )
+                tearDownEngineLocked()
+            }
         }
 
         // MARK: - Engine management
@@ -226,12 +247,27 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
         {
             if let engine, let playerNode {
                 if !engine.isRunning {
-                    engine.prepare()
-                    do {
-                        try engine.start()
-                    } catch {
+                    var startError: Error?
+                    let failure = SoundFeedbackOperationGuard.run {
+                        engine.prepare()
+                        do {
+                            try engine.start()
+                        } catch {
+                            startError = error
+                        }
+                    }
+                    if let failure {
                         Log.debug(
-                            "[SoundFeedback] Engine restart failed: \(error)"
+                            "[SoundFeedback] Engine restart route failed: "
+                                + "\(failure)"
+                        )
+                        tearDownEngineLocked()
+                        return (nil, nil)
+                    }
+                    if let startError {
+                        Log.debug(
+                            "[SoundFeedback] Engine restart failed: "
+                                + "\(startError)"
                         )
                         tearDownEngineLocked()
                         return (nil, nil)
@@ -253,19 +289,29 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
             let eng = AVAudioEngine()
             let player = AVAudioPlayerNode()
 
-            eng.attach(player)
-
-            let mainMixer = eng.mainMixerNode
-            let format = mainMixer.outputFormat(forBus: 0)
-            eng.connect(player, to: mainMixer, format: format)
-
-            eng.prepare()
-            do {
-                try eng.start()
-            } catch {
+            var startError: Error?
+            let failure = SoundFeedbackOperationGuard.run {
+                eng.attach(player)
+                let mainMixer = eng.mainMixerNode
+                let format = mainMixer.outputFormat(forBus: 0)
+                eng.connect(player, to: mainMixer, format: format)
+                eng.prepare()
+                do {
+                    try eng.start()
+                } catch {
+                    startError = error
+                }
+            }
+            if let failure {
                 Log.debug(
-                    "[SoundFeedback] Engine start failed: \(error)")
-                eng.detach(player)
+                    "[SoundFeedback] Engine setup route failed: \(failure)")
+                Self.discard(engine: eng, player: player)
+                return (nil, nil)
+            }
+            if let startError {
+                Log.debug(
+                    "[SoundFeedback] Engine start failed: \(startError)")
+                Self.discard(engine: eng, player: player)
                 return (nil, nil)
             }
 
@@ -276,13 +322,31 @@ public final class SoundFeedbackProvider: @unchecked Sendable {
         }
 
         private func tearDownEngineLocked() {
-            if let playerNode {
-                playerNode.stop()
-                engine?.detach(playerNode)
+            if let engine, let playerNode {
+                Self.discard(engine: engine, player: playerNode)
+            } else {
+                _ = SoundFeedbackOperationGuard.run {
+                    engine?.stop()
+                }
             }
-            engine?.stop()
             engine = nil
             playerNode = nil
+        }
+
+        private static func discard(
+            engine: AVAudioEngine,
+            player: AVAudioPlayerNode
+        ) {
+            let failure = SoundFeedbackOperationGuard.run {
+                player.stop()
+                engine.detach(player)
+                engine.stop()
+            }
+            if let failure {
+                Log.debug(
+                    "[SoundFeedback] Engine teardown route failed: \(failure)"
+                )
+            }
         }
     #endif
 
