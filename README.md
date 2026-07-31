@@ -29,12 +29,6 @@ runs on your Mac, with nothing sent to the cloud.
 
 https://github.com/user-attachments/assets/05f74a08-c986-4c6d-a4f9-951bb300efd2
 
-## Try it
-
-Read the [dictation examples](EXAMPLES.md) to learn how to create lists, speak
-punctuation, format numbers, correct yourself in Cloud mode, and dictate
-hands-free.
-
 ## How it works
 
 Unramble runs in two modes. Incognito, the default mode, does everything on
