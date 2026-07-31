@@ -318,6 +318,34 @@ struct ReduplicationSurvivesTests {
         #expect(result.lowercased().contains("i think we should fix it"),
             "Collapsed stutter should read cleanly: \(result)")
     }
+
+    @Test("STT comma between repeated phrases does not preserve a stutter")
+    func commaSeparatedStutterCollapses() {
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "I think, I think we should fix the, the login bug.")
+            == "I think we should fix the login bug.")
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "Can you, can you send me the report by Friday?")
+            == "Can you send me the report by Friday?")
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "The problem is, the problem is that we lack coverage.")
+            == "The problem is that we lack coverage.")
+    }
+
+    @Test("intentional comma-separated emphasis still survives")
+    func commaSeparatedEmphasisSurvives() {
+        #expect(PolishPipeline.substituteDictatedPunctuation("No, no, stop.")
+            == "No, no, stop.")
+        #expect(PolishPipeline.substituteDictatedPunctuation("Wait, wait, listen.")
+            == "Wait, wait, listen.")
+    }
+
+    @Test("filler removal repairs a conjunction comma seam")
+    func fillerConjunctionSeam() {
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "I just wanted to say that, um, we need to prioritize this.")
+            == "I just wanted to say that we need to prioritize this.")
+    }
 }
 
 // MARK: - Homophones survive pipeline

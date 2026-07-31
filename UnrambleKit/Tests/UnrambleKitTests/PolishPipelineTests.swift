@@ -1629,6 +1629,12 @@ struct ConvertDecimalScaleVersionTests {
         #expect(PolishPipeline.convertDecimalScale(
             "shipped it in version two point one point four")
             == "shipped it in version 2.1.4")
+        #expect(PolishPipeline.convertDecimalScale(
+            "Version three point 14 point one.")
+            == "Version 3.14.1.")
+        #expect(PolishPipeline.convertDecimalScale(
+            "Version three point fourteen point one.")
+            == "Version 3.14.1.")
     }
 
     @Test("Four-part version joins every part with dots")
@@ -1649,6 +1655,25 @@ struct ConvertDecimalScaleVersionTests {
         #expect(PolishPipeline.convertDecimalScale(
             "two point one point being the release")
             == "2.1 point being the release")
+    }
+}
+
+@Suite("PolishPipeline – numeric clock punctuation")
+struct NumericClockPunctuationTests {
+
+    @Test("A dot-separated clock time before AM or PM uses a colon")
+    func dotSeparatedClockTime() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "The meeting is at 2.30 p.m. on March 15th.")
+            == "The meeting is at 2:30 PM on March 15th.")
+        #expect(PolishPipeline.normalizeFormatting("Meet at 09.05 AM.")
+            == "Meet at 09:05 AM.")
+    }
+
+    @Test("An ordinary decimal remains a decimal")
+    func ordinaryDecimalUnaffected() {
+        #expect(PolishPipeline.normalizeFormatting("The result is 2.30 points.")
+            == "The result is 2.30 points.")
     }
 }
 

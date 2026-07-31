@@ -93,6 +93,33 @@ struct DictationAudioSinkTests {
                     affectedFrameCount: 240))
     }
 
+    @Test("A recovery snapshot preserves body PCM without closing the sink")
+    func recoverySnapshotPreservesPCMAndAllowsNormalFinish() throws {
+        let format = try makeFormat(sampleRate: 48_000, channelCount: 1)
+        let converter = TestPCMConverter(
+            consumeResults: [.success(Data([1, 0, 2, 0]))],
+            finishResult: .success(Data()))
+        let sink = try DictationAudioSink(
+            inputFormat: format,
+            micProximity: .nearField,
+            deviceName: "Recovery Test Mic",
+            makeConverter: { _, _ in converter })
+
+        sink.consume(
+            try makePlanarBuffer(
+                format: format,
+                frameCount: 480,
+                channelValues: [0.2]))
+
+        let recovery = sink.recoveryBuffer()
+        let completion = sink.finishWithIntegrity()
+
+        #expect(recovery.data.prefix(4) == Data("RIFF".utf8))
+        #expect(recovery.duration > 0)
+        #expect(recovery == completion.buffer)
+        #expect(completion.integrityFailure == nil)
+    }
+
     @Test("A converter tail failure cannot return body PCM as intact")
     func tailDrainFailurePublishesIntegrity() throws {
         let format = try makeFormat(sampleRate: 48_000, channelCount: 1)

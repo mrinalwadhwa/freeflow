@@ -40,6 +40,15 @@ struct PolishBreakModeTests {
             "new line must be a single break: \(out.debugDescription)")
     }
 
+    @Test("commandsOnly capitalizes text after a dictated new line")
+    func commandsOnlyCapitalizesAfterNewLine() async throws {
+        let out = await PolishPipeline.polish(
+            "See the summary, new line, details are below.",
+            chatClient: nil, breakMode: .commandsOnly)
+
+        #expect(out == "See the summary.\nDetails are below.")
+    }
+
     @Test("commandsOnly strips a break the model invents")
     func commandsOnlyStripsModelBreak() async throws {
         // No command in the input, but the model injects a paragraph break.

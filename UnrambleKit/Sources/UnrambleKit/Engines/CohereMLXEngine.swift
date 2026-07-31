@@ -62,10 +62,13 @@ public final class CohereMLXEngine: LocalStreamingRecognizer,
             topK: 0,
             verbose: false,
             language: "en")
-        return model.generate(
+        let text = model.generate(
             audio: MLXArray(samples),
             generationParameters: parameters
         ).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        try CohereTranscriptIntegrity.validate(
+            text, sampleCount: samples.count, sampleRate: 16_000)
+        return text
     }
 
     private func clearLoadedModel() {
@@ -97,6 +100,67 @@ public final class CohereMLXEngine: LocalStreamingRecognizer,
                 "Incomplete Cohere MLX model at \(directory.path); missing "
                     + details.joined(separator: ", "))
         }
+    }
+}
+
+/// Reject unmistakable decoder failures before they can enter rolling-window
+/// composition or Qwen polish. This deliberately does not judge grammar or
+/// acoustic confidence: it only catches output that cannot plausibly have been
+/// spoken in the supplied amount of audio, or a long repeated decoder loop.
+enum CohereTranscriptIntegrity {
+    private static let wordPattern = try! NSRegularExpression(
+        pattern: #"[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)?"#)
+
+    static func validate(
+        _ text: String,
+        sampleCount: Int,
+        sampleRate: Int
+    ) throws {
+        guard !text.isEmpty, sampleCount > 0, sampleRate > 0 else { return }
+        let words = normalizedWords(in: text)
+        guard !words.isEmpty else { return }
+
+        let seconds = Double(sampleCount) / Double(sampleRate)
+        // Eight words per second is far beyond intelligible dictation. Keep a
+        // forty-word floor so very short commands are never rejected merely
+        // because the duration measurement is small.
+        let plausibleWordLimit = max(40, Int(ceil(seconds * 8)))
+        if words.count > plausibleWordLimit {
+            throw LocalModelError.transcriptionFailed(
+                "Cohere returned implausibly dense output "
+                    + "(\(words.count) words for "
+                    + String(format: "%.1f", seconds) + " seconds)")
+        }
+
+        // A repeated four-word phrase eight or more times in a substantial
+        // result is characteristic of autoregressive decoder looping. Ordinary
+        // rhetorical repetition and short commands remain below both floors.
+        if words.count >= 64, mostFrequentNGramCount(words, width: 4) >= 8 {
+            throw LocalModelError.transcriptionFailed(
+                "Cohere returned a repeated decoder loop")
+        }
+    }
+
+    private static func normalizedWords(in text: String) -> [String] {
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return wordPattern.matches(in: text, range: range).compactMap { match in
+            guard let range = Range(match.range, in: text) else { return nil }
+            return text[range].lowercased()
+        }
+    }
+
+    private static func mostFrequentNGramCount(
+        _ words: [String], width: Int
+    ) -> Int {
+        guard words.count >= width else { return 0 }
+        var counts: [String: Int] = [:]
+        var maximum = 0
+        for start in 0...(words.count - width) {
+            let key = words[start..<(start + width)].joined(separator: "\u{1F}")
+            counts[key, default: 0] += 1
+            maximum = max(maximum, counts[key, default: 0])
+        }
+        return maximum
     }
 }
 

@@ -7,6 +7,54 @@ import UnrambleKitTestSupport
 @Suite("AudioDevice model")
 struct AudioDeviceTests {
 
+    @Test("Auto-detect bypasses a Bluetooth default when built-in input exists")
+    func autoDetectPrefersBuiltInOverBluetoothDefault() {
+        let devices = [
+            AudioDevice(
+                id: 20, name: "AirPods", isDefault: true,
+                transportType: .bluetooth),
+            AudioDevice(
+                id: 10, name: "MacBook Pro Microphone",
+                transportType: .builtIn),
+        ]
+
+        #expect(
+            CoreAudioDeviceProvider.preferredCaptureDeviceID(
+                devices: devices, selectedDeviceID: nil) == 10)
+    }
+
+    @Test("An explicitly selected Bluetooth input remains selected")
+    func explicitBluetoothSelectionIsHonored() {
+        let devices = [
+            AudioDevice(
+                id: 20, name: "AirPods", isDefault: true,
+                transportType: .bluetooth),
+            AudioDevice(
+                id: 10, name: "MacBook Pro Microphone",
+                transportType: .builtIn),
+        ]
+
+        #expect(
+            CoreAudioDeviceProvider.preferredCaptureDeviceID(
+                devices: devices, selectedDeviceID: 20) == 20)
+    }
+
+    @Test("Auto-detect keeps a stable non-Bluetooth default")
+    func autoDetectKeepsNonBluetoothDefault() {
+        let devices = [
+            AudioDevice(
+                id: 30, name: "Yeti", isDefault: true,
+                transportType: .usb),
+            AudioDevice(
+                id: 10, name: "MacBook Pro Microphone",
+                transportType: .builtIn),
+        ]
+
+        #expect(
+            CoreAudioDeviceProvider.preferredCaptureDeviceID(
+                devices: devices, selectedDeviceID: nil) == 30)
+    }
+
     @Test("AudioDevice stores all properties")
     func properties() {
         let device = AudioDevice(id: 42, name: "Studio Mic", isDefault: true)

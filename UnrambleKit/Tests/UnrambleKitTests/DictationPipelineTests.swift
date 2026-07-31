@@ -1151,6 +1151,43 @@ final class DictationPipelineTests: XCTestCase {
         XCTAssertEqual(injector.injectionCount, 0)
     }
 
+    func testIncompleteCaptureRetainsExactAudioForExplicitRetry() async {
+        let audio = MockAudioProvider()
+        let recoverable = audio.stubbedBuffer
+        audio.stubbedStopError = AudioCaptureError.incompleteCapture(
+            recoverable,
+            AudioCaptureIntegrityFailure(
+                stage: .timestampCoverage,
+                affectedFrameCount: 512))
+        let dictation = MockBatchProvider()
+        let (pipeline, audioProvider, _, _, injector, coordinator) = makePipeline(
+            audioProvider: audio,
+            batchProvider: dictation)
+
+        let sessionID = await activateAndWaitForCapture(
+            pipeline, audioProvider: audioProvider)
+        await pipeline.complete()
+
+        let failedState = await coordinator.state
+        XCTAssertEqual(failedState, .dictationFailed)
+        XCTAssertEqual(dictation.dictateCallCount, 0)
+        XCTAssertEqual(injector.injectionCount, 0)
+        guard let sessionID else {
+            return XCTFail("Expected an active failed session")
+        }
+        let canRetry = await pipeline.canRetryDictation(sessionID: sessionID)
+        XCTAssertTrue(canRetry)
+
+        audio.stubbedStopError = nil
+        await pipeline.retryDictation(sessionID: sessionID)
+
+        XCTAssertEqual(dictation.dictateCallCount, 1)
+        XCTAssertEqual(dictation.lastReceivedAudio, recoverable.data)
+        XCTAssertEqual(injector.injectionCount, 1)
+        let finalState = await coordinator.state
+        XCTAssertEqual(finalState, .idle)
+    }
+
     // MARK: - Hotkey-driven simulation
 
     func testHotkeyDrivenFullCycle() async {

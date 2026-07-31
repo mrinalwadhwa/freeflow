@@ -1150,6 +1150,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         releaseBoundary: AudioCaptureReleaseBoundary?,
         onCaptureReady: @escaping @Sendable () -> Void
     ) async throws {
+        try await _audioDeviceProvider?.waitUntilInputDeviceSettled()
+        try Task.checkCancellation()
         guard captureDemands.insert(owner) else {
             throw AudioCaptureError.alreadyRecording
         }
@@ -1716,8 +1718,10 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
             case .completed(.releaseRejected):
                 let integrityFailure = sink.integrityPublication.failure
+                let recoveryBuffer = sink.recoveryBuffer()
                 let failure: any Error = integrityFailure.map {
-                    AudioCaptureError.captureIntegrity($0)
+                    AudioCaptureError.incompleteCapture(
+                        recoveryBuffer, $0)
                 } ?? AudioCaptureError.ownerMismatch
                 guard
                     let aborted = claimAbortedDictationStop(
@@ -1742,8 +1746,9 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 throw failure
 
             case .deadline, .cancelled:
-                let failure = AudioCaptureError.captureIntegrity(
-                    stopDrain.timeoutFailure)
+                let recoveryBuffer = sink.recoveryBuffer()
+                let failure = AudioCaptureError.incompleteCapture(
+                    recoveryBuffer, stopDrain.timeoutFailure)
                 guard
                     let aborted = claimAbortedDictationStop(
                         owner: owner,
@@ -1832,7 +1837,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             let result: Result<AudioBuffer, any Error>
             if let integrityFailure = completion.integrityFailure {
                 result = .failure(
-                    AudioCaptureError.captureIntegrity(integrityFailure))
+                    AudioCaptureError.incompleteCapture(
+                        completion.buffer, integrityFailure))
             } else {
                 result = .success(completion.buffer)
             }
@@ -2381,7 +2387,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         private func ensureEngine(
             for attempt: AudioEngineStartResetLedger<AVAudioEngine>.Attempt
         ) throws -> AVAudioEngine {
-            let desiredDeviceID = _audioDeviceProvider?.selectedDeviceID
+            var desiredDeviceID = _audioDeviceProvider?.captureDeviceID
 
             if let engine {
                 guard engineStartResetLedger.publish(engine, for: attempt) else {
@@ -2503,13 +2509,15 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                             "[AudioCapture] Device \(deviceID) unavailable, "
                                 + "falling back to system default"
                         )
-                        _audioDeviceProvider?.clearSelection()
+                        _audioDeviceProvider?
+                            .clearUnavailableCaptureSelection()
+                        desiredDeviceID = nil
                         // Continue without setInputDevice — the engine
                         // will use the system default input device.
                     }
                 }
             #endif
-            _configuredDeviceID = _audioDeviceProvider?.selectedDeviceID
+            _configuredDeviceID = desiredDeviceID
             _micProximity =
                 _audioDeviceProvider?.micProximityForDevice(
                     _configuredDeviceID
@@ -2948,6 +2956,16 @@ public enum AudioCaptureError: Error, Sendable, CustomStringConvertible {
     case engineStopFailed(String)
     /// At least one frame in the owned capture range could not be retained.
     case captureIntegrity(AudioCaptureIntegrityFailure)
+    /// Capture was incomplete, but this exact WAV prefix remains available for
+    /// explicit recovery instead of being silently discarded.
+    case incompleteCapture(AudioBuffer, AudioCaptureIntegrityFailure)
+
+    public var recoverableAudioBuffer: AudioBuffer? {
+        guard case .incompleteCapture(let buffer, _) = self,
+            !buffer.data.isEmpty
+        else { return nil }
+        return buffer
+    }
 
     public var description: String {
         switch self {
@@ -2967,6 +2985,8 @@ public enum AudioCaptureError: Error, Sendable, CustomStringConvertible {
             return "Audio engine failed to stop: \(reason)"
         case .captureIntegrity(let failure):
             return "Audio capture integrity failed at \(failure.stage)"
+        case .incompleteCapture(_, let failure):
+            return "Audio capture integrity failed at \(failure.stage); partial audio was retained"
         }
     }
 }

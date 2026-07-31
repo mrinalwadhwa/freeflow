@@ -238,29 +238,45 @@ import Foundation
                 return combined
             }
 
-            let buffer: AudioBuffer
-            if pcmData.isEmpty {
-                buffer = .empty
-            } else {
-                let duration = WAVEncoder.duration(
-                    byteCount: pcmData.count,
-                    sampleRate: Int(AudioCaptureProvider.targetSampleRate),
-                    channels: Int(AudioCaptureProvider.targetChannels),
-                    bitsPerSample: AudioCaptureProvider.targetBitsPerSample)
-                buffer = AudioBuffer(
-                    data: WAVEncoder.encode(
-                        pcmData: pcmData,
-                        sampleRate: Int(AudioCaptureProvider.targetSampleRate),
-                        channels: Int(AudioCaptureProvider.targetChannels),
-                        bitsPerSample: AudioCaptureProvider.targetBitsPerSample),
-                    duration: duration,
-                    sampleRate: Int(AudioCaptureProvider.targetSampleRate),
-                    channels: Int(AudioCaptureProvider.targetChannels),
-                    bitsPerSample: AudioCaptureProvider.targetBitsPerSample)
-            }
             return Completion(
-                buffer: buffer,
+                buffer: Self.audioBuffer(from: pcmData),
                 integrityFailure: integrity.failure)
+        }
+
+        /// Snapshot the converted body PCM without finishing the converter.
+        /// A stop timeout or rejected release can still return this exact
+        /// prefix for explicit recovery, while the original stop operation
+        /// retains ownership of converter cleanup.
+        func recoveryBuffer() -> AudioBuffer {
+            let pcmData = lock.withLock { () -> Data in
+                guard isOpen else { return Data() }
+                let totalSize = pcmChunks.reduce(0) { $0 + $1.count }
+                var combined = Data(capacity: totalSize)
+                for chunk in pcmChunks { combined.append(chunk) }
+                return combined
+            }
+            return Self.audioBuffer(from: pcmData)
+        }
+
+        private static func audioBuffer(from pcmData: Data) -> AudioBuffer {
+            guard !pcmData.isEmpty else { return .empty }
+            let sampleRate = Int(AudioCaptureProvider.targetSampleRate)
+            let channels = Int(AudioCaptureProvider.targetChannels)
+            let bitsPerSample = AudioCaptureProvider.targetBitsPerSample
+            return AudioBuffer(
+                data: WAVEncoder.encode(
+                    pcmData: pcmData,
+                    sampleRate: sampleRate,
+                    channels: channels,
+                    bitsPerSample: bitsPerSample),
+                duration: WAVEncoder.duration(
+                    byteCount: pcmData.count,
+                    sampleRate: sampleRate,
+                    channels: channels,
+                    bitsPerSample: bitsPerSample),
+                sampleRate: sampleRate,
+                channels: channels,
+                bitsPerSample: bitsPerSample)
         }
 
         func discard() {

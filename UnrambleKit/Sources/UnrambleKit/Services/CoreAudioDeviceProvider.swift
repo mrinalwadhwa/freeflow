@@ -47,6 +47,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
     /// notifications in a burst; coalescing them into one decision avoids the
     /// repeated engine rebuilds that burst otherwise triggers.
     private static let deviceChangeDebounceSeconds = 0.3
+    private let transitionGate = AudioInputDeviceTransitionGate()
 
     public init() {
         #if canImport(CoreAudio)
@@ -91,8 +92,14 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 // Selected device was disconnected — fall through to default.
             }
 
-            // Return the system default input device.
-            return devices.first(where: { $0.isDefault }) ?? devices.first
+            // Return the device auto-detect will actually pin for capture, so
+            // the HUD never claims an unstable Bluetooth default is active
+            // while capture is safely using the built-in microphone.
+            guard
+                let captureID = Self.preferredCaptureDeviceID(
+                    devices: devices, selectedDeviceID: nil)
+            else { return nil }
+            return devices.first(where: { $0.id == captureID })
         #else
             return nil
         #endif
@@ -104,7 +111,13 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
             guard devices.contains(where: { $0.id == id }) else {
                 throw CoreAudioDeviceError.deviceNotFound(id)
             }
-            lock.withLock { _selectedDeviceID = id }
+            let captureProvider = lock.withLock { () -> (any AudioCaptureRebuildSink)? in
+                _selectedDeviceID = id
+                return _audioCaptureProvider
+            }
+            transitionGate.begin(
+                settleAfter: Self.deviceChangeDebounceSeconds)
+            captureProvider?.markNeedsRebuild()
             Log.debug("[CoreAudioDeviceProvider] Selected device id=\(id)")
         #else
             throw CoreAudioDeviceError.coreAudioUnavailable
@@ -120,6 +133,57 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         lock.withLock { _selectedDeviceID }
     }
 
+    /// Pin one concrete device for the capture generation. Auto-detect avoids
+    /// a Bluetooth default when a built-in microphone is available: AirPods
+    /// can advertise themselves as default while sitting unworn outside their
+    /// case, then deliver discontinuous capture timestamps. Users who
+    /// explicitly choose AirPods still get that device.
+    public var captureDeviceID: UInt32? {
+        #if canImport(CoreAudio)
+            let devices = listInputDevices()
+            let selected = lock.withLock { _selectedDeviceID }
+            let preferred = Self.preferredCaptureDeviceID(
+                devices: devices, selectedDeviceID: selected)
+            if selected == nil,
+                let systemDefault = devices.first(where: \.isDefault),
+                systemDefault.transportType == .bluetooth,
+                preferred != systemDefault.id
+            {
+                let preferredDescription = preferred?.description ?? "none"
+                Log.debug(
+                    "[CoreAudioDeviceProvider] Auto-detect bypassing Bluetooth default \(systemDefault.id) for stable device \(preferredDescription)")
+            }
+            return preferred
+        #else
+            return selectedDeviceID
+        #endif
+    }
+
+    static func preferredCaptureDeviceID(
+        devices: [AudioDevice], selectedDeviceID: UInt32?
+    ) -> UInt32? {
+        if let selectedDeviceID,
+            devices.contains(where: { $0.id == selectedDeviceID })
+        {
+            return selectedDeviceID
+        }
+        guard let systemDefault = devices.first(where: \.isDefault)
+            ?? devices.first
+        else { return nil }
+        if systemDefault.transportType == .bluetooth,
+            let builtIn = devices.first(where: {
+                $0.transportType == .builtIn
+            })
+        {
+            return builtIn.id
+        }
+        return systemDefault.id
+    }
+
+    public func waitUntilInputDeviceSettled() async throws {
+        try await transitionGate.waitUntilSettled()
+    }
+
     /// Whether the user is in auto-detect mode (no explicit selection).
     public var isAutoDetect: Bool {
         lock.withLock { _selectedDeviceID == nil }
@@ -127,8 +191,20 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
 
     /// Clear the explicit device selection, reverting to auto-detect.
     public func clearSelection() {
-        lock.withLock { _selectedDeviceID = nil }
+        let captureProvider = lock.withLock { () -> (any AudioCaptureRebuildSink)? in
+            _selectedDeviceID = nil
+            return _audioCaptureProvider
+        }
+        transitionGate.begin(settleAfter: Self.deviceChangeDebounceSeconds)
+        captureProvider?.markNeedsRebuild()
         Log.debug("[CoreAudioDeviceProvider] Cleared selection, using auto-detect")
+    }
+
+    public func clearUnavailableCaptureSelection() {
+        lock.withLock { _selectedDeviceID = nil }
+        Log.debug(
+            "[CoreAudioDeviceProvider] Cleared unavailable capture device, using system default"
+        )
     }
 
     /// Whether the MacBook lid is closed (clamshell mode).
@@ -457,6 +533,8 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         /// schedule a fresh one, so a burst of notifications settles into a
         /// single rebuild decision instead of one rebuild per notification.
         private func scheduleDeviceChangeCheck() {
+            transitionGate.begin(
+                settleAfter: Self.deviceChangeDebounceSeconds)
             deviceChangeQueue.async { [weak self] in
                 guard let self else { return }
                 self.pendingDeviceChangeCheck?.cancel()

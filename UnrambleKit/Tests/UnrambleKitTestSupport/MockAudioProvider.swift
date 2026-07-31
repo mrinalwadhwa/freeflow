@@ -99,6 +99,11 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
     public var stubbedStartDelay: TimeInterval = 0
     public var stubbedStartError: (any Error)?
 
+    /// When non-nil, `stopRecording()` closes capture normally and then
+    /// returns this error. This models an integrity failure carrying a
+    /// recoverable audio prefix.
+    public var stubbedStopError: (any Error)?
+
     /// Optional deterministic suspension point for ownership race tests.
     public var stopWillComplete: (@Sendable () async -> Void)?
 
@@ -450,6 +455,9 @@ public final class MockAudioProvider: AudioProviding, @unchecked Sendable {
             _audioLevelStream = nil
             if stopOperation?.id == operationID {
                 completedStopOperationID = operationID
+            }
+            if let stubbedStopError {
+                return .failure(stubbedStopError)
             }
             return .success(
                 captureConfiguration.retainsPCM ? stubbedBuffer : .empty)

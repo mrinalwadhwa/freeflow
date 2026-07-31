@@ -63,6 +63,55 @@ struct CohereRollingRecognitionSessionTests {
         #expect(recorder.sampleCounts == [30 * 16_000, 33 * 16_000])
     }
 
+    @Test("Rejects output too dense to fit in the audio")
+    func rejectsImplausiblyDenseOutput() {
+        let text = (1...721).map { "word\($0)" }.joined(separator: " ")
+
+        #expect(throws: LocalModelError.self) {
+            try CohereTranscriptIntegrity.validate(
+                text, sampleCount: 18 * 16_000, sampleRate: 16_000)
+        }
+    }
+
+    @Test("Rejects a long repeated decoder loop")
+    func rejectsRepeatedDecoderLoop() {
+        let loop = Array(
+            repeating: "talking about the people who are", count: 10
+        ).joined(separator: " ")
+        let text = "This starts normally before " + loop
+
+        #expect(throws: LocalModelError.self) {
+            try CohereTranscriptIntegrity.validate(
+                text, sampleCount: 30 * 16_000, sampleRate: 16_000)
+        }
+    }
+
+    @Test("Allows fast natural speech and short repetition")
+    func allowsPlausibleSpeech() throws {
+        let fastSpeech = (1...120).map { "word\($0)" }.joined(separator: " ")
+        try CohereTranscriptIntegrity.validate(
+            fastSpeech, sampleCount: 20 * 16_000, sampleRate: 16_000)
+        try CohereTranscriptIntegrity.validate(
+            "No no no, wait wait, that is not what I meant.",
+            sampleCount: 2 * 16_000,
+            sampleRate: 16_000)
+    }
+
+    @Test("Session surfaces an integrity failure instead of composing it")
+    func sessionRejectsPathologicalWindow() throws {
+        let text = (1...721).map { "word\($0)" }.joined(separator: " ")
+        let session = CohereRollingRecognitionSession { samples in
+            try CohereTranscriptIntegrity.validate(
+                text, sampleCount: samples.count, sampleRate: 16_000)
+            return text
+        }
+
+        try session.feed(Self.silence(seconds: 18))
+        #expect(throws: LocalModelError.self) {
+            _ = try session.finish()
+        }
+    }
+
     private static func silence(seconds: Int) -> [Float] {
         [Float](repeating: 0, count: seconds * 16_000)
     }

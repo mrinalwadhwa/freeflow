@@ -387,9 +387,11 @@ public enum PolishPipeline {
 
     /// Collapse an immediately repeated 1–3 word run that a speaker stuttered
     /// ("I think I think" → "I think", "the the" → "the"). Only collapses when
-    /// the runs are separated by whitespace alone — a comma or period between
-    /// them ("No, no", "Done. Done.") marks intentional repetition and is
-    /// kept. A single repeated word is also kept when it is whitelisted or a
+    /// the runs are separated by whitespace, or by the comma Cohere commonly
+    /// inserts at a hesitation. A comma is accepted only at the boundary
+    /// between two otherwise contiguous runs. Comma-separated single content
+    /// words remain untouched; function-word stutters may collapse. A single
+    /// repeated word is also kept when it is whitelisted or a
     /// number word, so grammatical doubles and spoken digit sequences
     /// ("five five five …") survive. Longer restarts (self-corrections) are
     /// left to the model.
@@ -410,12 +412,26 @@ public enum PolishPipeline {
             return sep.allSatisfy { $0 == " " || $0 == "\t" }
         }
 
+        func separatorIsSoftComma(after i: Int) -> Bool {
+            let end = ranges[i].location + ranges[i].length
+            let start = ranges[i + 1].location
+            guard start > end else { return false }
+            let sep = ns.substring(with: NSRange(location: end, length: start - end))
+            return sep.range(
+                of: #"^\s*,\s*$"#, options: .regularExpression) != nil
+        }
+
         // Two runs of `length` words match when the gaps spanning them are
         // whitespace only and the words are pairwise equal.
         func runsMatch(at i: Int, length: Int) -> Bool {
             guard i + 2 * length <= words.count else { return false }
-            for k in i..<(i + 2 * length - 1) where !separatorIsSpaceOnly(after: k) {
-                return false
+            for k in i..<(i + 2 * length - 1) {
+                let isRunBoundary = k == i + length - 1
+                if !separatorIsSpaceOnly(after: k)
+                    && !(isRunBoundary && separatorIsSoftComma(after: k))
+                {
+                    return false
+                }
             }
             for k in 0..<length where words[i + k] != words[i + length + k] {
                 return false
@@ -444,13 +460,20 @@ public enum PolishPipeline {
                     // had"), spoken digit sequences ("five five five"), and
                     // single letters (initials) survive.
                     let word = words[i]
+                    if separatorIsSoftComma(after: i),
+                        !doublableFunctionWords.contains(word)
+                    {
+                        continue
+                    }
                     let collapsible = doublableFunctionWords.contains(word)
                         || (word.count >= 2 && !isNumberWord(word)
                             && !emphaticDoubleWords.contains(word))
                     guard collapsible else { continue }
                     // Collapse any further consecutive copies in one pass.
                     var j = i + 1
-                    while j < words.count, separatorIsSpaceOnly(after: j - 1),
+                    while j < words.count,
+                        separatorIsSpaceOnly(after: j - 1)
+                            || separatorIsSoftComma(after: j - 1),
                         words[j] == word
                     {
                         drop[j] = true
@@ -567,19 +590,31 @@ public enum PolishPipeline {
 
     // MARK: - Filler Sound Stripping
 
+    private static let fillerSounds = [
+        "um", "eh", "mmm", "uhh", "hm", "umm", "mm",
+        "uh", "uhhh", "uhm", "ah", "hmm", "mh", "ehh",
+    ]
+
     private static let fillerSoundPattern: NSRegularExpression = {
         // Pure vocalized pauses — never content words in English.
         // Shuffled to avoid order-dependent prompt overfitting.
-        let fillers = [
-            "um", "eh", "mmm", "uhh", "hm", "umm", "mm",
-            "uh", "uhhh", "uhm", "ah", "hmm", "mh", "ehh",
-        ]
-        let joined = fillers.joined(separator: "|")
+        let joined = fillerSounds.joined(separator: "|")
         // Word boundary + optional trailing comma/period + whitespace.
         // "uhm, I was thinking" → "I was thinking"
         // swiftlint:disable:next force_try
         return try! NSRegularExpression(
             pattern: "(?i)\\b(\(joined))\\b[,.]?\\s*",
+            options: [])
+    }()
+
+    private static let connectorFillerPattern: NSRegularExpression = {
+        let fillers = fillerSounds.joined(separator: "|")
+        let connectors = "that|because|if|when|while|although|unless|since"
+        // Cohere can put commas on both sides of a hesitation inside a clause:
+        // "that, um, we". The first comma is a prosodic artifact, not a valid
+        // clause boundary, so consume it together with the filler.
+        return try! NSRegularExpression(
+            pattern: "(?i)\\b(\(connectors)),\\s*(?:\(fillers))\\b[,.]?\\s*",
             options: [])
     }()
 
@@ -589,9 +624,13 @@ public enum PolishPipeline {
     /// words. Trailing punctuation attached to the filler is removed
     /// with it. Applied pre-LLM so models receive cleaner input.
     public static func stripFillerSounds(_ text: String) -> String {
-        var result = fillerSoundPattern.stringByReplacingMatches(
+        var result = connectorFillerPattern.stringByReplacingMatches(
             in: text,
             range: NSRange(text.startIndex..., in: text),
+            withTemplate: "$1 ")
+        result = fillerSoundPattern.stringByReplacingMatches(
+            in: result,
+            range: NSRange(result.startIndex..., in: result),
             withTemplate: "")
 
         // Collapse multiple spaces left behind.
@@ -688,6 +727,39 @@ public enum PolishPipeline {
         // two-part rule below, which would otherwise convert only the leading
         // pair and strand the rest ("2.1 point four"). A two-part run (one
         // "point") stays a decimal.
+        // Cohere sometimes normalizes only one component before this stage
+        // ("version three point 14 point one"). In explicit version context,
+        // accept a mixture of digit strings and zero-through-nineteen words.
+        let versionWords = (Array(digitWords.keys) + teens.map(\.0))
+            .joined(separator: "|")
+        let mixedVersionPattern = "(?i)(\\bversion\\s+)"
+            + "((?:\(versionWords)|\\d+)"
+            + "(?:\\s+point\\s+(?:\(versionWords)|\\d+)){2,})\\b"
+        if let regex = try? NSRegularExpression(pattern: mixedVersionPattern) {
+            let matches = regex.matches(
+                in: result, range: NSRange(result.startIndex..., in: result))
+            for match in matches.reversed() {
+                guard let fullRange = Range(match.range, in: result),
+                    let prefixRange = Range(match.range(at: 1), in: result),
+                    let valueRange = Range(match.range(at: 2), in: result)
+                else { continue }
+                let components = result[valueRange]
+                    .lowercased()
+                    .components(separatedBy: " point ")
+                let normalized = components.compactMap { component -> String? in
+                    if component.allSatisfy(\.isNumber) { return component }
+                    if let digit = digitWords[component] { return digit }
+                    return teens.first(where: { $0.0 == component })
+                        .map { String($0.1) }
+                }
+                guard normalized.count == components.count else { continue }
+                result.replaceSubrange(
+                    fullRange,
+                    with: String(result[prefixRange])
+                        + normalized.joined(separator: "."))
+            }
+        }
+
         let versionWordPattern = #"(?i)\b(zero|one|two|three|four|five|six|seven|eight|nine)(?:\s+point\s+(?:zero|one|two|three|four|five|six|seven|eight|nine)){2,}\b"#
         if let regex = try? NSRegularExpression(pattern: versionWordPattern) {
             let matches = regex.matches(
@@ -1544,6 +1616,12 @@ public enum PolishPipeline {
         result = result.replacingOccurrences(
             of: #"\bp\.m\.(?=$|\n)"#, with: "PM.", options: .regularExpression)
 
+        // Cohere occasionally renders a clock time with a decimal point. The
+        // AM/PM suffix makes this unambiguously a time, so a colon is safe.
+        result = result.replacingOccurrences(
+            of: #"\b([01]?\d|2[0-3])\.([0-5]\d)(?=\s+(?:AM|PM)\b)"#,
+            with: "$1:$2", options: .regularExpression)
+
         // A bare spoken hour before a meridiem takes a numeral: "three PM" ->
         // "3 PM", "nine AM" -> "9 AM". H:MM times are digitized upstream; this
         // covers the on-the-hour case. Fires only directly before AM/PM.
@@ -2172,11 +2250,16 @@ public enum PolishPipeline {
         let stripped = stripKeepTags(
             substituted, casual: casual, expandBreaks: !stripModelBreaks)
 
-        guard let chatClient else {
-            return (normalizeFormatting(stripped, casual: casual), 0)
-        }
-
         let noPreceding = precedingText == nil || precedingText!.isEmpty
+
+        guard let chatClient else {
+            return (
+                adjustFirstCharCasing(
+                    normalizeFormatting(stripped, casual: casual),
+                    preprocessed: stripped, casual: casual,
+                    noPreceding: noPreceding),
+                0)
+        }
 
         do {
             // Greedy on the first attempt; when a guard fires, resample with a

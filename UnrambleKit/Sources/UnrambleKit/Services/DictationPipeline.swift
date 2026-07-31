@@ -1481,11 +1481,26 @@ public actor DictationPipeline: PipelineProviding {
 
     private func handleCaptureStopFailure(
         sessionID: DictationSessionID,
+        recoveryAudio: AudioBuffer?,
         streamingProvider: any StreamingDictationProviding
     ) async {
-        Log.debug(
-            "[Pipeline] Capture stop failed after terminal reset; refusing transcription"
-        )
+        if let recoveryAudio, !recoveryAudio.data.isEmpty {
+            saveCapturedSample(wav: recoveryAudio.data)
+            retainRecovery(
+                sessionID: sessionID,
+                audio: recoveryAudio.data,
+                context: .empty,
+                language: nil)
+            let recoveredDuration = String(
+                format: "%.2f", recoveryAudio.duration)
+            Log.debug(
+                "[Pipeline] Capture stop failed after terminal reset; retained \(recoveredDuration)s for explicit retry"
+            )
+        } else {
+            Log.debug(
+                "[Pipeline] Capture stop failed after terminal reset; no recoverable audio was available"
+            )
+        }
         let setupTask = audioSetupTask
         audioSetupTask = nil
         setupTask?.cancel()
@@ -1646,6 +1661,7 @@ public actor DictationPipeline: PipelineProviding {
         // forwarding owner after setup drains. No backend may observe PCM that
         // arrived after the user released the dictation key.
         var releasedAudioBuffer: AudioBuffer?
+        var failedCaptureRecovery: AudioBuffer?
         var captureStopFailed: Bool
         if let releaseCaptureStopOperation {
             switch await releaseCaptureStopOperation.task.value {
@@ -1655,6 +1671,8 @@ public actor DictationPipeline: PipelineProviding {
             case .failure(let error):
                 Log.debug("[Pipeline] Failed to stop audio at release: \(error)")
                 releasedAudioBuffer = nil
+                failedCaptureRecovery =
+                    (error as? AudioCaptureError)?.recoverableAudioBuffer
                 captureStopFailed = true
             }
         } else {
@@ -1671,6 +1689,7 @@ public actor DictationPipeline: PipelineProviding {
         if captureStopFailed {
             await handleCaptureStopFailure(
                 sessionID: session.id,
+                recoveryAudio: failedCaptureRecovery,
                 streamingProvider: streamingProvider)
             return
         }
@@ -1733,9 +1752,18 @@ public actor DictationPipeline: PipelineProviding {
                     ))
             }
 
-            // Stop audio and reset immediately if release did not already do so.
-            if releasedAudioBuffer == nil {
-                _ = try? await audioProvider.stopRecording(owner: captureOwner)
+            // Stop audio and preserve the exact debug capture even when the
+            // silence gate intentionally skips recognition. This makes false
+            // silence classifications diagnosable without changing Release.
+            let silentAudioBuffer: AudioBuffer?
+            if let releasedAudioBuffer {
+                silentAudioBuffer = releasedAudioBuffer
+            } else {
+                silentAudioBuffer = try? await audioProvider.stopRecording(
+                    owner: captureOwner)
+            }
+            if let silentAudioBuffer, !silentAudioBuffer.data.isEmpty {
+                saveCapturedSample(wav: silentAudioBuffer.data)
             }
             await resetOwnedSession(session.id)
             return
@@ -1843,12 +1871,15 @@ public actor DictationPipeline: PipelineProviding {
                 releasedAudioBuffer = audioBuffer
             case .failure(let error):
                 Log.debug("[Pipeline] Failed to drain late capture: \(error)")
+                failedCaptureRecovery =
+                    (error as? AudioCaptureError)?.recoverableAudioBuffer
                 captureStopFailed = true
             }
         }
         if captureStopFailed {
             await handleCaptureStopFailure(
                 sessionID: session.id,
+                recoveryAudio: failedCaptureRecovery,
                 streamingProvider: streamingProvider)
             return
         }
@@ -1971,6 +2002,11 @@ public actor DictationPipeline: PipelineProviding {
                 }
                 return
             }
+
+            // Capture before any silence gate or transcription work so debug
+            // sessions retain the exact original even when recognition fails.
+            // The helper is compiled to a no-op in Release builds.
+            saveCapturedSample(wav: audioBuffer.data)
 
             // Early silence check: use the peak RMS tracked during
             // recording to reject silent presses immediately, before
@@ -2787,7 +2823,6 @@ public actor DictationPipeline: PipelineProviding {
             }
             Log.debug(
                 "[Pipeline] Local dictation resolved (\(result.utf8.count) bytes)")
-            saveCapturedSample(wav: audioBuffer.data)
             return result
         } catch {
             Log.debug("[Pipeline] Local finishStreaming failed: \(error)")
@@ -3136,7 +3171,7 @@ public actor DictationPipeline: PipelineProviding {
         }
     }
 
-    /// Debug-only capture: save every local dictation's audio to a durable
+    /// Debug-only capture: save every dictation's audio to a durable
     /// directory so recordings are never lost — no flag to forget, and not a
     /// temporary directory that a reboot wipes. A test run is skipped so
     /// harness audio can never pollute or overwrite real recordings.

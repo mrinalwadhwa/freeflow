@@ -6,9 +6,22 @@ import Foundation
 /// provider type.
 public protocol AudioInputDeviceSnapshotProviding: AnyObject {
     var selectedDeviceID: UInt32? { get }
+    /// Concrete device to pin for capture. In auto-detect mode this may differ
+    /// from the unstable system default (for example, unworn AirPods).
+    var captureDeviceID: UInt32? { get }
     func clearSelection()
+    /// Clear a vanished explicit device while capture already owns its engine
+    /// transition lock. This must not synchronously call back into capture.
+    func clearUnavailableCaptureSelection()
+    func waitUntilInputDeviceSettled() async throws
     func micProximityForDevice(_ deviceID: UInt32?) -> MicProximity
     func deviceNameForDevice(_ deviceID: UInt32?) -> String?
+}
+
+extension AudioInputDeviceSnapshotProviding {
+    public var captureDeviceID: UInt32? { selectedDeviceID }
+    public func clearUnavailableCaptureSelection() { clearSelection() }
+    public func waitUntilInputDeviceSettled() async throws {}
 }
 
 /// Receives a request to rebuild the capture engine after a device change. The
