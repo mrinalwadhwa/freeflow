@@ -58,6 +58,7 @@ ci InjectionErrorTerminalTests
 ci InjectionPlannerTests
 ci InsertVocativeCommaTests
 ci LeadingSpaceTests
+ci LocalListFormattingPipelineTests
 ci LocalModelManagerTests
 ci LocalModelRuntimeTests
 ci LocalStreamingPreprocessingTests
@@ -121,6 +122,7 @@ ci SerializedConverterOwnershipTests
 ci SerializedTextInjectorTests
 ci SettingsTests
 ci ShortcutConfigurationTests
+ci SoundFeedbackOperationGuardTests
 ci StrategySelectionTests
 ci StreamingFinishOperationTests
 ci StreamingPipelineTests
