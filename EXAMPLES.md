@@ -5,7 +5,7 @@ own. Incognito runs entirely on your Mac. Cloud sends audio to OpenAI and can
 make broader edits because it uses a larger language model.
 
 Both modes support the list, filler, punctuation, paragraph, and number
-patterns below. Cloud can also remove rejected thoughts and infer lists
+patterns below. Cloud can also apply explicit corrections and infer lists
 without spoken numbering. Results can still vary with the microphone,
 background noise, and how clearly a phrase is spoken.
 
@@ -85,11 +85,10 @@ It costs $99.99.
 
 ## Requires Cloud mode
 
-Use Cloud when you want Unramble to edit the thought as well as the transcript.
-Cloud can discard replaced words and infer structure without explicit list
-markers. Incognito stays more literal. If a Cloud rewrite fails Unramble's
-safety checks, the app keeps the transcript instead of risking lost or
-invented words.
+Use Cloud when you want Unramble to apply a correction or infer structure from
+the words you spoke. Incognito stays more literal. If a Cloud rewrite fails
+Unramble's safety checks, the app keeps the transcript instead of risking lost
+or invented words.
 
 Press `Ctrl + Shift + M` before dictating to switch modes.
 
@@ -106,17 +105,22 @@ UNRAMBLE WRITES
 The meeting is at 3 PM tomorrow.
 ```
 
-### Drop an abandoned start
+### Turn a spoken sequence into steps
 
-Cloud can also discard a longer abandoned thought. Reject the old thought with
-`actually no` or `no wait`, then say the replacement.
+Cloud can recognize an ordered sequence even when you connect each action with
+`and then`. It keeps every action and formats the sequence as steps.
 
 ```text
 YOU SAY
-I was thinking we could ship on Friday, but actually no, let's keep it on Monday so we have a buffer.
+We need to update the database and then run the migrations and then restart the service and then verify that everything is working and then notify the team.
 
 UNRAMBLE WRITES
-Let's keep it on Monday, so we have a buffer.
+We need to:
+1. Update the database
+2. Run the migrations
+3. Restart the service
+4. Verify that everything is working
+5. Notify the team
 ```
 
 ### Infer an unordered list
