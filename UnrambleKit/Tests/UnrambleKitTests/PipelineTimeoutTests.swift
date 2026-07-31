@@ -645,10 +645,13 @@ final class PipelineTimeoutTests: XCTestCase {
     /// explicit failure for the missed capture rather than silently going idle.
     func testQuickReleaseBeforeAudioSetupCompletes() async {
         let streaming = HangingStreamingDictationProvider()
-        streaming.startDelay = 0.3  // Slow but not hanging
+        let audio = makeStreamingAudioProvider()
+        audio.stubbedStartDelay = 0.3  // Slow but not hanging
         let dictation = MockBatchProvider(stubbedText: "Quick release")
         let (pipeline, _, _, _, _, coordinator) = makePipeline(
-            batchProvider: dictation, streamingProvider: streaming,
+            audioProvider: audio,
+            batchProvider: dictation,
+            streamingProvider: streaming,
             streamingSetupTimeoutOverride: 2.0)
 
         await pipeline.activate()
