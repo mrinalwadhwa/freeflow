@@ -17,7 +17,8 @@ struct MLXPolishClientTests {
         MLXPolishClient(
             engine: engine,
             timeoutSeconds: timeoutSeconds,
-            unloadAfterCompletion: unloadAfterCompletion)
+            unloadAfterCompletion: unloadAfterCompletion,
+            clearCache: {})
     }
 
     // MARK: - Basic completion

@@ -12,15 +12,18 @@ public struct MLXPolishClient: PolishChatClient {
     private let engine: any LocalLLMEngine
     private let timeoutSeconds: TimeInterval
     private let unloadAfterCompletion: Bool
+    private let clearCache: @Sendable () -> Void
 
     public init(
         engine: any LocalLLMEngine,
         timeoutSeconds: TimeInterval = 10,
-        unloadAfterCompletion: Bool = false
+        unloadAfterCompletion: Bool = false,
+        clearCache: @escaping @Sendable () -> Void = { Memory.clearCache() }
     ) {
         self.engine = engine
         self.timeoutSeconds = timeoutSeconds
         self.unloadAfterCompletion = unloadAfterCompletion
+        self.clearCache = clearCache
     }
 
     public func complete(
@@ -84,7 +87,7 @@ public struct MLXPolishClient: PolishChatClient {
     private func releaseEngineIfNeeded() async {
         guard unloadAfterCompletion else { return }
         await engine.unload()
-        Memory.clearCache()
+        clearCache()
         Log.debug("[MLXPolish] Released LLM engine after completion")
     }
 
