@@ -9,6 +9,10 @@ actor AsyncSerialOperationQueue {
     func run<Value: Sendable>(
         _ operation: @escaping @Sendable () async throws -> Value
     ) async throws -> Value {
+        // An unstructured Task created by an already-cancelled caller does not
+        // reliably inherit that cancellation. Reject before creating the queue
+        // entry so a caller cancelled prior to actor admission cannot run.
+        try Task.checkCancellation()
         let predecessor = tail
         let task = Task<Value, Error> {
             await predecessor?.value
