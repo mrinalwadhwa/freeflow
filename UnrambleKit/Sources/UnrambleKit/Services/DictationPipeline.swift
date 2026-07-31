@@ -777,7 +777,13 @@ public actor DictationPipeline: PipelineProviding {
         if captureBoundary?.sessionID == sessionID {
             captureBoundary = nil
         }
-        if captureStopOperation?.sessionID == sessionID {
+        // A cancellation drain may have retained this stop while completion
+        // releases its own resources. Keep the actor-visible owner until the
+        // drain finishes so late setup work joins it instead of stopping the
+        // same capture a second time.
+        if cancellationDrain == nil,
+            captureStopOperation?.sessionID == sessionID
+        {
             captureStopOperation = nil
         }
     }
