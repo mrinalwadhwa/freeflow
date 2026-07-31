@@ -41,7 +41,7 @@ struct DictationCompositionFactoryTests {
         for (directory, file) in [
             ("qwen3-0.6b-4bit", "model.safetensors"),
             (
-                "qwen3-0.6b-4bit-polish-adapter",
+                "qwen3-0.6b-4bit-list-adapter",
                 "adapters.safetensors"
             ),
             (
@@ -71,6 +71,9 @@ struct DictationCompositionFactoryTests {
         #expect(
             composition.localRuntime?.sttEngine.name
                 == "Cohere Transcribe 03-2026 MLX")
+        #expect(
+            composition.localRuntime?.llmEngine.name
+                == "Qwen3 0.6B List Formatter")
     }
     #endif
 

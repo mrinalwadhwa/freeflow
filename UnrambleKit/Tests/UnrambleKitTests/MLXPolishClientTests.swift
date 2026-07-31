@@ -11,9 +11,13 @@ struct MLXPolishClientTests {
 
     private func makeClient(
         engine: MockLocalLLMEngine,
-        timeoutSeconds: TimeInterval = 10
+        timeoutSeconds: TimeInterval = 10,
+        unloadAfterCompletion: Bool = false
     ) -> MLXPolishClient {
-        MLXPolishClient(engine: engine, timeoutSeconds: timeoutSeconds)
+        MLXPolishClient(
+            engine: engine,
+            timeoutSeconds: timeoutSeconds,
+            unloadAfterCompletion: unloadAfterCompletion)
     }
 
     // MARK: - Basic completion
@@ -112,16 +116,49 @@ struct MLXPolishClientTests {
         #expect(result == "")
     }
 
+    @Test("List-only client unloads after every completion")
+    func unloadsAfterEveryCompletion() async throws {
+        let engine = MockLocalLLMEngine()
+        engine.stubbedIsReady = false
+        engine.stubbedCompletion = "First result"
+        let client = makeClient(
+            engine: engine, unloadAfterCompletion: true)
+
+        let first = try await client.complete(
+            model: "ignored", systemPrompt: "system", userPrompt: "first")
+        engine.stubbedCompletion = "Second result"
+        let second = try await client.complete(
+            model: "ignored", systemPrompt: "system", userPrompt: "second")
+
+        #expect(first == "First result")
+        #expect(second == "Second result")
+        #expect(engine.loadCallCount == 2)
+        #expect(engine.completeCallCount == 2)
+        #expect(engine.unloadCallCount == 2)
+        #expect(!engine.isReady)
+    }
+
+    @Test("List-only client unloads after a failed load")
+    func unloadsAfterFailedLoad() async {
+        let engine = MockLocalLLMEngine()
+        engine.stubbedIsReady = false
+        engine.stubbedLoadError = LocalModelError.modelNotFound("test")
+        let client = makeClient(
+            engine: engine, unloadAfterCompletion: true)
+
+        await #expect(throws: LocalModelError.self) {
+            try await client.complete(
+                model: "ignored", systemPrompt: "system", userPrompt: "hello")
+        }
+
+        #expect(engine.unloadCallCount == 1)
+        #expect(!engine.isReady)
+    }
+
     // MARK: - Timeout
 
     @Test("Returns empty string on timeout")
     func returnsEmptyOnTimeout() async throws {
-        let engine = MockLocalLLMEngine()
-        engine.stubbedCompletion = "Hello, world."
-        let client = makeClient(engine: engine, timeoutSeconds: 0.05)
-
-        // Make the engine slow by injecting a delay via a custom stub.
-        // We'll use a separate slow engine for this.
         let slowEngine = SlowMockLLMEngine(delay: 1.0)
         let slowClient = MLXPolishClient(engine: slowEngine, timeoutSeconds: 0.05)
 

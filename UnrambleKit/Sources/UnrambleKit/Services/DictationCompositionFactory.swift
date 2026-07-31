@@ -28,7 +28,7 @@ public enum DictationCompositionFactory {
     }
 
     #if arch(arm64)
-    /// Local composition: on-device STT with fine-tuned MLX LLM polish.
+    /// Local composition: on-device Cohere STT with a lazy Qwen list formatter.
     /// Terminates with `fatalError` when a required model directory is missing,
     /// so a corrupt or incomplete install fails loudly at launch.
     public static func makeLocal(
@@ -43,12 +43,13 @@ public enum DictationCompositionFactory {
             fatalError("Required local model is missing: qwen3-0.6b-4bit")
         }
         guard let adapterPath = modelManager.resolveModelDirectory(
-            modelID: "qwen3-0.6b-4bit-polish-adapter", file: "adapters.safetensors",
+            modelID: "qwen3-0.6b-4bit-list-adapter",
+            file: "adapters.safetensors",
             bundledModelsRoot: bundledModelsRoot)
         else {
             fatalError(
                 "Required local model is missing: "
-                    + "qwen3-0.6b-4bit-polish-adapter")
+                    + "qwen3-0.6b-4bit-list-adapter")
         }
         guard let coherePath = modelManager.resolveModelDirectory(
             modelID: "cohere-transcribe-03-2026-mlx-4bit",
@@ -63,17 +64,21 @@ public enum DictationCompositionFactory {
             modelDirectory: URL(
                 fileURLWithPath: coherePath, isDirectory: true))
         let llmEngine = MLXLLMEngine(
-            name: "Qwen3 0.6B Polish",
+            name: "Qwen3 0.6B List Formatter",
             modelDirectory: URL(
                 fileURLWithPath: qwenModelPath, isDirectory: true),
             adapterDirectory: URL(
                 fileURLWithPath: adapterPath, isDirectory: true))
-        let polisher: any PolishChatClient = MLXPolishClient(engine: llmEngine)
+        let polisher: any PolishChatClient = MLXPolishClient(
+            engine: llmEngine,
+            unloadAfterCompletion: true)
         let runtime = LocalModelRuntime(
-            sttEngine: sttEngine, llmEngine: llmEngine)
+            sttEngine: sttEngine, llmEngine: llmEngine, preloadLLM: false)
         let backend: DictationBackend = .local(
             streaming: LocalStreamingProvider(
-                sttEngine: sttEngine, polishChatClient: polisher,
+                sttEngine: sttEngine,
+                polishChatClient: nil,
+                listFormattingChatClient: polisher,
                 cycleInterval: cycleInterval,
                 unitPolicy: localUnitPolicy,
                 polishBatchTokenLimit: 256,
@@ -85,9 +90,9 @@ public enum DictationCompositionFactory {
     }
     #endif
 
-    // Cohere already returns coherent, punctuated text. Close work often
-    // enough to hide Qwen latency while the user keeps speaking;
-    // sentence-aware batching keeps this audio boundary out of Qwen.
+    // Cohere preserves context across the whole dictation. Bound individual
+    // formatting units so the narrow list detector never sends an unbounded
+    // transcript to Qwen.
     static let localUnitPolicy = LocalUnitPolicy(maximumUnitSeconds: 90)
 
     /// Resolve the streaming cycle interval, honoring a positive

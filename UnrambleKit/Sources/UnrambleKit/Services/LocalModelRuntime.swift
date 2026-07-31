@@ -9,6 +9,7 @@ public actor LocalModelRuntime {
     public nonisolated let sttEngine: any LocalSTTEngine
     public nonisolated let llmEngine: any LocalLLMEngine
 
+    private let preloadLLM: Bool
     private var sttLoadTask: Task<Void, Error>?
     private var llmLoadTask: Task<Void, Error>?
     private var preloadTask: Task<Void, Error>?
@@ -17,10 +18,12 @@ public actor LocalModelRuntime {
 
     public init(
         sttEngine: any LocalSTTEngine,
-        llmEngine: any LocalLLMEngine
+        llmEngine: any LocalLLMEngine,
+        preloadLLM: Bool = true
     ) {
         self.sttEngine = sttEngine
         self.llmEngine = llmEngine
+        self.preloadLLM = preloadLLM
     }
 
     /// Start or join this generation's single retained preload task.
@@ -35,10 +38,10 @@ public actor LocalModelRuntime {
             task = preloadTask
         } else {
             let sttTask = startSTTLoad()
-            let llmTask = startLLMLoad()
+            let llmTask = preloadLLM ? startLLMLoad() : nil
             let created = Task.detached(priority: .utility) {
                 try await sttTask.value
-                try await llmTask.value
+                try await llmTask?.value
             }
             preloadTask = created
             task = created

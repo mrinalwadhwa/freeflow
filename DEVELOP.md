@@ -111,8 +111,8 @@ defaults:
 | `model` | `OpenAIFileTranscriber.swift` | `gpt-4o-mini-transcribe` | HTTP fallback transcription |
 
 The local Cohere and Qwen repository revisions, selected files, and hashes are
-pinned in `scripts/models.sh`. The fine-tuned adapter source is tracked at
-`UnrambleApp/ModelSources/qwen3-0.6b-4bit-polish-adapter`; rerun `make models`
+pinned in `scripts/models.sh`. The list-formatting adapter source is tracked at
+`UnrambleApp/ModelSources/qwen3-0.6b-4bit-list-adapter`; rerun `make models`
 after changing it so the generated pack receives the current adapter bytes.
 
 ### Rebuild

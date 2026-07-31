@@ -51,6 +51,18 @@ private func logTag() -> String {
     return "-" + tag
 }
 
+private func evalBreakMode() -> PolishPipeline.BreakMode {
+    let environment = ProcessInfo.processInfo.environment[
+        "UNRAMBLE_EVAL_BREAK_MODE"]
+    let flag = try? String(
+        contentsOfFile: "/tmp/unramble-test-break-mode",
+        encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return (flag ?? environment) == "structural"
+        ? .expandBeforeModel
+        : .commandsOnly
+}
+
 private func runMLXDump(
     name: String,
     modelDirectory: URL,
@@ -68,22 +80,24 @@ private func runMLXDump(
     let client = MLXPolishClient(engine: engine, timeoutSeconds: 30)
 
     let evalSet = evalScenarios()
-    log.log("=== \(name) (\(evalSet.count) scenarios) ===")
+    let breakMode = evalBreakMode()
+    log.log(
+        "=== \(name) (\(evalSet.count) scenarios, breakMode=\(breakMode)) ===")
     log.log("")
     var matches = 0
     var categoryStats: [String: (match: Int, total: Int)] = [:]
     for s in evalSet {
         do {
-            // Run the SHIPPING per-unit streaming polish path (breakMode
-            // .commandsOnly), so the content-loss / fabrication / number guards
-            // and raw-fallback apply — the batch default (.expandBeforeModel)
-            // skips them. Faithful to production for single-unit inputs.
+            // Default to the SHIPPING per-unit streaming polish path. The
+            // structural experiment deliberately keeps model-created line
+            // breaks and skips streaming-only fallback guards so we can tell
+            // model capability apart from production policy.
             let polished = await PolishPipeline.polish(
                 s.input,
                 chatClient: client,
                 tone: s.style,
                 precedingText: s.precedingText,
-                breakMode: .commandsOnly)
+                breakMode: breakMode)
             let result = PolishPipeline.stripTrailingFiller(polished)
             if let json = try? JSONSerialization.data(
                 withJSONObject: ["uid": s.category, "input": s.input, "output": result]),

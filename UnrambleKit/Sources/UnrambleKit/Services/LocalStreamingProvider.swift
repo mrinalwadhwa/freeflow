@@ -20,6 +20,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     private let sttEngine: any LocalStreamingRecognizer
     private let loadSTT: @Sendable () async throws -> Void
     private let polishChatClient: (any PolishChatClient)?
+    private let listFormattingChatClient: (any PolishChatClient)?
     private let polishModel: String
     private let cycleInterval: TimeInterval
     private let unitPolicy: LocalUnitPolicy
@@ -102,6 +103,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     public init(
         sttEngine: any LocalStreamingRecognizer,
         polishChatClient: (any PolishChatClient)?,
+        listFormattingChatClient: (any PolishChatClient)? = nil,
         polishModel: String = PolishPipeline.polishModel,
         cycleInterval: TimeInterval = 3,
         unitPolicy: LocalUnitPolicy = LocalUnitPolicy(),
@@ -112,6 +114,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         self.sttEngine = sttEngine
         self.loadSTT = loadSTT ?? { try await sttEngine.load() }
         self.polishChatClient = polishChatClient
+        self.listFormattingChatClient = listFormattingChatClient
         self.polishModel = polishModel
         self.cycleInterval = cycleInterval
         self.unitPolicy = unitPolicy
@@ -1392,11 +1395,22 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         let precedingText = preceding.isEmpty
             ? context.focusedFieldContent
             : preceding
+        let tone = PolishPipeline.toneLabel(for: context.bundleID)
+        if let listFormattingChatClient,
+            let formatted = await LocalListFormattingPipeline.formatIfSafe(
+                raw,
+                chatClient: listFormattingChatClient,
+                model: polishModel,
+                tone: tone,
+                precedingText: precedingText)
+        {
+            return formatted
+        }
         return await PolishPipeline.polish(
             raw,
             chatClient: polishChatClient,
             model: polishModel,
-            tone: PolishPipeline.toneLabel(for: context.bundleID),
+            tone: tone,
             precedingText: precedingText,
             breakMode: .commandsOnly,
             finalFlush: finalFlush,

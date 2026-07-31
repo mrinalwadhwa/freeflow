@@ -446,7 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard !Task.isCancelled, let self,
                     self.localModelRuntime === runtime
                 else { return }
-                Log.debug("[AppDelegate] Models preloaded")
+                Log.debug("[AppDelegate] Required local preload complete")
             } catch {
                 guard !Task.isCancelled, let self,
                     self.localModelRuntime === runtime

@@ -52,7 +52,11 @@ let package = Package(
         ),
         .testTarget(
             name: "UnrambleKitTests",
-            dependencies: ["UnrambleKit", "UnrambleKitTestSupport"],
+            dependencies: [
+                "UnrambleKit",
+                "UnrambleKitTestSupport",
+                .product(name: "MLX", package: "mlx-swift"),
+            ],
             path: "Tests/UnrambleKitTests"
         ),
         .testTarget(

@@ -1,14 +1,17 @@
-# Training and test data for the polish model
+# Training and test data for the Qwen models
 
 Unramble cleans up dictated text with a small on-device model: Qwen3 0.6B plus a
-LoRA fine-tuning adapter. This folder holds the data and settings that produce
-that model, and the data that tests it.
+LoRA fine-tuning adapter. This folder holds the current conservative polish
+recipe and the data that tests it.
 
 ## Polish model
 
-The shipped adapter is committed under
+The conservative polish adapter is committed under
 `UnrambleApp/ModelSources/qwen3-0.6b-4bit-polish-adapter/`. It fine-tunes the
-base Qwen3 0.6B model on the examples in this folder.
+base Qwen3 0.6B model on the examples in this folder. The app's list-only path
+uses the separately preserved broader adapter at
+`UnrambleApp/ModelSources/qwen3-0.6b-4bit-list-adapter/`; this folder does not
+contain the exact historical data needed to reproduce those weights.
 
 - `train.jsonl`, `valid.jsonl` — the fine-tuning examples. Each line is a
   `{"messages": [system, user, assistant]}` pair: raw dictation in, cleaned text

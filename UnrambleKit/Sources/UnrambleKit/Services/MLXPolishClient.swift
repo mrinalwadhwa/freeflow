@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 
 /// On-device LLM polish client using a local engine.
 ///
@@ -10,10 +11,16 @@ public struct MLXPolishClient: PolishChatClient {
 
     private let engine: any LocalLLMEngine
     private let timeoutSeconds: TimeInterval
+    private let unloadAfterCompletion: Bool
 
-    public init(engine: any LocalLLMEngine, timeoutSeconds: TimeInterval = 10) {
+    public init(
+        engine: any LocalLLMEngine,
+        timeoutSeconds: TimeInterval = 10,
+        unloadAfterCompletion: Bool = false
+    ) {
         self.engine = engine
         self.timeoutSeconds = timeoutSeconds
+        self.unloadAfterCompletion = unloadAfterCompletion
     }
 
     public func complete(
@@ -28,6 +35,24 @@ public struct MLXPolishClient: PolishChatClient {
 
     public func complete(
         model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        temperature: Double
+    ) async throws -> String {
+        do {
+            let text = try await completeKeepingEngineLoaded(
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                temperature: temperature)
+            await releaseEngineIfNeeded()
+            return text
+        } catch {
+            await releaseEngineIfNeeded()
+            throw error
+        }
+    }
+
+    private func completeKeepingEngineLoaded(
         systemPrompt: String,
         userPrompt: String,
         temperature: Double
@@ -54,6 +79,13 @@ public struct MLXPolishClient: PolishChatClient {
 
         guard let text = result, !text.isEmpty else { return "" }
         return text
+    }
+
+    private func releaseEngineIfNeeded() async {
+        guard unloadAfterCompletion else { return }
+        await engine.unload()
+        Memory.clearCache()
+        Log.debug("[MLXPolish] Released LLM engine after completion")
     }
 
     /// Strip `<think>...</think>` reasoning blocks that some models

@@ -490,6 +490,103 @@ struct LocalStreamingProviderTests {
         #expect(polishClient.completeCallCount == 1)
     }
 
+    @Test("Routes only a list candidate through the structural formatter")
+    func formatsListCandidate() async throws {
+        let engine = ScriptedRecognizer(
+            transcription:
+                "Please order five monitors, three keyboards, and ten mice.")
+        let listClient = StreamingMockPolishClient()
+        listClient.stubbedResult = """
+            Please order:
+            - 5 monitors
+            - 3 keyboards
+            - 10 mice
+            """
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            listFormattingChatClient: listClient)
+
+        let sessionID = try await startSession(provider)
+        try await provider.sendAudio(makePCM(), sessionID: sessionID)
+        let result = try await provider.finishStreaming(sessionID: sessionID)
+
+        #expect(result.contains("\n- 5 monitors"))
+        #expect(listClient.completeCallCount == 1)
+    }
+
+    @Test("Formats a spoken new-line ordinal list without losing commands")
+    func formatsSpokenNewLineList() async throws {
+        let engine = ScriptedRecognizer(
+            transcription: "Here are the action items. New line. "
+                + "First, review the security report. New line second, "
+                + "update the dependencies. New line third, schedule the "
+                + "deploy for Friday.")
+        let listClient = StreamingMockPolishClient()
+        listClient.stubbedResult = """
+            Here are the action items.
+            1. Review the security report.
+            2. Update the dependencies.
+            3. Schedule the deploy for Friday.
+            """
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            listFormattingChatClient: listClient)
+
+        let sessionID = try await startSession(provider)
+        try await provider.sendAudio(makePCM(), sessionID: sessionID)
+        let result = try await provider.finishStreaming(sessionID: sessionID)
+
+        #expect(result.contains("\n1. Review the security report"))
+        #expect(!result.localizedCaseInsensitiveContains("new line"))
+        #expect(listClient.completeCallCount == 1)
+    }
+
+    @Test("Does not load the list formatter for ordinary dictation")
+    func bypassesListFormatterForProse() async throws {
+        let engine = ScriptedRecognizer(
+            transcription: "The deployment went smoothly.")
+        let listClient = StreamingMockPolishClient()
+        listClient.stubbedResult = "This should not be used."
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            listFormattingChatClient: listClient)
+
+        let sessionID = try await startSession(provider)
+        try await provider.sendAudio(makePCM(), sessionID: sessionID)
+        let result = try await provider.finishStreaming(sessionID: sessionID)
+
+        #expect(result == "The deployment went smoothly.")
+        #expect(listClient.completeCallCount == 0)
+    }
+
+    @Test("Falls back to Cohere when a proposed list fails validation")
+    func rejectsUnsafeListFormatting() async throws {
+        let source =
+            "Please order five monitors, three keyboards, and ten mice."
+        let engine = ScriptedRecognizer(transcription: source)
+        let listClient = StreamingMockPolishClient()
+        listClient.stubbedResult = """
+            Please order:
+            - 5 monitors
+            - 3 keyboards
+            - 10 trackpads
+            """
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            listFormattingChatClient: listClient)
+
+        let sessionID = try await startSession(provider)
+        try await provider.sendAudio(makePCM(), sessionID: sessionID)
+        let result = try await provider.finishStreaming(sessionID: sessionID)
+
+        #expect(result == source)
+        #expect(listClient.completeCallCount == 1)
+    }
+
     // MARK: - One final transcript
 
     @Test("Returns the whole transcript as one final result")

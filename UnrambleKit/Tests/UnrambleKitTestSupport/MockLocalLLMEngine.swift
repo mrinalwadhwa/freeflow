@@ -12,6 +12,7 @@ public final class MockLocalLLMEngine: LocalLLMEngine, @unchecked Sendable {
     private var _completeCallCount: Int = 0
     private var _receivedPrompts: [(system: String, user: String)] = []
     private var _loadCallCount: Int = 0
+    private var _unloadCallCount: Int = 0
 
     public let name = "MockLLM"
 
@@ -46,6 +47,11 @@ public final class MockLocalLLMEngine: LocalLLMEngine, @unchecked Sendable {
         lock.withLock { _loadCallCount }
     }
 
+    /// Number of times `unload()` has been called.
+    public var unloadCallCount: Int {
+        lock.withLock { _unloadCallCount }
+    }
+
     public init() {}
 
     public func load() async throws {
@@ -58,7 +64,10 @@ public final class MockLocalLLMEngine: LocalLLMEngine, @unchecked Sendable {
     }
 
     public func unload() async {
-        lock.withLock { stubbedIsReady = false }
+        lock.withLock {
+            _unloadCallCount += 1
+            stubbedIsReady = false
+        }
     }
 
     public func complete(
@@ -79,6 +88,7 @@ public final class MockLocalLLMEngine: LocalLLMEngine, @unchecked Sendable {
             _completeCallCount = 0
             _receivedPrompts.removeAll()
             _loadCallCount = 0
+            _unloadCallCount = 0
             stubbedError = nil
             stubbedLoadError = nil
             stubbedIsReady = true

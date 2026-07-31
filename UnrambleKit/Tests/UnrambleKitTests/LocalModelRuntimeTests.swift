@@ -38,6 +38,24 @@ struct LocalModelRuntimeTests {
         await runtime.shutdown()
     }
 
+    @Test("List-only runtime preloads STT but leaves Qwen lazy")
+    func listOnlyPreloadLeavesLLMLazy() async throws {
+        let trace = EventTrace()
+        let stt = ControlledModelEngine(name: "stt", trace: trace)
+        let llm = ControlledModelEngine(name: "llm", trace: trace)
+        let runtime = LocalModelRuntime(
+            sttEngine: stt, llmEngine: llm, preloadLLM: false)
+
+        try await runtime.preload()
+
+        #expect(stt.loadCallCount == 1)
+        #expect(llm.loadCallCount == 0)
+        #expect(stt.isReady)
+        #expect(!llm.isReady)
+
+        await runtime.shutdown()
+    }
+
     @Test("Preload and first use share one STT load")
     func preloadSharesFirstUseSTTLoad() async throws {
         let trace = EventTrace()

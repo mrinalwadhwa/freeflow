@@ -3,8 +3,8 @@ import Testing
 
 @testable import UnrambleKit
 
-// Replay a saved WAV through the REAL on-device streaming path — Nemotron
-// incremental STT, pause/size units, per-unit Qwen polish accumulated
+// Replay a saved WAV through the real on-device streaming path — local
+// incremental STT, pause/size units, optional Qwen formatting accumulated
 // internally — and reconstruct the text that would land in the editor from
 // the single injection at release, using AppTextInjector's spacing rules.
 // This reproduces offline what a live dictation produces, which batch replay
@@ -27,6 +27,10 @@ import Testing
 //   /tmp/unramble-replay-stt      `nemotron` or `cohere-mlx`
 //   /tmp/unramble-replay-polish-token-limit optional estimated-token limit;
 //                                 Cohere defaults to the production value, 256
+//   /tmp/unramble-replay-list-only use the production list-only Qwen path;
+//                                 ordinary Cohere text bypasses Qwen
+//   /tmp/unramble-replay-single-pass skip the redundant independent raw STT
+//                                 baseline during exhaustive pipeline replay
 //
 // Output: /tmp/unramble-streaming-replay.log — the reconstructed editor text
 // and an independent whole-file raw STT baseline.
@@ -86,6 +90,10 @@ struct StreamingReplay {
         }
         let modelManager = LocalModelManager(modelsDirectory: modelsDir)
         let sttMode = readFlag("/tmp/unramble-replay-stt") ?? "nemotron"
+        let listOnly = FileManager.default.fileExists(
+            atPath: "/tmp/unramble-replay-list-only")
+        let singlePass = FileManager.default.fileExists(
+            atPath: "/tmp/unramble-replay-single-pass")
         let polishTokenLimit = Int(
             readFlag("/tmp/unramble-replay-polish-token-limit") ?? "")
             ?? (sttMode == "cohere-mlx" ? 256 : nil)
@@ -106,8 +114,10 @@ struct StreamingReplay {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let forceBase = FileManager.default.fileExists(
             atPath: "/tmp/unramble-replay-no-adapter")
-        let packAdapter = modelManager.modelPath(
-            for: "qwen3-0.6b-4bit-polish-adapter")
+        let adapterName = listOnly
+            ? "qwen3-0.6b-4bit-list-adapter"
+            : "qwen3-0.6b-4bit-polish-adapter"
+        let packAdapter = modelManager.modelPath(for: adapterName)
         let adapterURL: URL?
         if let customAdapter, !customAdapter.isEmpty {
             adapterURL = URL(fileURLWithPath: customAdapter, isDirectory: true)
@@ -131,38 +141,79 @@ struct StreamingReplay {
             engine: engine, timeoutSeconds: polishTimeout)
 
         let log = ReplayLog(path: "/tmp/unramble-streaming-replay.log")
-        log.log("=== streaming replay (\(wavs.count) files, stt=\(sttMode), adapter=\(hasAdapter), step=\(stepMS)ms, polishTimeout=\(polishTimeout)s, polishTokenLimit=\(polishTokenLimit.map(String.init) ?? "none")) ===\n")
+        log.log("=== streaming replay (\(wavs.count) files, stt=\(sttMode), adapter=\(hasAdapter), listOnly=\(listOnly), singlePass=\(singlePass), step=\(stepMS)ms, polishTimeout=\(polishTimeout)s, polishTokenLimit=\(polishTokenLimit.map(String.init) ?? "none")) ===\n")
 
         for name in wavs {
-            let wav = try Data(contentsOf: dir.appendingPathComponent(name))
-            guard wav.count > 44 else { continue }
-            let pcm = wav.subdata(in: WAVEncoder.headerSize..<wav.count)
-            let rawTranscript = try LocalRecognitionFixtureSupport.recognize(
-                wavData: wav, using: recognizer)
+            let wav: Data
+            let fixture: WAVFixture
+            let rawTranscript: String
+            do {
+                wav = try Data(contentsOf: dir.appendingPathComponent(name))
+                fixture = try WAVFixture(data: wav)
+                guard fixture.sampleRate == 16_000,
+                    fixture.channels == 1,
+                    fixture.bitsPerSample == 16
+                else {
+                    throw ReplayFailure.unsupportedAudio(
+                        sampleRate: fixture.sampleRate,
+                        channels: fixture.channels,
+                        bitsPerSample: fixture.bitsPerSample)
+                }
+                rawTranscript = singlePass
+                    ? ""
+                    : try LocalRecognitionFixtureSupport.recognize(
+                        wavData: fixture.canonicalWAV, using: recognizer)
+            } catch {
+                log.log(
+                    "[[ERROR]] {\"wav\":\"\(jsonEscape(name))\","
+                        + "\"stage\":\"load-or-stt\","
+                        + "\"error\":\"\(jsonEscape(String(describing: error)))\"}")
+                continue
+            }
 
             // The recognizer is deterministic, so the raw STT is fixed; polish
             // is not, so repeat to measure its run-to-run error rate. Each run
             // uses a fresh provider. Production injects the whole result once at
             // release, so the editor is reconstructed from that single result.
             for run in 0..<repeats {
-                Log.debug("[[WAV]] \(name)")
-                let provider = LocalStreamingProvider(
-                    sttEngine: recognizer, polishChatClient: client,
-                    cycleInterval: Double(stepMS) / 1000,
-                    unitPolicy: policy,
-                    polishBatchTokenLimit: polishTokenLimit)
-                let result = try await provider.replayForTesting(pcm)
+                do {
+                    Log.debug("[[WAV]] \(name)")
+                    let provider = LocalStreamingProvider(
+                        sttEngine: recognizer,
+                        polishChatClient: listOnly ? nil : client,
+                        listFormattingChatClient: listOnly ? client : nil,
+                        cycleInterval: Double(stepMS) / 1000,
+                        unitPolicy: policy,
+                        polishBatchTokenLimit: polishTokenLimit)
+                    let result = try await provider.replayForTesting(fixture.pcm)
 
-                var editor = ""
-                Self.appendChunk(result, to: &editor)
-                let editorText = editor.trimmingCharacters(in: .whitespaces)
+                    var editor = ""
+                    Self.appendChunk(result, to: &editor)
+                    let editorText = editor.trimmingCharacters(in: .whitespaces)
+                    let comparisonSource = rawTranscript.isEmpty
+                        ? editorText : rawTranscript
+                    let candidate = LocalListFormattingPipeline.isCandidate(
+                        comparisonSource)
+                    let validated = rawTranscript.isEmpty
+                        ? false
+                        : LocalListFormattingPipeline.validates(
+                            source: rawTranscript, formatted: editorText)
 
-                // One machine-parseable record per run for offline scoring.
-                let record = "{\"wav\":\"\(name)\",\"run\":\(run)"
-                    + ",\"paras\":\(paragraphCount(editorText))"
-                    + ",\"stt\":\"\(jsonEscape(rawTranscript))\""
-                    + ",\"out\":\"\(jsonEscape(editorText))\"}"
-                log.log("[[RUN]] \(record)")
+                    // One machine-parseable record per run for offline scoring.
+                    let record = "{\"wav\":\"\(jsonEscape(name))\",\"run\":\(run)"
+                        + ",\"paras\":\(paragraphCount(editorText))"
+                        + ",\"candidate\":\(candidate)"
+                        + ",\"validatedList\":\(validated)"
+                        + ",\"baselineOmitted\":\(singlePass)"
+                        + ",\"stt\":\"\(jsonEscape(rawTranscript))\""
+                        + ",\"out\":\"\(jsonEscape(editorText))\"}"
+                    log.log("[[RUN]] \(record)")
+                } catch {
+                    log.log(
+                        "[[ERROR]] {\"wav\":\"\(jsonEscape(name))\","
+                            + "\"run\":\(run),\"stage\":\"streaming\","
+                            + "\"error\":\"\(jsonEscape(String(describing: error)))\"}")
+                }
             }
         }
 
@@ -220,6 +271,11 @@ struct StreamingReplay {
         }
         return nil
     }
+}
+
+private enum ReplayFailure: Error {
+    case unsupportedAudio(
+        sampleRate: Int, channels: Int, bitsPerSample: Int)
 }
 
 /// Make newlines visible in the log so break placement is unambiguous.
