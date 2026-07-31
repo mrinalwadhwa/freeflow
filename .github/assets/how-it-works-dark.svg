@@ -18,7 +18,7 @@
   <g font-family="Menlo, Monaco, monospace" text-anchor="middle">
     <text x="1020" y="157" fill="#eeeeee" font-size="36" font-weight="700">Incognito</text>
     <text x="1020" y="201" fill="#777777" font-size="27" letter-spacing="2">ON YOUR MAC</text>
-    <text x="1020" y="259" fill="#aaaaaa" font-size="29">Cohere Transcribe → Qwen3 0.6B</text>
+    <text x="1020" y="259" fill="#aaaaaa" font-size="29">Cohere Transcribe 03-2026 → Qwen3 0.6B</text>
     <text x="1020" y="451" fill="#eeeeee" font-size="36" font-weight="700">Cloud</text>
     <text x="1020" y="495" fill="#777777" font-size="27" letter-spacing="2">OVER THE INTERNET</text>
     <text x="1020" y="553" fill="#aaaaaa" font-size="29">gpt-4o-mini-transcribe → gpt-realtime</text>
