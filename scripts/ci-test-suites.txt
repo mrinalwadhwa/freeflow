@@ -12,6 +12,7 @@ ci AudioConfigurationChangePolicyTests
 ci AudioDeviceTests
 ci AudioEngineStartResetLedgerTests
 ci AudioForwardingOperationTests
+ci AudioInputDeviceTransitionGateTests
 ci AudioLevelAnalyzerTests
 ci AudioPreviewPreRollPublicationTests
 ci AudioProviderForceResetContractTests
@@ -84,6 +85,7 @@ ci NetworkGuardTests
 ci NoiseSoundsStillStrippedTests
 ci NormalizeFormattingTests
 ci NumberWordsSurviveTests
+ci NumericClockPunctuationTests
 ci OpenAIFileTranscriberStubbedTests
 ci OpenAIRealtimeCommitPolicyTests
 ci OpenAIRealtimeCommitSessionTests

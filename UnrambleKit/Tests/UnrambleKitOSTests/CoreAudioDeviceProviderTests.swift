@@ -38,18 +38,20 @@ struct CoreAudioDeviceProviderTests {
             defaults.count == 1, "Expected exactly one default input device, got \(defaults.count)")
     }
 
-    @Test("Current device returns the default when no selection is made")
-    func currentDeviceDefault() async {
+    @Test("Current device follows the automatic capture policy")
+    func currentDeviceAutoDetect() async {
         let provider = CoreAudioDeviceProvider()
         let devices = await provider.availableDevices()
 
         guard !devices.isEmpty else { return }
 
         let current = await provider.currentDevice()
-        #expect(current != nil, "Expected a current device")
+        let expectedID = CoreAudioDeviceProvider.preferredCaptureDeviceID(
+            devices: devices,
+            selectedDeviceID: nil)
         #expect(
-            current?.isDefault == true,
-            "Current device should be the default when nothing is selected")
+            current?.id == expectedID,
+            "Current device should match the automatic capture policy")
     }
 
     @Test("Select device changes current device")
@@ -83,7 +85,7 @@ struct CoreAudioDeviceProviderTests {
         }
     }
 
-    @Test("Clear selection reverts to system default")
+    @Test("Clear selection restores the automatic capture policy")
     func clearSelection() async throws {
         let provider = CoreAudioDeviceProvider()
         let devices = await provider.availableDevices()
@@ -99,9 +101,12 @@ struct CoreAudioDeviceProviderTests {
 
         provider.clearSelection()
         let afterClear = await provider.currentDevice()
+        let expectedID = CoreAudioDeviceProvider.preferredCaptureDeviceID(
+            devices: devices,
+            selectedDeviceID: nil)
         #expect(
-            afterClear?.isDefault == true,
-            "After clearing selection, current device should be the default")
+            afterClear?.id == expectedID,
+            "After clearing selection, current device should match the automatic capture policy")
     }
 
     @Test("selectedDeviceID reflects selection state")
