@@ -52,10 +52,6 @@ verify-models: $(MODEL_TOOL)
 verify-app-models: $(MODEL_TOOL)
 	@"$(MODEL_TOOL)" verify "$(APP_PATH)/Contents/Resources/models"
 
-# Train the LoRA adapter for the on-device polish model.
-train:
-	@cd training && python3 -u -m mlx_lm.lora --config lora-config.yaml
-
 # Build the app after an offline model-pack verification.
 build: verify-models $(PROJECT)
 	xcodebuild $(XCODE_FLAGS) -project $(PROJECT) -scheme $(SCHEME) \
@@ -64,14 +60,6 @@ build: verify-models $(PROJECT)
 # Build and launch
 run: build
 	@open "$$(xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIG) -showBuildSettings 2>/dev/null | grep -m1 ' BUILT_PRODUCTS_DIR' | awk '{print $$3}')/Unramble.app"
-
-# Generate the polish scenario test data the Swift tests load. Builds
-# training/polish-tests.json from the committed YAML in an isolated venv.
-test-data:
-	@$(PYTHON) -m venv .venv
-	@.venv/bin/pip install --quiet 'pyyaml>=6.0'
-	@.venv/bin/python training/generate_test_data.py
-	@echo "  training/polish-tests.json"
 
 # Run the default package selection with collision-free durable artifacts.
 test:

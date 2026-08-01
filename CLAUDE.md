@@ -41,14 +41,12 @@ you add, remove, or re-lane a suite, refresh the inventory with
 
 `make test-os` runs the `UnrambleKitOSTests` target, which holds the suites that touch real host resources — CoreAudio devices, CGEvent taps, the main run loop, and system sound files. They degrade gracefully when a resource is absent, so the lane is safe on a headless runner. Keeping them in a separate target leaves the default `UnrambleKitTests` target deterministic by construction.
 
-The default selection includes corpus-backed polish scenario tests and expects the ignored `training/polish-tests.json` file. Generate it from the committed YAML before the default or Keychain lane when starting from a clean checkout. The isolated environment below installs only the generator's PyYAML dependency, not the MLX training stack:
-
-```bash
-cd training
-python3 -m venv ../.scratch/polish-data-venv
-../.scratch/polish-data-venv/bin/pip install 'pyyaml>=6.0'
-../.scratch/polish-data-venv/bin/python generate_test_data.py
-```
+The full polish scenario corpus is private and, when available, lives at
+`.scratch/archive/local-only/training/polish-tests.json`. Scenario-backed suites
+are explicitly disabled when that file is absent, so a clean checkout can run
+the deterministic source-level suite without private evaluation or training
+data. Set `UNRAMBLE_EVAL_FILE` to point model-evaluation harnesses at another
+private scenario file.
 
 **Environment variable gates:**
 - `UNRAMBLE_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests and

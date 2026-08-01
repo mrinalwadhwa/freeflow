@@ -7,7 +7,9 @@ import Testing
 // Model-backed local evaluations live in the MLX-specific suites. Cloud polish
 // is exercised through the production Realtime audio path, not Chat Completions.
 
-@Suite("Polish Scenarios -- Stage 1 regex")
+@Suite(
+    "Polish Scenarios -- Stage 1 regex",
+    .disabled(if: allScenarios.isEmpty, "Private scenario corpus not present"))
 struct PolishScenarioRegexTests {
 
     @Test("dictated punctuation commands are substituted")
@@ -37,7 +39,9 @@ struct PolishScenarioRegexTests {
     }
 }
 
-@Suite("Polish Scenarios -- deterministic passthrough")
+@Suite(
+    "Polish Scenarios -- deterministic passthrough",
+    .disabled(if: allScenarios.isEmpty, "Private scenario corpus not present"))
 struct PolishScenarioDeterministicTests {
 
     @Test("wording-preservation inputs with punctuation pass through unchanged")

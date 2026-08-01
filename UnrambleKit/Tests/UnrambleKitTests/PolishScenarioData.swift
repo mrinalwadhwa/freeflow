@@ -3,8 +3,8 @@ import Foundation
 @testable import UnrambleKit
 
 // ---------------------------------------------------------------------------
-// Shared test data for all polish scenario tests. Scenarios are loaded from
-// polish-tests.json, generated from polish-tests.yaml by generate_test_data.py.
+// Shared test data for polish scenario tests. The complete scenario corpus is
+// private and loaded from the local-only archive when it is present.
 //
 // Each scenario has a category, raw dictation input, and one or more
 // acceptable polished outputs. Optional style and preceding_text fields
@@ -56,11 +56,9 @@ struct PolishScenario {
     }
 }
 
-/// All polish scenarios loaded from polish-tests.json.
-///
-/// The JSON file is generated from polish-tests.yaml (the source of
-/// truth) and lives in training/. Found by walking up from the test
-/// source file.
+/// All locally available private polish scenarios. Scenario-backed suites use
+/// an explicit disabled trait when this array is empty, avoiding vacuous tests
+/// on a clean public checkout.
 let allScenarios: [PolishScenario] = loadScenarios(from: "polish-tests.json")
 
 /// Load scenarios from a JSON file, applying environment-based filters.
@@ -68,9 +66,7 @@ let allScenarios: [PolishScenario] = loadScenarios(from: "polish-tests.json")
 /// - `UNRAMBLE_TEST_CATEGORIES=list,meeting` — run only these categories
 /// - `UNRAMBLE_TEST_NO_CASUAL=1` — exclude casual scenarios
 private func loadScenarios(from filename: String) -> [PolishScenario] {
-    guard let url = findTrainingFile(filename) else {
-        fatalError("\(filename) not found — walk up from \(#file)")
-    }
+    guard let url = findPrivateScenarioFile(filename) else { return [] }
     guard let data = try? Data(contentsOf: url),
           let entries = try? JSONDecoder().decode([ScenarioEntry].self, from: data)
     else {
@@ -150,13 +146,20 @@ private struct ScenarioEntry: Decodable {
     let preceding_text: String?
 }
 
-private func findTrainingFile(_ name: String) -> URL? {
-    var dir = URL(fileURLWithPath: #file)
-    for _ in 0..<10 {
-        dir = dir.deletingLastPathComponent()
-        let candidate = dir.appendingPathComponent("training/\(name)")
-        if FileManager.default.fileExists(atPath: candidate.path) {
-            return candidate
+private func findPrivateScenarioFile(_ name: String) -> URL? {
+    let starts = [
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent(),
+        URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+    ]
+    for start in starts {
+        var directory = start
+        for _ in 0..<10 {
+            let candidate = directory.appendingPathComponent(
+                ".scratch/archive/local-only/training/\(name)")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            directory.deleteLastPathComponent()
         }
     }
     return nil
