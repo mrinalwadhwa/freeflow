@@ -48,6 +48,11 @@ the deterministic source-level suite without private evaluation or training
 data. Set `UNRAMBLE_EVAL_FILE` to point model-evaluation harnesses at another
 private scenario file.
 
+Generated WAV fixtures are also private and, when available, live at
+`.scratch/archive/local-only/evaluation/audio-fixtures`. Tests that depend on
+them are explicitly skipped when the directory is absent; self-contained audio
+tests continue to run on a clean checkout.
+
 **Environment variable gates:**
 - `UNRAMBLE_TEST_KEYCHAIN=1` — enables Keychain tests (KeychainServiceTests and
   ServiceConfigTests). These trigger macOS login Keychain password prompts.

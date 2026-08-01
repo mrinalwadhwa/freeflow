@@ -175,7 +175,11 @@ struct RealtimeSilenceClassificationTests {
         #expect(try await session.maximumAppendByteCount(requested: 2) == 2)
     }
 
-    @Test("meeting fixture room noise does not authorize a conservative pause commit")
+    @Test(
+        "meeting fixture room noise does not authorize a conservative pause commit",
+        .disabled(
+            if: WAVFixture.audioDirectory == nil,
+            "Private audio fixtures are not installed"))
     func meetingFixtureDoesNotAuthorizePauseCommit() async throws {
         let url = try #require(
             WAVFixture.audioURL(named: "meeting-10efb8de"))

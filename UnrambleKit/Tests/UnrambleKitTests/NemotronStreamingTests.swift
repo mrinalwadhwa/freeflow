@@ -86,11 +86,12 @@ struct NemotronStreamingTests {
         if FileManager.default.fileExists(atPath: email.path) {
             result.append(email)
         }
-        let audioDir = root.appendingPathComponent(".scratch/e2e/audio")
-        let names = (try? FileManager.default.contentsOfDirectory(
-            atPath: audioDir.path)) ?? []
-        for name in names.sorted().prefix(8) where name.hasSuffix(".wav") {
-            result.append(audioDir.appendingPathComponent(name))
+        if let audioDir = WAVFixture.audioDirectory {
+            let names = (try? FileManager.default.contentsOfDirectory(
+                atPath: audioDir.path)) ?? []
+            for name in names.sorted().prefix(8) where name.hasSuffix(".wav") {
+                result.append(audioDir.appendingPathComponent(name))
+            }
         }
         return result
     }

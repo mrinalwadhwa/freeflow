@@ -102,12 +102,30 @@ struct WAVFixture: Sendable {
         dataOffset = audio.offset
     }
 
+    static var audioDirectory: URL? {
+        let starts = [
+            URL(fileURLWithPath: #filePath).deletingLastPathComponent(),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        ]
+
+        for start in starts {
+            var directory = start
+            for _ in 0..<10 {
+                let candidate = directory.appendingPathComponent(
+                    ".scratch/archive/local-only/evaluation/audio-fixtures",
+                    isDirectory: true)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+                directory.deleteLastPathComponent()
+            }
+        }
+        return nil
+    }
+
     static func audioURL(named name: String) -> URL? {
-        let testDirectory = URL(fileURLWithPath: #file)
-            .deletingLastPathComponent()
-        let url = testDirectory
-            .appendingPathComponent("Fixtures/audio")
-            .appendingPathComponent("\(name).wav")
+        guard let audioDirectory else { return nil }
+        let url = audioDirectory.appendingPathComponent("\(name).wav")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 

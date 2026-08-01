@@ -6,7 +6,11 @@ import Testing
 @Suite("WAV fixture parsing")
 struct WAVFixtureTests {
 
-    @Test("extracts PCM after metadata instead of assuming a 44-byte header")
+    @Test(
+        "extracts PCM after metadata instead of assuming a 44-byte header",
+        .disabled(
+            if: WAVFixture.audioDirectory == nil,
+            "Private audio fixtures are not installed"))
     func metadataChunkBeforeAudio() throws {
         let url = try #require(WAVFixture.audioURL(named: "meeting-10efb8de"))
         let original = try Data(contentsOf: url)

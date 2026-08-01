@@ -11,7 +11,7 @@ import UnrambleKitTestSupport
 /// the accepted results from PolishScenarioData.
 ///
 /// Gated by UNRAMBLE_TEST_OPENAI=1 and requires audio fixtures in
-/// Tests/UnrambleKitTests/Fixtures/audio/.
+/// `.scratch/archive/local-only/evaluation/audio-fixtures/`.
 ///
 /// These tests hit the real OpenAI API and cost real money. They are
 /// slow (~2s per scenario) and should not run in CI without explicit
@@ -55,7 +55,7 @@ final class AudioPipelineTests: XCTestCase {
 
         let audioDir = findAudioDir()
         guard let audioDir else {
-            throw XCTSkip("Audio fixtures not found at Tests/UnrambleKitTests/Fixtures/audio/")
+            throw XCTSkip("Private audio fixtures are not installed")
         }
 
         // Build providers.
@@ -186,15 +186,9 @@ final class AudioPipelineTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Find the audio fixtures directory next to the test source.
+    /// Find the local-only audio fixtures directory.
     private func findAudioDir() -> URL? {
-        let testFile = URL(fileURLWithPath: #file)
-        let testDir = testFile.deletingLastPathComponent()
-        let candidate = testDir.appendingPathComponent("Fixtures/audio")
-        if FileManager.default.fileExists(atPath: candidate.path) {
-            return candidate
-        }
-        return nil
+        WAVFixture.audioDirectory
     }
 
     /// Generate a stable filename for a scenario (must match generate-audio.sh).

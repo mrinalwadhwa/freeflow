@@ -7,7 +7,7 @@ import Testing
 // Replay pre-generated TTS audio through the on-device pipeline to
 // establish a baseline: Nemotron STT -> stock Qwen3 polish (no adapter).
 //
-// For each WAV in .scratch/e2e/audio/, transcribe with Nemotron and
+// For each WAV in the local-only audio fixture archive, transcribe with Nemotron and
 // polish with an unmodified Qwen3 0.6B. Log the real STT output and the
 // polished result so the eval set is built from genuine model output
 // rather than hypothetical inputs.
@@ -63,7 +63,7 @@ struct NemotronBaseline {
         else { return }
 
         guard let audioDir = findAudioDir() else {
-            Issue.record("Audio fixtures not found under .scratch/e2e/audio")
+            Issue.record("Private audio fixtures are not installed")
             return
         }
 
@@ -151,17 +151,9 @@ struct NemotronBaseline {
 
     // MARK: - Helpers
 
-    /// Walk up from this source file to find `.scratch/e2e/audio`.
+    /// Find the local-only audio fixtures directory.
     private func findAudioDir() -> URL? {
-        var dir = URL(fileURLWithPath: #file)
-        for _ in 0..<10 {
-            dir = dir.deletingLastPathComponent()
-            let candidate = dir.appendingPathComponent(".scratch/e2e/audio")
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-        }
-        return nil
+        WAVFixture.audioDirectory
     }
 
     /// List WAV fixtures, parsing `{category}-{8 hex}.wav` filenames.

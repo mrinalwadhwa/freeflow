@@ -9,7 +9,8 @@ import Testing
     .serialized,
     .disabled(
         if: ProcessInfo.processInfo.environment["UNRAMBLE_TEST_OPENAI"] != "1"
-            || ProcessInfo.processInfo.environment["UNRAMBLE_TEST_OPENAI_LONG"] != "1"))
+            || ProcessInfo.processInfo.environment["UNRAMBLE_TEST_OPENAI_LONG"] != "1"
+            || WAVFixture.audioDirectory == nil))
 struct CloudDictationLiveHarnessTests {
 
     @Test("real speech remains faithful when conservative pause detection defers commits")
