@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = RecordingCoordinator()
     private let permissionProvider = MicrophonePermissionProvider()
     private let hotkeyProvider = CGEventTapHotkeyProvider()
-    private let modeHotkeyProvider = CGEventTapHotkeyProvider()
+    private let modeHotkeyProvider = CarbonHotkeyProvider()
     private var hotkeyPipelineDriver: HotkeyPipelineDriver?
     private var hotkeyPipelineIdentity: ObjectIdentifier?
     private var dictationHotkeyPublicationRequested = false

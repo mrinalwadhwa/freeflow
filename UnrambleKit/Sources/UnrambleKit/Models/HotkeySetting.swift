@@ -7,8 +7,8 @@ import Foundation
 /// - `.modifierPlusKey` — a modifier + key combo (e.g., Cmd+Shift+D)
 ///
 /// Persisted in UserDefaults via `Settings.shared.hotkeySetting`.
-/// The `CGEventTapHotkeyProvider` reads this on registration to
-/// determine which key events to monitor.
+/// Global hotkey providers read this on registration to determine which key
+/// events to monitor.
 public enum HotkeySetting: Sendable, Equatable {
 
     /// A modifier key by itself (e.g., Right Option).
