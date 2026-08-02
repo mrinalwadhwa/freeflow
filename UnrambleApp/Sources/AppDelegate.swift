@@ -754,6 +754,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hudController?.reRegisterHandsfreeShortcut()
             self?.reRegisterHotkey()
         }
+        controller.onPasteShortcutChanged = { [weak self] in
+            self?.hudController?.reRegisterPasteShortcut()
+        }
         controller.onDictationModeChanged = { [weak self] mode in
             self?.requestDictationMode(mode)
         }

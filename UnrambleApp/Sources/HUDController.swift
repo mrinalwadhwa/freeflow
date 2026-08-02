@@ -26,9 +26,8 @@ final class HUDController {
     private var localEscapeMonitor: Any?
     private var globalEscapeMonitor: Any?
     private var globalClickMonitor: Any?
-    private var localPasteMonitor: Any?
-    private var globalPasteMonitor: Any?
     private let handsfreeHotkeyProvider = CarbonHotkeyProvider()
+    private let pasteHotkeyProvider = CarbonHotkeyProvider()
     private let handsfreeSessionHotkeyProviders = [
         CarbonHotkeyProvider(),
         CarbonHotkeyProvider(),
@@ -139,7 +138,7 @@ final class HUDController {
 
         installEscapeMonitors()
         installClickMonitor()
-        installPasteShortcutMonitors()
+        registerPasteShortcut()
         registerHandsfreeShortcut()
 
         // Watch visual state changes, mouse screen, and hover to animate
@@ -221,7 +220,7 @@ final class HUDController {
         sessionOwnershipObservation = nil
         removeEscapeMonitors()
         removeClickMonitor()
-        removePasteShortcutMonitors()
+        pasteHotkeyProvider.unregister()
         handsfreeHotkeyProvider.unregister()
         handsfreeStopOnShortcutRelease = false
         unregisterHandsfreeSessionShortcuts()
@@ -734,52 +733,36 @@ final class HUDController {
 
     // MARK: - Paste shortcut handling
 
-    /// Install local and global key event monitors for the paste shortcut.
-    ///
-    /// The shortcut binding is read from Settings so it updates when the
-    /// user changes it in the settings screen. Default is ⌃⇧V.
-    ///
-    /// When the HUD is in the no-target state, the paste shortcut lets the
-    /// user select a text field and paste the buffered transcript without
-    /// re-dictating. The shortcut also works when no-target is not showing,
-    /// as a general "paste last transcript" action.
-    private func installPasteShortcutMonitors() {
-        localPasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
-            [weak self] event in
-            if self?.isPasteShortcut(event) == true {
-                self?.handlePasteShortcut()
-                return nil  // Consume the event.
-            }
-            return event
-        }
-
-        globalPasteMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
-            [weak self] event in
-            if self?.isPasteShortcut(event) == true {
-                self?.handlePasteShortcut()
-            }
-        }
-    }
-
-    private func removePasteShortcutMonitors() {
-        if let monitor = localPasteMonitor {
-            NSEvent.removeMonitor(monitor)
-            localPasteMonitor = nil
-        }
-        if let monitor = globalPasteMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalPasteMonitor = nil
-        }
-    }
-
-    /// Check whether a key event matches the configured paste shortcut.
-    ///
-    /// Reads the current binding from Settings so changes made in the
-    /// settings screen take effect immediately without restarting.
-    private func isPasteShortcut(_ event: NSEvent) -> Bool {
+    /// Claim Paste Last Dictation as a Carbon hotkey so the foreground app
+    /// does not also interpret the configured chord.
+    private func registerPasteShortcut() {
         let binding = Settings.shared.pasteShortcutBinding
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return binding.matches(keyCode: event.keyCode, modifierFlags: flags.rawValue)
+        let setting = HotkeySetting.modifierPlusKey(
+            modifierFlags: binding.standardModifierFlags,
+            keyCode: binding.keyCode,
+            keyName: binding.label)
+
+        pasteHotkeyProvider.unregister()
+        do {
+            try pasteHotkeyProvider.register(with: setting) {
+                [weak self] event in
+                guard event == .pressed else { return }
+                Task { @MainActor [weak self] in
+                    self?.handlePasteShortcut()
+                }
+            }
+            Log.debug(
+                "[HUDController] Paste shortcut registered (\(binding.label))")
+        } catch {
+            pasteHotkeyProvider.unregister()
+            Log.debug(
+                "[HUDController] Failed to register paste shortcut: \(error)")
+        }
+    }
+
+    /// Apply a Settings change without rebuilding the HUD.
+    func reRegisterPasteShortcut() {
+        registerPasteShortcut()
     }
 
     /// Paste the buffered transcript into the currently focused text field.
@@ -864,6 +847,7 @@ final class HUDController {
     deinit {
         visualStateObservation?.cancel()
         handsfreeHotkeyProvider.unregister()
+        pasteHotkeyProvider.unregister()
         for provider in handsfreeSessionHotkeyProviders {
             provider.unregister()
         }
@@ -874,12 +858,6 @@ final class HUDController {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = globalClickMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        if let monitor = localPasteMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        if let monitor = globalPasteMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
