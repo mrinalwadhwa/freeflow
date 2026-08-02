@@ -2,7 +2,7 @@ import Foundation
 
 public enum ModeShortcutValidationError: String, Error, Sendable, Equatable {
     case requiresKey
-    case requiresModifier
+    case requiresTwoModifiers
     case conflictsWithDictation
     case conflictsWithHandsfree
     case conflictsWithPaste
@@ -34,8 +34,8 @@ public struct ModeShortcutPolicy: Sendable {
         _ binding: ShortcutBinding
     ) -> ModeShortcutValidationError? {
         guard binding.kind == .key else { return .requiresKey }
-        guard binding.standardModifierCount >= 1 else {
-            return .requiresModifier
+        guard binding.standardModifierCount >= 2 else {
+            return .requiresTwoModifiers
         }
 
         if binding.hasSameKeystroke(as: handsfree) {
@@ -49,11 +49,10 @@ public struct ModeShortcutPolicy: Sendable {
         }
 
         switch dictation {
-        case .modifierOnly:
-            // A key chord may deliberately use the modifier-only dictation
-            // key as a qualifier. The app transfers and cancels that exact
-            // physical press before running the command.
-            break
+        case .modifierOnly(let modifier):
+            if binding.standardModifierFlags & modifier.standardFlag != 0 {
+                return .conflictsWithDictation
+            }
         case .modifierPlusKey(let flags, let keyCode, _):
             let dictationBinding = ShortcutBinding(
                 modifierFlags: flags,

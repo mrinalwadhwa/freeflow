@@ -182,13 +182,6 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "⌃⌥P"
     )
 
-    /// Previous default retained for exact migration to the Option family.
-    public static let previousDefaultIncognitoMode = ShortcutBinding(
-        modifierFlags: controlFlag | shiftFlag,
-        keyCode: 46,
-        label: "⌃⇧M"
-    )
-
     /// Experimental Option-only default retained for exact migration.
     public static let experimentalOptionIncognitoMode = ShortcutBinding(
         modifierFlags: optionFlag,
@@ -196,10 +189,17 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "⌥M"
     )
 
-    /// Default mode shortcut: ⌥⌘M (Option+Command+M, key code 46).
-    public static let defaultIncognitoMode = ShortcutBinding(
+    /// Experimental Option-Command default retained for exact migration.
+    public static let experimentalOptionCommandIncognitoMode = ShortcutBinding(
         modifierFlags: optionFlag | commandFlag,
         keyCode: 46,
         label: "⌥⌘M"
+    )
+
+    /// Default mode shortcut: ⌃⇧M (Control+Shift+M, key code 46).
+    public static let defaultIncognitoMode = ShortcutBinding(
+        modifierFlags: controlFlag | shiftFlag,
+        keyCode: 46,
+        label: "⌃⇧M"
     )
 }
