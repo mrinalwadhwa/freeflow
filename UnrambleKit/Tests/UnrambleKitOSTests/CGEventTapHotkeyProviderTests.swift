@@ -237,12 +237,88 @@ struct CGEventTapHotkeyProviderTests {
             #expect(recorder.events == [.pressed, .released])
         }
 
+        @Test("Right Option H triggers and suppresses the qualified key")
+        func rightOptionHTriggersAndSuppressesQualifiedKey() throws {
+            let recorder = QualifiedKeyRecorder()
+            let provider = CGEventTapHotkeyProvider(
+                testing: .rightOption,
+                qualifiedKeyCode: 4,
+                qualifiedKeyCallback: { _ in recorder.record() }
+            ) { _, _ in }
+
+            provider.handleFlagsChanged(
+                try Self.flagsEvent(
+                    rawFlags: HotkeySetting.ModifierKey.rightOption.deviceFlag),
+                registrationGeneration: provider.registrationGenerationForTesting)
+            let suppressDown = provider.handleKeyEvent(
+                try Self.keyEvent(keyCode: 4, keyDown: true, flags: [.maskAlternate]),
+                isKeyDown: true)
+            let suppressRepeat = provider.handleKeyEvent(
+                try Self.keyEvent(
+                    keyCode: 4,
+                    keyDown: true,
+                    flags: [.maskAlternate],
+                    isAutorepeat: true),
+                isKeyDown: true)
+            let suppressUp = provider.handleKeyEvent(
+                try Self.keyEvent(keyCode: 4, keyDown: false, flags: [.maskAlternate]),
+                isKeyDown: false)
+
+            #expect(suppressDown)
+            #expect(suppressRepeat)
+            #expect(suppressUp)
+            #expect(recorder.count == 1)
+        }
+
+        @Test("H passes through without the configured physical modifier")
+        func hPassesThroughWithoutRightOption() throws {
+            let recorder = QualifiedKeyRecorder()
+            let provider = CGEventTapHotkeyProvider(
+                testing: .rightOption,
+                qualifiedKeyCode: 4,
+                qualifiedKeyCallback: { _ in recorder.record() }
+            ) { _, _ in }
+
+            let suppressDown = provider.handleKeyEvent(
+                try Self.keyEvent(keyCode: 4, keyDown: true, flags: []),
+                isKeyDown: true)
+            let suppressUp = provider.handleKeyEvent(
+                try Self.keyEvent(keyCode: 4, keyDown: false, flags: []),
+                isKeyDown: false)
+
+            #expect(!suppressDown)
+            #expect(!suppressUp)
+            #expect(recorder.count == 0)
+        }
+
+        @Test("Left Option H passes through when Right Option is configured")
+        func leftOptionHDoesNotTriggerRightOptionQualifier() throws {
+            let recorder = QualifiedKeyRecorder()
+            let provider = CGEventTapHotkeyProvider(
+                testing: .rightOption,
+                qualifiedKeyCode: 4,
+                qualifiedKeyCallback: { _ in recorder.record() }
+            ) { _, _ in }
+
+            provider.handleFlagsChanged(
+                try Self.flagsEvent(
+                    rawFlags: HotkeySetting.ModifierKey.leftOption.deviceFlag),
+                registrationGeneration: provider.registrationGenerationForTesting)
+            let suppressDown = provider.handleKeyEvent(
+                try Self.keyEvent(keyCode: 4, keyDown: true, flags: [.maskAlternate]),
+                isKeyDown: true)
+
+            #expect(!suppressDown)
+            #expect(recorder.count == 0)
+        }
+
         private static let modeShortcut = HotkeySetting.modifierPlusKey(
             modifierFlags: ShortcutBinding.controlFlag | ShortcutBinding.shiftFlag,
             keyCode: 46,
             keyName: "M")
 
         private static func keyEvent(
+            keyCode: CGKeyCode = 46,
             keyDown: Bool,
             flags: CGEventFlags = [.maskControl, .maskShift],
             isAutorepeat: Bool = false
@@ -250,7 +326,7 @@ struct CGEventTapHotkeyProviderTests {
             let event = try #require(
                 CGEvent(
                     keyboardEventSource: nil,
-                    virtualKey: 46,
+                    virtualKey: keyCode,
                     keyDown: keyDown))
             event.flags = flags
             event.setIntegerValueField(
@@ -281,3 +357,16 @@ private final class HotkeyEventRecorder: @unchecked Sendable {
 }
 
 private final class CallbackContextLifetimeProbe: @unchecked Sendable {}
+
+private final class QualifiedKeyRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedCount = 0
+
+    var count: Int {
+        lock.withLock { storedCount }
+    }
+
+    func record() {
+        lock.withLock { storedCount += 1 }
+    }
+}

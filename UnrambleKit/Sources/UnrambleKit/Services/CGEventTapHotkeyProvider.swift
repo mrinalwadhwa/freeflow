@@ -31,6 +31,9 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
     private var tapRunLoop: CFRunLoop?
     private var tapThread: Thread?
     private var _isHotkeyDown = false
+    private var qualifiedKeyCode: UInt16?
+    private var qualifiedKeyCallback: (@Sendable (UInt64) -> Void)?
+    private var _isQualifiedKeyDown = false
     private var nextRegistrationGeneration: UInt64 = 0
     private var activeRegistrationGeneration: UInt64?
 
@@ -46,12 +49,16 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
 
     init(
         testing setting: HotkeySetting,
+        qualifiedKeyCode: UInt16? = nil,
+        qualifiedKeyCallback: (@Sendable (UInt64) -> Void)? = nil,
         callback: @escaping @Sendable (HotkeyEvent, UInt64) -> Void
     ) {
         nextRegistrationGeneration = 1
         activeRegistrationGeneration = 1
         _hotkeySetting = setting
         self.callback = callback
+        self.qualifiedKeyCode = qualifiedKeyCode
+        self.qualifiedKeyCallback = qualifiedKeyCallback
     }
 
     var registrationGenerationForTesting: UInt64 {
@@ -100,6 +107,25 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
     ) throws {
         try registerTimestamped(
             with: Settings.shared.hotkeySetting,
+            qualifiedKeyCode: nil,
+            qualifiedKeyCallback: nil,
+            callback: callback)
+    }
+
+    /// Register the persisted modifier-only hotkey and intercept one key
+    /// pressed while that exact physical modifier is down.
+    ///
+    /// The qualified key is suppressed so Option-based chords do not type a
+    /// dead-key character into the focused application.
+    public func registerTimestamped(
+        interceptingQualifiedKey keyCode: UInt16,
+        onQualifiedKey: @escaping @Sendable (UInt64) -> Void,
+        callback: @escaping @Sendable (HotkeyEvent, UInt64) -> Void
+    ) throws {
+        try registerTimestamped(
+            with: Settings.shared.hotkeySetting,
+            qualifiedKeyCode: keyCode,
+            qualifiedKeyCallback: onQualifiedKey,
             callback: callback)
     }
 
@@ -113,11 +139,17 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
         with setting: HotkeySetting,
         callback: @escaping @Sendable (HotkeyEvent) -> Void
     ) throws {
-        try registerTimestamped(with: setting) { event, _ in callback(event) }
+        try registerTimestamped(
+            with: setting,
+            qualifiedKeyCode: nil,
+            qualifiedKeyCallback: nil
+        ) { event, _ in callback(event) }
     }
 
     private func registerTimestamped(
         with setting: HotkeySetting,
+        qualifiedKeyCode: UInt16?,
+        qualifiedKeyCallback: (@Sendable (UInt64) -> Void)?,
         callback: @escaping @Sendable (HotkeyEvent, UInt64) -> Void
     ) throws {
         lock.lock()
@@ -135,10 +167,13 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
             let registrationGeneration = beginRegistrationLocked(
                 setting: setting,
                 callback: callback)
+            self.qualifiedKeyCode = qualifiedKeyCode
+            self.qualifiedKeyCallback = qualifiedKeyCallback
+            _isQualifiedKeyDown = false
 
             // Determine which events to monitor based on hotkey type.
             var eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
-            if !setting.isModifierOnly {
+            if !setting.isModifierOnly || qualifiedKeyCode != nil {
                 eventMask |= (1 << CGEventType.keyDown.rawValue)
                 eventMask |= (1 << CGEventType.keyUp.rawValue)
             }
@@ -156,7 +191,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
                 let tap = CGEvent.tapCreate(
                     tap: .cgSessionEventTap,
                     place: .headInsertEventTap,
-                    options: .listenOnly,
+                    options: qualifiedKeyCode == nil ? .listenOnly : .defaultTap,
                     eventsOfInterest: eventMask,
                     callback: cgEventCallback,
                     userInfo: contextPointer
@@ -273,28 +308,65 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
     private static let deviceIndependentFlagsMask: UInt64 = 0xFFFF_0000
 
     /// Handle a key event for modifier+key hotkeys.
-    func handleKeyEvent(_ event: CGEvent, isKeyDown: Bool) {
+    @discardableResult
+    func handleKeyEvent(_ event: CGEvent, isKeyDown: Bool) -> Bool {
         guard let registrationGeneration = lock.withLock({
             activeRegistrationGeneration
-        }) else { return }
-        handleKeyEvent(
+        }) else { return false }
+        return handleKeyEvent(
             event,
             isKeyDown: isKeyDown,
             registrationGeneration: registrationGeneration)
     }
 
+    @discardableResult
     func handleKeyEvent(
         _ event: CGEvent,
         isKeyDown: Bool,
         registrationGeneration: UInt64
-    ) {
+    ) -> Bool {
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let qualifiedResult: (
+            suppress: Bool,
+            callback: (@Sendable (UInt64) -> Void)?
+        ) = lock.withLock {
+                guard activeRegistrationGeneration == registrationGeneration,
+                    let qualifiedKeyCode,
+                    keyCode == qualifiedKeyCode
+                else { return (false, nil) }
+
+                if isKeyDown {
+                    guard case .modifierOnly = _hotkeySetting,
+                        _isHotkeyDown
+                    else { return (false, nil) }
+                    if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+                        return (true, nil)
+                    }
+                    guard !_isQualifiedKeyDown else { return (true, nil) }
+                    _isQualifiedKeyDown = true
+                    return (true, qualifiedKeyCallback)
+                }
+
+                guard _isQualifiedKeyDown else { return (false, nil) }
+                _isQualifiedKeyDown = false
+                return (true, nil)
+            }
+
+        if let qualifiedCallback = qualifiedResult.callback {
+            qualifiedCallback(
+                AudioCaptureReleaseFence.hostTime(
+                    eventTimestampNanoseconds: event.timestamp))
+        }
+        if qualifiedResult.suppress {
+            return true
+        }
+
         if isKeyDown,
             event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         {
-            return
+            return false
         }
 
-        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         // Mask to device-independent flags, then isolate the four standard
         // modifier bits (Control, Option, Shift, Command). This ignores
         // Caps Lock, Fn, NumericPad, and other flags that vary by keyboard.
@@ -335,6 +407,7 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
                 AudioCaptureReleaseFence.hostTime(
                     eventTimestampNanoseconds: event.timestamp))
         }
+        return false
     }
 
     private func beginRegistrationLocked(
@@ -354,6 +427,9 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
         activeRegistrationGeneration = nil
         callback = nil
         _isHotkeyDown = false
+        qualifiedKeyCode = nil
+        qualifiedKeyCallback = nil
+        _isQualifiedKeyDown = false
     }
 
     private func publishTapRunLoop(
@@ -450,15 +526,21 @@ private final class EventTapCallbackContext: @unchecked Sendable {
                 event,
                 registrationGeneration: registrationGeneration)
         case .keyDown:
-            provider.handleKeyEvent(
+            if provider.handleKeyEvent(
                 event,
                 isKeyDown: true,
                 registrationGeneration: registrationGeneration)
+            {
+                return nil
+            }
         case .keyUp:
-            provider.handleKeyEvent(
+            if provider.handleKeyEvent(
                 event,
                 isKeyDown: false,
                 registrationGeneration: registrationGeneration)
+            {
+                return nil
+            }
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // Re-enable the tap if the system disables it.
             provider.reEnableTap(

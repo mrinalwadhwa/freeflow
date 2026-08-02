@@ -535,12 +535,22 @@ final class HUDController {
     /// (completes the pipeline).
     private func registerHandsfreeShortcut() {
         let binding = Settings.shared.handsfreeShortcutBinding
+        let dictationSetting = Settings.shared.hotkeySetting
+
+        handsfreeHotkeyProvider.unregister()
+        if case .modifierOnly(let modifier) = dictationSetting,
+            binding.standardModifierFlags == modifier.standardFlag
+        {
+            Log.debug(
+                "[HUDController] Hands-free shortcut delegated to the physical modifier listener (\(binding.label))")
+            return
+        }
+
         let setting = HotkeySetting.modifierPlusKey(
             modifierFlags: binding.standardModifierFlags,
             keyCode: binding.keyCode,
             keyName: binding.label)
 
-        handsfreeHotkeyProvider.unregister()
         do {
             try handsfreeHotkeyProvider.register(with: setting) {
                 [weak self] event in
@@ -570,7 +580,7 @@ final class HUDController {
     /// shares a modifier key with the dictate hotkey. In that case
     /// we switch to hands-free mode so the user doesn't have to
     /// keep holding.
-    private func handleHandsfreeShortcut() {
+    func handleHandsfreeShortcut() {
         Log.debug(
             "[HUDController] Hands-free shortcut pressed (state=\(viewModel.visualState))")
         switch viewModel.visualState {
