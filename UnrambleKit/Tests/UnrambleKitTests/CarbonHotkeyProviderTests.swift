@@ -44,4 +44,17 @@ struct CarbonHotkeyProviderTests {
             try CarbonHotkeyProvider.descriptor(for: .rightOption)
         }
     }
+
+    @Test("Supports an unmodified key")
+    func supportsUnmodifiedKey() throws {
+        let setting = HotkeySetting.modifierPlusKey(
+            modifierFlags: 0,
+            keyCode: 36,
+            keyName: "Return")
+
+        let descriptor = try CarbonHotkeyProvider.descriptor(for: setting)
+
+        #expect(descriptor.keyCode == 36)
+        #expect(descriptor.modifiers == 0)
+    }
 }

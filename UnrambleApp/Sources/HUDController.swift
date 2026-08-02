@@ -29,6 +29,11 @@ final class HUDController {
     private var localPasteMonitor: Any?
     private var globalPasteMonitor: Any?
     private let handsfreeHotkeyProvider = CarbonHotkeyProvider()
+    private let handsfreeAcceptHotkeyProviders = [
+        CarbonHotkeyProvider(),
+        CarbonHotkeyProvider(),
+    ]
+    private var handsfreeAcceptShortcutsRegistered = false
     private var currentSessionID: DictationSessionID?
     private var latestSessionUpdate: RecordingStateUpdate?
     private var sessionObservationRevision: UInt64 = 0
@@ -175,13 +180,17 @@ final class HUDController {
 
                 let current = self.viewModel.visualState
                 let currentMessageID = self.viewModel.inAppMessage?.id
+                let stateChanged = current != previousState
                 let messageChanged = currentMessageID != previousMessageID
                 previousMessageID = currentMessageID
+                if stateChanged {
+                    self.syncHandsfreeAcceptShortcuts(for: current)
+                }
 
                 if screenChanged {
                     self.hudWindow?.repositionToCurrentScreen()
                 }
-                if current != previousState || messageChanged {
+                if stateChanged || messageChanged {
                     previousState = current
                     self.hudWindow?.animateToCurrentState()
                 }
@@ -212,6 +221,7 @@ final class HUDController {
         removeClickMonitor()
         removePasteShortcutMonitors()
         handsfreeHotkeyProvider.unregister()
+        unregisterHandsfreeAcceptShortcuts()
         handsFreeActivationToken = nil
         handsFreeActivationTask = nil
         handsFreeOwnedSessionID = nil
@@ -601,6 +611,58 @@ final class HUDController {
         }
     }
 
+    /// Claim Return and keypad Enter only while hands-free recording is
+    /// active, then finish and accept the recording.
+    private func syncHandsfreeAcceptShortcuts(for state: HUDVisualState) {
+        guard state == .listeningHandsFree else {
+            unregisterHandsfreeAcceptShortcuts()
+            return
+        }
+        guard !handsfreeAcceptShortcutsRegistered else { return }
+
+        let keyCodes = [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)]
+        handsfreeAcceptShortcutsRegistered = true
+        do {
+            for (provider, keyCode) in zip(
+                handsfreeAcceptHotkeyProviders,
+                keyCodes)
+            {
+                let setting = HotkeySetting.modifierPlusKey(
+                    modifierFlags: 0,
+                    keyCode: keyCode,
+                    keyName: keyCode == UInt16(kVK_Return)
+                        ? "Return"
+                        : "Keypad Enter")
+                try provider.register(with: setting) { [weak self] event in
+                    guard event == .pressed else { return }
+                    Task { @MainActor [weak self] in
+                        self?.acceptHandsfreeRecording()
+                    }
+                }
+            }
+            Log.debug(
+                "[HUDController] Return accepts hands-free recording")
+        } catch {
+            unregisterHandsfreeAcceptShortcuts()
+            Log.debug(
+                "[HUDController] Failed to register hands-free accept shortcuts: \(error)")
+        }
+    }
+
+    private func acceptHandsfreeRecording() {
+        guard viewModel.visualState == .listeningHandsFree else { return }
+        unregisterHandsfreeAcceptShortcuts()
+        completePipeline()
+    }
+
+    private func unregisterHandsfreeAcceptShortcuts() {
+        guard handsfreeAcceptShortcutsRegistered else { return }
+        for provider in handsfreeAcceptHotkeyProviders {
+            provider.unregister()
+        }
+        handsfreeAcceptShortcutsRegistered = false
+    }
+
     /// Transfer a held or still-activating Right Option session to the HUD.
     /// Returns false when no push-to-talk press is currently owned, allowing
     /// a plain Option+H chord to start a fresh hands-free session instead.
@@ -780,6 +842,9 @@ final class HUDController {
     deinit {
         visualStateObservation?.cancel()
         handsfreeHotkeyProvider.unregister()
+        for provider in handsfreeAcceptHotkeyProviders {
+            provider.unregister()
+        }
         if let monitor = localEscapeMonitor {
             NSEvent.removeMonitor(monitor)
         }
