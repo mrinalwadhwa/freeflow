@@ -571,52 +571,64 @@ final class HUDController {
     /// we switch to hands-free mode so the user doesn't have to
     /// keep holding.
     private func handleHandsfreeShortcut() {
+        Log.debug(
+            "[HUDController] Hands-free shortcut pressed (state=\(viewModel.visualState))")
         switch viewModel.visualState {
         case .minimized, .ready:
-            startHandsFreeFromClick()
+            // Right Option activation is asynchronous. H can arrive before
+            // the coordinator has published `listeningHeld`, so ask the
+            // input driver for the pending held session before starting a
+            // separate hands-free activation.
+            if !transferHeldSessionToHandsFree() {
+                startHandsFreeFromClick()
+            }
         case .listeningHeld:
-            // The hotkey provider started push-to-talk because the
-            // handsfree combo shares a modifier with the dictate key.
-            // Switch to hands-free so the user can release the keys.
-            let transferToken = UUID()
-            heldSessionTransferToken = transferToken
-            heldSessionTransferPending = true
-            pendingHeldModeSessionID = nil
-            viewModel.clickedToStartHandsFree()
-            let pipeline = pipeline
-            let transferredBoundary = onTransferHeldHotkeySession? {
-                [weak self, pipeline] transferredSession in
-                Task { @MainActor in
-                    guard let self,
-                        self.heldSessionTransferToken == transferToken
-                    else { return }
-                    guard let transferredSession, let pipeline else {
-                        self.invalidateHeldSessionTransfer()
-                        return
-                    }
-                    let sessionID = transferredSession.sessionID
-                    let isStillOwned = await pipeline.currentSessionID
-                        == sessionID
-                    guard self.heldSessionTransferToken == transferToken else {
-                        return
-                    }
-                    self.invalidateHeldSessionTransfer()
-                    guard isStillOwned else { return }
-                    self.currentSessionID = sessionID
-                    self.handsFreeOwnedSessionID = sessionID
-                    self.hotkeyHeldSession = transferredSession
-                }
-            }
-            guard let transferredBoundary else {
-                invalidateHeldSessionTransfer()
-                return
-            }
-            handsFreeReleaseBoundary = transferredBoundary
+            _ = transferHeldSessionToHandsFree()
         case .listeningHandsFree:
             completePipeline()
         default:
             break
         }
+    }
+
+    /// Transfer a held or still-activating Right Option session to the HUD.
+    /// Returns false when no push-to-talk press is currently owned, allowing
+    /// a plain Option+H chord to start a fresh hands-free session instead.
+    private func transferHeldSessionToHandsFree() -> Bool {
+        let transferToken = UUID()
+        heldSessionTransferToken = transferToken
+        heldSessionTransferPending = true
+        pendingHeldModeSessionID = nil
+        let pipeline = pipeline
+        let transferredBoundary = onTransferHeldHotkeySession? {
+            [weak self, pipeline] transferredSession in
+            Task { @MainActor in
+                guard let self,
+                    self.heldSessionTransferToken == transferToken
+                else { return }
+                guard let transferredSession, let pipeline else {
+                    self.invalidateHeldSessionTransfer()
+                    return
+                }
+                let sessionID = transferredSession.sessionID
+                let isStillOwned = await pipeline.currentSessionID == sessionID
+                guard self.heldSessionTransferToken == transferToken else {
+                    return
+                }
+                self.invalidateHeldSessionTransfer()
+                guard isStillOwned else { return }
+                self.currentSessionID = sessionID
+                self.handsFreeOwnedSessionID = sessionID
+                self.hotkeyHeldSession = transferredSession
+            }
+        }
+        guard let transferredBoundary else {
+            invalidateHeldSessionTransfer()
+            return false
+        }
+        viewModel.clickedToStartHandsFree()
+        handsFreeReleaseBoundary = transferredBoundary
+        return true
     }
 
     private func publishOwnedReleaseBoundary(
