@@ -272,7 +272,7 @@ struct SettingsTests {
         settings.incognitoModeShortcutLabel = original
     }
 
-    @Test("Exact legacy mode shortcut migrates to Option M")
+    @Test("Exact legacy mode shortcut migrates to Option Command M")
     func legacyModeShortcutMigration() throws {
         let suiteName = "SettingsTests.legacyModeShortcutMigration"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -286,10 +286,10 @@ struct SettingsTests {
         let settings = Settings(defaults: defaults)
 
         #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
-        #expect(settings.incognitoModeShortcutLabel == "⌥M")
+        #expect(settings.incognitoModeShortcutLabel == "⌥⌘M")
     }
 
-    @Test("Previous Control Shift M default migrates to Option M")
+    @Test("Previous Control Shift M default migrates to Option Command M")
     func previousDefaultModeShortcutMigration() throws {
         let suiteName = "SettingsTests.previousDefaultModeShortcutMigration"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -303,7 +303,24 @@ struct SettingsTests {
         let settings = Settings(defaults: defaults)
 
         #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
-        #expect(settings.incognitoModeShortcutLabel == "⌥M")
+        #expect(settings.incognitoModeShortcutLabel == "⌥⌘M")
+    }
+
+    @Test("Experimental Option M default migrates to Option Command M")
+    func experimentalOptionModeShortcutMigration() throws {
+        let suiteName = "SettingsTests.experimentalOptionModeShortcutMigration"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try JSONEncoder().encode(
+                ShortcutBinding.experimentalOptionIncognitoMode),
+            forKey: "incognitoModeShortcutBinding")
+
+        let settings = Settings(defaults: defaults)
+
+        #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
+        #expect(settings.incognitoModeShortcutLabel == "⌥⌘M")
     }
 
     @Test("Valid custom mode shortcut survives legacy migration")

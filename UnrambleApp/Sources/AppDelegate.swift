@@ -524,7 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         requestDictationMode(newMode)
     }
 
-    /// Run the Option-M command without leaving a tiny Right Option
+    /// Run the Option-Command-M command without leaving a tiny Right Option
     /// dictation behind. A left-Option chord has no press to transfer and
     /// toggles immediately; a right-Option chord first cancels the exact
     /// session admitted for that physical qualifier press.

@@ -10,15 +10,16 @@ struct ModeShortcutPolicyTests {
         paste: .defaultPaste,
         cancel: .defaultCancel)
 
-    @Test("Default is Option M")
+    @Test("Default is Option Command M")
     func newDefault() {
         #expect(
             ShortcutBinding.defaultIncognitoMode
                 == ShortcutBinding(
                     kind: .key,
-                    modifierFlags: ShortcutBinding.optionFlag,
+                    modifierFlags: ShortcutBinding.optionFlag
+                        | ShortcutBinding.commandFlag,
                     keyCode: 46,
-                    label: "⌥M"))
+                    label: "⌥⌘M"))
     }
 
     @Test("Mode shortcut requires a non-modifier key")
