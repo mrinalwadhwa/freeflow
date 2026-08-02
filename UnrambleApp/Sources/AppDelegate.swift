@@ -1021,27 +1021,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
 
         do {
-            let dictationSetting = Settings.shared.hotkeySetting
-            let handsfreeBinding = Settings.shared.handsfreeShortcutBinding
-            if case .modifierOnly(let modifier) = dictationSetting,
-                handsfreeBinding.standardModifierFlags == modifier.standardFlag
-            {
-                Log.debug(
-                    "[AppDelegate] Registering \(modifier.displayName)+\(handsfreeBinding.keyCode) through the physical modifier listener")
-                try hotkeyProvider.registerTimestamped(
-                    interceptingQualifiedKey: handsfreeBinding.keyCode,
-                    onQualifiedKey: { [weak hudRef] _ in
-                        Task { @MainActor in
-                            hudRef?.handleHandsfreeShortcut()
-                        }
-                    }
-                ) { event, hostTime in
-                    driver.submit(event, hostTime: hostTime)
-                }
-            } else {
-                try hotkeyProvider.registerTimestamped { event, hostTime in
-                    driver.submit(event, hostTime: hostTime)
-                }
+            try hotkeyProvider.registerTimestamped { event, hostTime in
+                driver.submit(event, hostTime: hostTime)
             }
             hotkeyPipelineDriver = driver
             hotkeyPipelineIdentity = pipelineIdentity

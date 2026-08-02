@@ -425,9 +425,9 @@ struct SettingsTests {
         #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
     }
 
-    @Test("Hands-free defaults to the Option H chord")
-    func handsfreeDefaultsToOptionH() throws {
-        let suiteName = "SettingsTests.handsfreeDefaultsToOptionH"
+    @Test("Hands-free defaults to the Option Space chord")
+    func handsfreeDefaultsToOptionSpace() throws {
+        let suiteName = "SettingsTests.handsfreeDefaultsToOptionSpace"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -436,8 +436,8 @@ struct SettingsTests {
 
         #expect(binding == .defaultHandsfree)
         #expect(binding.modifierFlags == ShortcutBinding.optionFlag)
-        #expect(binding.keyCode == 4)
-        #expect(binding.label == "⌥H")
+        #expect(binding.keyCode == 49)
+        #expect(binding.label == "⌥Space")
     }
 
     @Test("Paste shortcut cannot invalidate retained mode shortcut")

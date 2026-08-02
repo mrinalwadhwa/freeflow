@@ -545,22 +545,12 @@ final class HUDController {
     /// (completes the pipeline).
     private func registerHandsfreeShortcut() {
         let binding = Settings.shared.handsfreeShortcutBinding
-        let dictationSetting = Settings.shared.hotkeySetting
-
-        handsfreeHotkeyProvider.unregister()
-        if case .modifierOnly(let modifier) = dictationSetting,
-            binding.standardModifierFlags == modifier.standardFlag
-        {
-            Log.debug(
-                "[HUDController] Hands-free shortcut delegated to the physical modifier listener (\(binding.label))")
-            return
-        }
-
         let setting = HotkeySetting.modifierPlusKey(
             modifierFlags: binding.standardModifierFlags,
             keyCode: binding.keyCode,
             keyName: binding.label)
 
+        handsfreeHotkeyProvider.unregister()
         do {
             try handsfreeHotkeyProvider.register(with: setting) {
                 [weak self] event in
@@ -595,7 +585,7 @@ final class HUDController {
             "[HUDController] Hands-free shortcut pressed (state=\(viewModel.visualState))")
         switch viewModel.visualState {
         case .minimized, .ready:
-            // Right Option activation is asynchronous. H can arrive before
+            // Right Option activation is asynchronous. Space can arrive before
             // the coordinator has published `listeningHeld`, so ask the
             // input driver for the pending held session before starting a
             // separate hands-free activation.
@@ -665,7 +655,7 @@ final class HUDController {
 
     /// Transfer a held or still-activating Right Option session to the HUD.
     /// Returns false when no push-to-talk press is currently owned, allowing
-    /// a plain Option+H chord to start a fresh hands-free session instead.
+    /// a plain Option-Space chord to start a fresh hands-free session instead.
     private func transferHeldSessionToHandsFree() -> Bool {
         let transferToken = UUID()
         heldSessionTransferToken = transferToken

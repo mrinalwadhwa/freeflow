@@ -157,15 +157,15 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "⌃⌥V"
     )
 
-    /// Default hands-free shortcut: ⌥H (Option+H, key code 4).
+    /// Default hands-free shortcut: ⌥Space (Option+Space, key code 49).
     ///
-    /// With the default Right Option push-to-talk key, pressing H while that
-    /// exact physical key is down transfers the held recording into
-    /// hands-free ownership.
+    /// With the default Right Option push-to-talk key, pressing Space
+    /// transfers the held recording into hands-free ownership. Carbon handles
+    /// the chord without requiring Input Monitoring permission.
     public static let defaultHandsfree = ShortcutBinding(
         modifierFlags: optionFlag,
-        keyCode: 4,
-        label: "⌥H"
+        keyCode: 49,
+        label: "⌥Space"
     )
 
     /// Default cancel shortcut: Escape (no modifiers, key code 53).
