@@ -123,6 +123,12 @@ public final class HotkeyPipelineDriver: @unchecked Sendable {
                     guard heldSession == nil, pendingActivation == nil else {
                         continue
                     }
+                    // The pipeline remains the final admission authority, but
+                    // an already-visible external owner (for example a
+                    // hands-free session) is not a race. Avoid issuing an
+                    // activation that can only be rejected and let the
+                    // external owner's shortcut handler consume the chord.
+                    guard await pipeline.state == .idle else { continue }
                     if !completionTasks.isEmpty,
                         await pipeline.state != .idle
                     {

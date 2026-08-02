@@ -233,6 +233,11 @@ final class HUDViewModel: ObservableObject {
         case .idle:
             // Successful injection or cancellation — collapse to minimized.
             stopAudioLevelObservation()
+            // Activation mode belongs to one recording. Clearing it here
+            // prevents a later push-to-talk session from briefly inheriting
+            // the previous hands-free session's visual state while its
+            // ownership hint is still in flight.
+            isHandsFree = false
             visualState = .minimized
 
         case .recording:

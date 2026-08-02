@@ -496,9 +496,11 @@ final class HotkeyPipelineDriverTests: XCTestCase {
         await driver.waitForSubmittedEvents()
 
         let currentSessionID = await pipeline.currentSessionID
+        let activationCount = await pipeline.activationStartCount
         let completionAttempts = await pipeline.scopedCompletionAttempts
         let cancellationAttempts = await pipeline.scopedCancellationAttempts
         XCTAssertEqual(currentSessionID, hudSessionID)
+        XCTAssertEqual(activationCount, 0)
         XCTAssertEqual(completionAttempts, [])
         XCTAssertEqual(cancellationAttempts, [])
 
