@@ -246,7 +246,7 @@ public final class Settings: @unchecked Sendable {
     // MARK: - Shortcut Bindings
 
     /// The key binding for the hands-free mode shortcut.
-    /// Defaults to ⌃⌥H (Control+Option+H, key code 4).
+    /// Defaults to ⌥H (Option+H, key code 4).
     public var handsfreeShortcutBinding: ShortcutBinding {
         get {
             guard let data = defaults.data(forKey: Key.handsfreeShortcutBinding.rawValue),

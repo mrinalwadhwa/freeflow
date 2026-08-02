@@ -70,7 +70,6 @@ struct ModeShortcutPolicyTests {
     @Test(
         "Mode chord rejects exact command conflicts",
         arguments: [
-            (ShortcutBinding.defaultHandsfree, ModeShortcutValidationError.conflictsWithHandsfree),
             (ShortcutBinding.defaultPaste, ModeShortcutValidationError.conflictsWithPaste),
             (ShortcutBinding.defaultCancel, ModeShortcutValidationError.requiresTwoModifiers),
         ])
@@ -79,6 +78,22 @@ struct ModeShortcutPolicyTests {
         expected: ModeShortcutValidationError
     ) {
         #expect(policy.validate(binding) == expected)
+    }
+
+    @Test("Mode chord rejects a two-modifier hands-free conflict")
+    func handsfreeConflict() {
+        let handsfree = ShortcutBinding(
+            modifierFlags: ShortcutBinding.controlFlag
+                | ShortcutBinding.commandFlag,
+            keyCode: 4,
+            label: "⌃⌘H")
+        let conflictPolicy = ModeShortcutPolicy(
+            dictation: .default,
+            handsfree: handsfree,
+            paste: .defaultPaste,
+            cancel: .defaultCancel)
+
+        #expect(conflictPolicy.validate(handsfree) == .conflictsWithHandsfree)
     }
 
     @Test("Mode chord rejects exact dictation combo")

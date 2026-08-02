@@ -157,11 +157,16 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "⌃⌥V"
     )
 
-    /// Default hands-free shortcut: ⌃⌥H (Control+Option+H, key code 4).
+    /// Default hands-free shortcut: ⌥H (Option+H, key code 4).
+    ///
+    /// With the default Right Option push-to-talk key, pressing H transfers
+    /// the held recording into hands-free ownership. The Carbon registration
+    /// also accepts Left Option+H because macOS global hotkeys do not preserve
+    /// the left/right identity of standard modifiers.
     public static let defaultHandsfree = ShortcutBinding(
-        modifierFlags: controlFlag | optionFlag,
+        modifierFlags: optionFlag,
         keyCode: 4,
-        label: "⌃⌥H"
+        label: "⌥H"
     )
 
     /// Default cancel shortcut: Escape (no modifiers, key code 53).

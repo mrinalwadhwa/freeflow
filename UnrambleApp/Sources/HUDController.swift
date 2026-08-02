@@ -28,8 +28,7 @@ final class HUDController {
     private var globalClickMonitor: Any?
     private var localPasteMonitor: Any?
     private var globalPasteMonitor: Any?
-    private var localHandsfreeMonitor: Any?
-    private var globalHandsfreeMonitor: Any?
+    private let handsfreeHotkeyProvider = CarbonHotkeyProvider()
     private var currentSessionID: DictationSessionID?
     private var latestSessionUpdate: RecordingStateUpdate?
     private var sessionObservationRevision: UInt64 = 0
@@ -134,7 +133,7 @@ final class HUDController {
         installEscapeMonitors()
         installClickMonitor()
         installPasteShortcutMonitors()
-        installHandsfreeShortcutMonitors()
+        registerHandsfreeShortcut()
 
         // Watch visual state changes, mouse screen, and hover to animate
         // the window. Hover detection is done here via global mouse
@@ -212,7 +211,7 @@ final class HUDController {
         removeEscapeMonitors()
         removeClickMonitor()
         removePasteShortcutMonitors()
-        removeHandsfreeShortcutMonitors()
+        handsfreeHotkeyProvider.unregister()
         handsFreeActivationToken = nil
         handsFreeActivationTask = nil
         handsFreeOwnedSessionID = nil
@@ -529,46 +528,39 @@ final class HUDController {
 
     // MARK: - Hands-free shortcut handling
 
-    /// Install local and global key event monitors for the hands-free
-    /// toggle shortcut. Default is ⌘⇧H.
+    /// Register the hands-free toggle through the macOS global hotkey API.
     ///
     /// When idle/minimized/ready, the shortcut starts hands-free dictation.
     /// When already in hands-free listening, the shortcut stops recording
     /// (completes the pipeline).
-    private func installHandsfreeShortcutMonitors() {
-        localHandsfreeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
-            [weak self] event in
-            if self?.isHandsfreeShortcut(event) == true {
-                self?.handleHandsfreeShortcut()
-                return nil  // Consume the event.
-            }
-            return event
-        }
-
-        globalHandsfreeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
-            [weak self] event in
-            if self?.isHandsfreeShortcut(event) == true {
-                self?.handleHandsfreeShortcut()
-            }
-        }
-    }
-
-    private func removeHandsfreeShortcutMonitors() {
-        if let monitor = localHandsfreeMonitor {
-            NSEvent.removeMonitor(monitor)
-            localHandsfreeMonitor = nil
-        }
-        if let monitor = globalHandsfreeMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalHandsfreeMonitor = nil
-        }
-    }
-
-    /// Check whether a key event matches the configured hands-free shortcut.
-    private func isHandsfreeShortcut(_ event: NSEvent) -> Bool {
+    private func registerHandsfreeShortcut() {
         let binding = Settings.shared.handsfreeShortcutBinding
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return binding.matches(keyCode: event.keyCode, modifierFlags: flags.rawValue)
+        let setting = HotkeySetting.modifierPlusKey(
+            modifierFlags: binding.standardModifierFlags,
+            keyCode: binding.keyCode,
+            keyName: binding.label)
+
+        handsfreeHotkeyProvider.unregister()
+        do {
+            try handsfreeHotkeyProvider.register(with: setting) {
+                [weak self] event in
+                guard event == .pressed else { return }
+                Task { @MainActor [weak self] in
+                    self?.handleHandsfreeShortcut()
+                }
+            }
+            Log.debug(
+                "[HUDController] Hands-free shortcut registered (\(binding.label))")
+        } catch {
+            handsfreeHotkeyProvider.unregister()
+            Log.debug(
+                "[HUDController] Failed to register hands-free shortcut: \(error)")
+        }
+    }
+
+    /// Apply a Settings change without rebuilding the HUD.
+    func reRegisterHandsfreeShortcut() {
+        registerHandsfreeShortcut()
     }
 
     /// Toggle hands-free dictation on or off.
@@ -765,12 +757,7 @@ final class HUDController {
 
     deinit {
         visualStateObservation?.cancel()
-        if let monitor = localHandsfreeMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        if let monitor = globalHandsfreeMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
+        handsfreeHotkeyProvider.unregister()
         if let monitor = localEscapeMonitor {
             NSEvent.removeMonitor(monitor)
         }

@@ -34,6 +34,10 @@ final class SettingsController {
     /// The AppDelegate should use this to re-register its mode hotkey provider.
     var onModeShortcutChanged: (() -> Void)?
 
+    /// Callback invoked after the hands-free shortcut is accepted.
+    /// The HUD should re-register its Carbon global hotkey.
+    var onHandsfreeShortcutChanged: (() -> Void)?
+
     /// Callback invoked when a different dictation mode is requested. The
     /// AppDelegate owns publication and persistence of the installed backend.
     var onDictationModeChanged: ((_ mode: DictationMode) -> Void)?
@@ -253,10 +257,14 @@ final class SettingsController {
                 pushCurrentSettingsState()
                 return
             }
+            let previous = settings.handsfreeShortcutBinding
             settings.handsfreeShortcutBinding = binding
             guard settings.handsfreeShortcutBinding == binding else {
                 pushCurrentSettingsState()
                 return
+            }
+            if previous != binding {
+                onHandsfreeShortcutChanged?()
             }
 
         case "paste":
