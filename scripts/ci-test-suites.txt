@@ -21,6 +21,7 @@ ci AudioStartReservationTests
 ci BrowserURLReaderTests
 ci BufferedPasteOwnershipTests
 ci BuildUserPromptTests
+ci CarbonHotkeyProviderTests
 ci CloudDictationLiveHarnessTests
 ci CloudReplay
 ci CohereRollingRecognitionSessionTests
@@ -151,6 +152,7 @@ gated PolishScenarioDeterministicTests
 gated PolishScenarioRegexTests
 gated ServiceConfigTests
 os CGEventTapHotkeyProviderTests
+os CarbonHotkeyProviderOSTests
 os CoreAudioDeviceProviderTests
 os MainThreadDelayTests
 os SoundFeedbackPathTests

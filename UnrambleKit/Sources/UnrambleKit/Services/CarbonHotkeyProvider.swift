@@ -32,6 +32,14 @@ public final class CarbonHotkeyProvider: HotkeyProviding, @unchecked Sendable {
         #endif
     }
 
+    #if canImport(Carbon)
+        var registrationIdentityForTesting: EventHotKeyID {
+            EventHotKeyID(
+                signature: Self.signature,
+                id: registrationID)
+        }
+    #endif
+
     deinit {
         unregister()
     }
