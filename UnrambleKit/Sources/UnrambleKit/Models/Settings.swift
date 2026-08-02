@@ -344,7 +344,7 @@ public final class Settings: @unchecked Sendable {
     }
 
     /// The key binding for the incognito mode toggle shortcut.
-    /// Defaults to ⌃⇧M (Control+Shift+M, key code 46).
+    /// Defaults to ⌥M (Option+M, key code 46).
     public var incognitoModeShortcutBinding: ShortcutBinding {
         get {
             guard let data = defaults.data(forKey: Key.incognitoModeShortcutBinding.rawValue),
@@ -354,7 +354,9 @@ public final class Settings: @unchecked Sendable {
                 persistIncognitoModeShortcut(repaired)
                 return repaired
             }
-            if binding == .legacyDefaultIncognitoMode {
+            if binding == .legacyDefaultIncognitoMode
+                || binding == .previousDefaultIncognitoMode
+            {
                 let repaired = compatibleDefaultIncognitoModeShortcut
                 persistIncognitoModeShortcut(repaired)
                 return repaired
@@ -381,11 +383,11 @@ public final class Settings: @unchecked Sendable {
         modeShortcutPolicy()
     }
 
-    /// Prefer Control+Shift+M, but preserve an older dictation trigger when
-    /// that chord would be ambiguous. With one dictation command and three
-    /// other exact commands, at least one modifier subset for M is available.
+    /// Prefer Option+M as part of the Option command family, but preserve a
+    /// custom shortcut configuration when that exact chord is unavailable.
     private var compatibleDefaultIncognitoModeShortcut: ShortcutBinding {
         let modifierCandidates: [UInt] = [
+            ShortcutBinding.optionFlag,
             ShortcutBinding.controlFlag | ShortcutBinding.shiftFlag,
             ShortcutBinding.controlFlag | ShortcutBinding.optionFlag,
             ShortcutBinding.optionFlag | ShortcutBinding.shiftFlag,

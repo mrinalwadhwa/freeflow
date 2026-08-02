@@ -456,6 +456,21 @@ final class HotkeyPipelineDriverTests: XCTestCase {
         driver.invalidate()
     }
 
+    func testTransferWithoutPhysicalPressDoesNotInvokeCompletion() async {
+        let pipeline = GatedHotkeyPipeline()
+        let completion = expectation(description: "transfer completion")
+        completion.isInverted = true
+        let driver = HotkeyPipelineDriver(pipeline: pipeline)
+
+        let boundary = driver.transferHeldSession { _ in
+            completion.fulfill()
+        }
+
+        XCTAssertNil(boundary)
+        await fulfillment(of: [completion], timeout: 0.1)
+        driver.invalidate()
+    }
+
     func testTransferDuringPendingActivationDetachesPhysicalReleaseImmediately() async throws {
         let pipeline = GatedHotkeyPipeline()
         let driver = HotkeyPipelineDriver(pipeline: pipeline)

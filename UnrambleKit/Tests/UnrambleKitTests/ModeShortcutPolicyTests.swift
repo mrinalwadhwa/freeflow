@@ -10,16 +10,15 @@ struct ModeShortcutPolicyTests {
         paste: .defaultPaste,
         cancel: .defaultCancel)
 
-    @Test("Default is Control Shift M")
+    @Test("Default is Option M")
     func newDefault() {
         #expect(
             ShortcutBinding.defaultIncognitoMode
                 == ShortcutBinding(
                     kind: .key,
-                    modifierFlags: ShortcutBinding.controlFlag
-                        | ShortcutBinding.shiftFlag,
+                    modifierFlags: ShortcutBinding.optionFlag,
                     keyCode: 46,
-                    label: "⌃⇧M"))
+                    label: "⌥M"))
     }
 
     @Test("Mode shortcut requires a non-modifier key")
@@ -34,14 +33,14 @@ struct ModeShortcutPolicyTests {
         #expect(policy.validate(binding) == .requiresKey)
     }
 
-    @Test("Mode shortcut requires two standard modifiers")
-    func requiresTwoModifiers() {
+    @Test("Mode shortcut requires a standard modifier")
+    func requiresModifier() {
         let binding = ShortcutBinding(
-            modifierFlags: ShortcutBinding.controlFlag,
+            modifierFlags: 0,
             keyCode: 46,
-            label: "⌃M")
+            label: "M")
 
-        #expect(policy.validate(binding) == .requiresTwoModifiers)
+        #expect(policy.validate(binding) == .requiresModifier)
     }
 
     @Test("Physical A remains a key even though its key code is zero")
@@ -56,22 +55,22 @@ struct ModeShortcutPolicyTests {
         #expect(policy.validate(binding) == nil)
     }
 
-    @Test("Mode chord cannot contain modifier-only dictation family")
-    func modifierFamilyConflict() {
+    @Test("Mode chord may use modifier-only dictation key as qualifier")
+    func modifierFamilyQualifier() {
         let binding = ShortcutBinding(
             modifierFlags: ShortcutBinding.controlFlag
                 | ShortcutBinding.optionFlag,
             keyCode: 46,
             label: "⌃⌥M")
 
-        #expect(policy.validate(binding) == .conflictsWithDictation)
+        #expect(policy.validate(binding) == nil)
     }
 
     @Test(
         "Mode chord rejects exact command conflicts",
         arguments: [
             (ShortcutBinding.defaultPaste, ModeShortcutValidationError.conflictsWithPaste),
-            (ShortcutBinding.defaultCancel, ModeShortcutValidationError.requiresTwoModifiers),
+            (ShortcutBinding.defaultCancel, ModeShortcutValidationError.requiresModifier),
         ])
     func commandConflicts(
         binding: ShortcutBinding,

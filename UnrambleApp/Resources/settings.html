@@ -1127,8 +1127,8 @@
              *       else. This commits a modifier-only shortcut like
              *       Right Option ⌥.
              *
-             * The incognito-mode shortcut is stricter: it requires a
-             * non-modifier key plus at least two modifier families.
+             * The incognito-mode shortcut requires a non-modifier key plus
+             * at least one modifier family.
              *
              * Escape always cancels recording and restores the button's
              * persisted value (kept in the data-default attribute).
@@ -1527,8 +1527,8 @@
                                 rejectRecording(activeBtn, "Use a supported key");
                                 return;
                             }
-                            if (modifierCount(e) < 2) {
-                                rejectRecording(activeBtn, "Use two modifier keys");
+                            if (modifierCount(e) < 1) {
+                                rejectRecording(activeBtn, "Use a modifier key");
                                 return;
                             }
                         }
@@ -1583,7 +1583,7 @@
 
                         if (remaining === 0) {
                             if (activeBtn.getAttribute("data-shortcut") === "incognitoMode") {
-                                rejectRecording(activeBtn, "Add a key and two modifiers");
+                                rejectRecording(activeBtn, "Add a key and a modifier");
                                 return;
                             }
 

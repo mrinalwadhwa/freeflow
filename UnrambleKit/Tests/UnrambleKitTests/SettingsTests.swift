@@ -272,7 +272,7 @@ struct SettingsTests {
         settings.incognitoModeShortcutLabel = original
     }
 
-    @Test("Exact legacy mode shortcut migrates to Control Shift M")
+    @Test("Exact legacy mode shortcut migrates to Option M")
     func legacyModeShortcutMigration() throws {
         let suiteName = "SettingsTests.legacyModeShortcutMigration"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -286,7 +286,24 @@ struct SettingsTests {
         let settings = Settings(defaults: defaults)
 
         #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
-        #expect(settings.incognitoModeShortcutLabel == "⌃⇧M")
+        #expect(settings.incognitoModeShortcutLabel == "⌥M")
+    }
+
+    @Test("Previous Control Shift M default migrates to Option M")
+    func previousDefaultModeShortcutMigration() throws {
+        let suiteName = "SettingsTests.previousDefaultModeShortcutMigration"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try JSONEncoder().encode(
+                ShortcutBinding.previousDefaultIncognitoMode),
+            forKey: "incognitoModeShortcutBinding")
+
+        let settings = Settings(defaults: defaults)
+
+        #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
+        #expect(settings.incognitoModeShortcutLabel == "⌥M")
     }
 
     @Test("Valid custom mode shortcut survives legacy migration")
@@ -363,7 +380,7 @@ struct SettingsTests {
         let settings = Settings(defaults: defaults)
         let repaired = settings.incognitoModeShortcutBinding
 
-        #expect(repaired.standardModifierCount >= 2)
+        #expect(repaired.standardModifierCount >= 1)
         #expect(!repaired.hasControl)
         #expect(repaired.keyCode == 46)
         #expect(settings.incognitoModeShortcutLabel == repaired.label)
@@ -387,24 +404,23 @@ struct SettingsTests {
         let settings = Settings(defaults: defaults)
         let repaired = settings.incognitoModeShortcutBinding
 
-        #expect(repaired.standardModifierCount >= 2)
+        #expect(repaired.standardModifierCount >= 1)
         #expect(!repaired.hasShift)
         #expect(repaired.keyCode == 46)
         #expect(settings.incognitoModeShortcutLabel == repaired.label)
     }
 
-    @Test("Dictation shortcut cannot invalidate retained mode shortcut")
-    func dictationShortcutCannotInvalidateModeShortcut() throws {
+    @Test("Modifier-only dictation can qualify the retained mode shortcut")
+    func dictationShortcutCanQualifyModeShortcut() throws {
         let suiteName = "SettingsTests.dictationShortcutCannotInvalidateModeShortcut"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let settings = Settings(defaults: defaults)
 
-        let original = settings.hotkeySetting
         settings.hotkeySetting = .modifierOnly(.leftControl)
 
-        #expect(settings.hotkeySetting == original)
+        #expect(settings.hotkeySetting == .modifierOnly(.leftControl))
         #expect(settings.incognitoModeShortcutBinding == .defaultIncognitoMode)
     }
 

@@ -524,6 +524,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         requestDictationMode(newMode)
     }
 
+    /// Run the Option-M command without leaving a tiny Right Option
+    /// dictation behind. A left-Option chord has no press to transfer and
+    /// toggles immediately; a right-Option chord first cancels the exact
+    /// session admitted for that physical qualifier press.
+    private func handleModeShortcut() {
+        guard let driver = hotkeyPipelineDriver, let currentPipeline = pipeline
+        else {
+            toggleIncognitoMode()
+            return
+        }
+
+        let transferredBoundary = driver.transferHeldSession {
+            [weak self, currentPipeline] heldSession in
+            Task { @MainActor in
+                if let heldSession {
+                    await currentPipeline.cancel(
+                        sessionID: heldSession.sessionID)
+                }
+                guard let self, self.pipeline === currentPipeline else { return }
+                self.toggleIncognitoMode()
+            }
+        }
+        if transferredBoundary == nil {
+            toggleIncognitoMode()
+        }
+    }
+
     /// Admit one mode request, then preserve every operation already owned by
     /// the old generation before replacing it. Persisted/UI mode remains tied
     /// to the installed backend until the new pipeline is synchronously
@@ -953,7 +980,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 [weak self] event in
                 guard event == .pressed else { return }
                 Task { @MainActor [weak self] in
-                    self?.toggleIncognitoMode()
+                    self?.handleModeShortcut()
                 }
             }
             registeredModeHotkeyBinding = binding

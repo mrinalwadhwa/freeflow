@@ -337,7 +337,8 @@ public final class HotkeyPipelineDriver: @unchecked Sendable {
                 terminated = true
             }
         }
-        if transferredBoundary == nil || terminated {
+        guard transferredBoundary != nil else { return nil }
+        if terminated {
             completion(nil)
             return nil
         }
