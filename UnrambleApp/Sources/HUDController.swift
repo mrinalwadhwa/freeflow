@@ -29,11 +29,12 @@ final class HUDController {
     private var localPasteMonitor: Any?
     private var globalPasteMonitor: Any?
     private let handsfreeHotkeyProvider = CarbonHotkeyProvider()
-    private let handsfreeAcceptHotkeyProviders = [
+    private let handsfreeSessionHotkeyProviders = [
+        CarbonHotkeyProvider(),
         CarbonHotkeyProvider(),
         CarbonHotkeyProvider(),
     ]
-    private var handsfreeAcceptShortcutsRegistered = false
+    private var handsfreeSessionShortcutsRegistered = false
     private var currentSessionID: DictationSessionID?
     private var latestSessionUpdate: RecordingStateUpdate?
     private var sessionObservationRevision: UInt64 = 0
@@ -184,7 +185,7 @@ final class HUDController {
                 let messageChanged = currentMessageID != previousMessageID
                 previousMessageID = currentMessageID
                 if stateChanged {
-                    self.syncHandsfreeAcceptShortcuts(for: current)
+                    self.syncHandsfreeSessionShortcuts(for: current)
                 }
 
                 if screenChanged {
@@ -221,7 +222,7 @@ final class HUDController {
         removeClickMonitor()
         removePasteShortcutMonitors()
         handsfreeHotkeyProvider.unregister()
-        unregisterHandsfreeAcceptShortcuts()
+        unregisterHandsfreeSessionShortcuts()
         handsFreeActivationToken = nil
         handsFreeActivationTask = nil
         handsFreeOwnedSessionID = nil
@@ -601,56 +602,68 @@ final class HUDController {
         }
     }
 
-    /// Claim Return and keypad Enter only while hands-free recording is
-    /// active, then finish and accept the recording.
-    private func syncHandsfreeAcceptShortcuts(for state: HUDVisualState) {
+    /// Claim Return, keypad Enter, and Escape only while hands-free recording
+    /// is active. Return accepts the recording; Escape cancels it.
+    private func syncHandsfreeSessionShortcuts(for state: HUDVisualState) {
         guard state == .listeningHandsFree else {
-            unregisterHandsfreeAcceptShortcuts()
+            unregisterHandsfreeSessionShortcuts()
             return
         }
-        guard !handsfreeAcceptShortcutsRegistered else { return }
+        guard !handsfreeSessionShortcutsRegistered else { return }
 
-        let keyCodes = [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)]
-        handsfreeAcceptShortcutsRegistered = true
+        let shortcuts: [(keyCode: UInt16, keyName: String, accepts: Bool)] = [
+            (UInt16(kVK_Return), "Return", true),
+            (UInt16(kVK_ANSI_KeypadEnter), "Keypad Enter", true),
+            (UInt16(kVK_Escape), "Escape", false),
+        ]
+        handsfreeSessionShortcutsRegistered = true
         do {
-            for (provider, keyCode) in zip(
-                handsfreeAcceptHotkeyProviders,
-                keyCodes)
+            for (provider, shortcut) in zip(
+                handsfreeSessionHotkeyProviders,
+                shortcuts)
             {
                 let setting = HotkeySetting.modifierPlusKey(
                     modifierFlags: 0,
-                    keyCode: keyCode,
-                    keyName: keyCode == UInt16(kVK_Return)
-                        ? "Return"
-                        : "Keypad Enter")
+                    keyCode: shortcut.keyCode,
+                    keyName: shortcut.keyName)
                 try provider.register(with: setting) { [weak self] event in
                     guard event == .pressed else { return }
                     Task { @MainActor [weak self] in
-                        self?.acceptHandsfreeRecording()
+                        if shortcut.accepts {
+                            self?.acceptHandsfreeRecording()
+                        } else {
+                            self?.cancelHandsfreeRecording()
+                        }
                     }
                 }
             }
             Log.debug(
-                "[HUDController] Return accepts hands-free recording")
+                "[HUDController] Return accepts and Escape cancels hands-free recording")
         } catch {
-            unregisterHandsfreeAcceptShortcuts()
+            unregisterHandsfreeSessionShortcuts()
             Log.debug(
-                "[HUDController] Failed to register hands-free accept shortcuts: \(error)")
+                "[HUDController] Failed to register hands-free session shortcuts: \(error)")
         }
     }
 
     private func acceptHandsfreeRecording() {
         guard viewModel.visualState == .listeningHandsFree else { return }
-        unregisterHandsfreeAcceptShortcuts()
+        unregisterHandsfreeSessionShortcuts()
         completePipeline()
     }
 
-    private func unregisterHandsfreeAcceptShortcuts() {
-        guard handsfreeAcceptShortcutsRegistered else { return }
-        for provider in handsfreeAcceptHotkeyProviders {
+    private func cancelHandsfreeRecording() {
+        guard viewModel.visualState == .listeningHandsFree else { return }
+        unregisterHandsfreeSessionShortcuts()
+        cancelPipeline()
+    }
+
+    private func unregisterHandsfreeSessionShortcuts() {
+        guard handsfreeSessionShortcutsRegistered else { return }
+        for provider in handsfreeSessionHotkeyProviders {
             provider.unregister()
         }
-        handsfreeAcceptShortcutsRegistered = false
+        handsfreeSessionShortcutsRegistered = false
     }
 
     /// Transfer a held or still-activating Right Option session to the HUD.
@@ -832,7 +845,7 @@ final class HUDController {
     deinit {
         visualStateObservation?.cancel()
         handsfreeHotkeyProvider.unregister()
-        for provider in handsfreeAcceptHotkeyProviders {
+        for provider in handsfreeSessionHotkeyProviders {
             provider.unregister()
         }
         if let monitor = localEscapeMonitor {
