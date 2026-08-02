@@ -201,6 +201,11 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
                 throw HotkeyRegistrationError.tapCreationFailed
             }
 
+            if let qualifiedKeyCode {
+                Log.debug(
+                    "[CGEventTapHotkeyProvider] Intercepting qualified key \(qualifiedKeyCode) with \(setting.displayName)")
+            }
+
             self.eventTap = tap
 
             let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -328,29 +333,42 @@ public final class CGEventTapHotkeyProvider: HotkeyProviding, @unchecked Sendabl
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let qualifiedResult: (
             suppress: Bool,
-            callback: (@Sendable (UInt64) -> Void)?
+            callback: (@Sendable (UInt64) -> Void)?,
+            physicalModifierDown: Bool?
         ) = lock.withLock {
-                guard activeRegistrationGeneration == registrationGeneration,
-                    let qualifiedKeyCode,
-                    keyCode == qualifiedKeyCode
-                else { return (false, nil) }
+            guard activeRegistrationGeneration == registrationGeneration,
+                let qualifiedKeyCode,
+                keyCode == qualifiedKeyCode
+            else { return (false, nil, nil) }
 
-                if isKeyDown {
-                    guard case .modifierOnly = _hotkeySetting,
-                        _isHotkeyDown
-                    else { return (false, nil) }
-                    if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
-                        return (true, nil)
-                    }
-                    guard !_isQualifiedKeyDown else { return (true, nil) }
-                    _isQualifiedKeyDown = true
-                    return (true, qualifiedKeyCallback)
+            if isKeyDown {
+                guard case .modifierOnly(let modifierKey) = _hotkeySetting else {
+                    return (false, nil, nil)
                 }
-
-                guard _isQualifiedKeyDown else { return (false, nil) }
-                _isQualifiedKeyDown = false
-                return (true, nil)
+                let physicalModifierDown = _isHotkeyDown
+                    || CGEventSource.keyState(
+                        .combinedSessionState,
+                        key: CGKeyCode(modifierKey.keyCode))
+                guard physicalModifierDown else {
+                    return (false, nil, false)
+                }
+                if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+                    return (true, nil, true)
+                }
+                guard !_isQualifiedKeyDown else { return (true, nil, true) }
+                _isQualifiedKeyDown = true
+                return (true, qualifiedKeyCallback, true)
             }
+
+            guard _isQualifiedKeyDown else { return (false, nil, nil) }
+            _isQualifiedKeyDown = false
+            return (true, nil, nil)
+        }
+
+        if let physicalModifierDown = qualifiedResult.physicalModifierDown {
+            Log.debug(
+                "[CGEventTapHotkeyProvider] Qualified key \(keyCode) down=\(isKeyDown) modifierDown=\(physicalModifierDown) suppress=\(qualifiedResult.suppress)")
+        }
 
         if let qualifiedCallback = qualifiedResult.callback {
             qualifiedCallback(

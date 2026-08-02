@@ -59,6 +59,20 @@ public enum HotkeySetting: Sendable, Equatable {
             }
         }
 
+        /// The macOS virtual key code for this physical modifier key.
+        public var keyCode: UInt16 {
+            switch self {
+            case .rightOption: return 61
+            case .leftOption: return 58
+            case .rightCommand: return 54
+            case .leftCommand: return 55
+            case .rightControl: return 62
+            case .leftControl: return 59
+            case .rightShift: return 60
+            case .leftShift: return 56
+            }
+        }
+
         /// Human-readable display name for the modifier key.
         public var displayName: String {
             switch self {

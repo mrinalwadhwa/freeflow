@@ -1026,6 +1026,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if case .modifierOnly(let modifier) = dictationSetting,
                 handsfreeBinding.standardModifierFlags == modifier.standardFlag
             {
+                Log.debug(
+                    "[AppDelegate] Registering \(modifier.displayName)+\(handsfreeBinding.keyCode) through the physical modifier listener")
                 try hotkeyProvider.registerTimestamped(
                     interceptingQualifiedKey: handsfreeBinding.keyCode,
                     onQualifiedKey: { [weak hudRef] _ in
