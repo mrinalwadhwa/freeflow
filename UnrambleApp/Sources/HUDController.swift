@@ -746,7 +746,11 @@ final class HUDController {
         do {
             try pasteHotkeyProvider.register(with: setting) {
                 [weak self] event in
-                guard event == .pressed else { return }
+                // Wait until the user releases Control/Shift/V before
+                // synthesizing Command-V. Firing on key-down leaves the
+                // shortcut modifiers physically held, so the foreground app
+                // receives a modified paste chord instead of plain Command-V.
+                guard event == .released else { return }
                 Task { @MainActor [weak self] in
                     self?.handlePasteShortcut()
                 }
