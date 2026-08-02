@@ -188,6 +188,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 action: #selector(toggleIncognitoModeAction),
                 keyEquivalent: ""
             )
+            applyKeyEquivalent(
+                Settings.shared.incognitoModeShortcutBinding,
+                to: incognitoMode)
             incognitoMode.target = self
             incognitoMode.image = NSImage(
                 systemSymbolName: "lock.shield",
@@ -221,7 +224,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         // Key equivalent is set dynamically in refreshPasteItem()
         // from the current paste shortcut binding in Settings.
-        applyPasteKeyEquivalent(to: paste)
+        applyKeyEquivalent(Settings.shared.pasteShortcutBinding, to: paste)
         paste.target = self
         paste.isEnabled = false
         paste.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
@@ -339,6 +342,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// Refresh dynamic menu items each time the menu opens.
     func menuWillOpen(_ menu: NSMenu) {
+        refreshModeShortcutItem()
         refreshPasteItem()
         refreshMicSubmenu()
         refreshLanguageSubmenu()
@@ -347,6 +351,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Dynamic refresh
 
+    private func refreshModeShortcutItem() {
+        guard let incognitoModeItem else { return }
+        applyKeyEquivalent(
+            Settings.shared.incognitoModeShortcutBinding,
+            to: incognitoModeItem)
+    }
+
     private func refreshPasteItem() {
         guard let pasteItem, let transcriptBuffer else {
             pasteItem?.isEnabled = false
@@ -354,7 +365,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         // Update the displayed key equivalent from the current binding
         // so changes made in Settings are reflected in the menu.
-        applyPasteKeyEquivalent(to: pasteItem)
+        applyKeyEquivalent(Settings.shared.pasteShortcutBinding, to: pasteItem)
         // Check buffer availability synchronously via a detached task that
         // completes before the menu finishes opening. Since TranscriptBuffer
         // is an actor, we fire-and-forget with nonisolated(unsafe) capture.
@@ -366,12 +377,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Apply the paste shortcut binding from Settings to a menu item's
-    /// key equivalent. Maps the binding's modifier flags and key code
-    /// to NSMenuItem's keyEquivalent and keyEquivalentModifierMask.
-    private func applyPasteKeyEquivalent(to item: NSMenuItem) {
-        let binding = Settings.shared.pasteShortcutBinding
-
+    /// Apply a configured shortcut to a menu item's displayed key equivalent.
+    private func applyKeyEquivalent(
+        _ binding: ShortcutBinding,
+        to item: NSMenuItem
+    ) {
         // Build modifier mask from the binding's flags.
         var mask: NSEvent.ModifierFlags = []
         if binding.hasControl { mask.insert(.control) }
