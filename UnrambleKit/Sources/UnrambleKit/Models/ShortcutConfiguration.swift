@@ -46,7 +46,7 @@ public struct ShortcutConfiguration: Sendable, Equatable {
 
     /// The instructional hint shown in the No Target state.
     ///
-    /// Example: "Select a text field, then ⌃⌥V to paste"
+    /// Example: "Select a text field, then ⌃⇧V to paste"
     public var noTargetHint: String {
         "Select a text field, then \(pasteShortcutName) to paste"
     }

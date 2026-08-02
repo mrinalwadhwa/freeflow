@@ -150,11 +150,18 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
 
     // MARK: - Default bindings
 
-    /// Default paste shortcut: ⌃⌥V (Control+Option+V, key code 9).
-    public static let defaultPaste = ShortcutBinding(
+    /// Previous paste default retained for exact migration.
+    public static let previousDefaultPaste = ShortcutBinding(
         modifierFlags: controlFlag | optionFlag,
         keyCode: 9,
         label: "⌃⌥V"
+    )
+
+    /// Default paste shortcut: ⌃⇧V (Control+Shift+V, key code 9).
+    public static let defaultPaste = ShortcutBinding(
+        modifierFlags: controlFlag | shiftFlag,
+        keyCode: 9,
+        label: "⌃⇧V"
     )
 
     /// Default hands-free shortcut: ⌥Space (Option+Space, key code 49).

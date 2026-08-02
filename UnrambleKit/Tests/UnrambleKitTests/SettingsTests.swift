@@ -474,6 +474,36 @@ struct SettingsTests {
         #expect(binding.label == "⌥Space")
     }
 
+    @Test("Paste defaults to the Control Shift V chord")
+    func pasteDefaultsToControlShiftV() throws {
+        let suiteName = "SettingsTests.pasteDefaultsToControlShiftV"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = Settings(defaults: defaults)
+
+        #expect(settings.pasteShortcutBinding == .defaultPaste)
+        #expect(settings.pasteShortcutLabel == "⌃⇧V")
+    }
+
+    @Test("Previous paste default migrates to Control Shift V")
+    func previousPasteDefaultMigrates() throws {
+        let suiteName = "SettingsTests.previousPasteDefaultMigrates"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try JSONEncoder().encode(ShortcutBinding.previousDefaultPaste),
+            forKey: "pasteShortcutBinding")
+        defaults.set("⌃⌥V", forKey: "pasteShortcutLabel")
+
+        let settings = Settings(defaults: defaults)
+
+        #expect(settings.pasteShortcutBinding == .defaultPaste)
+        #expect(settings.pasteShortcutLabel == "⌃⇧V")
+    }
+
     @Test("Paste shortcut cannot invalidate retained mode shortcut")
     func pasteShortcutCannotInvalidateModeShortcut() throws {
         let suiteName = "SettingsTests.pasteShortcutCannotInvalidateModeShortcut"

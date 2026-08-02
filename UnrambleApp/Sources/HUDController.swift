@@ -35,6 +35,7 @@ final class HUDController {
         CarbonHotkeyProvider(),
     ]
     private var handsfreeSessionShortcutsRegistered = false
+    private var handsfreeStopOnShortcutRelease = false
     private var currentSessionID: DictationSessionID?
     private var latestSessionUpdate: RecordingStateUpdate?
     private var sessionObservationRevision: UInt64 = 0
@@ -222,6 +223,7 @@ final class HUDController {
         removeClickMonitor()
         removePasteShortcutMonitors()
         handsfreeHotkeyProvider.unregister()
+        handsfreeStopOnShortcutRelease = false
         unregisterHandsfreeSessionShortcuts()
         handsFreeActivationToken = nil
         handsFreeActivationTask = nil
@@ -551,13 +553,18 @@ final class HUDController {
             keyCode: binding.keyCode,
             keyName: binding.label)
 
+        handsfreeStopOnShortcutRelease = false
         handsfreeHotkeyProvider.unregister()
         do {
             try handsfreeHotkeyProvider.register(with: setting) {
                 [weak self] event in
-                guard event == .pressed else { return }
                 Task { @MainActor [weak self] in
-                    self?.handleHandsfreeShortcut()
+                    switch event {
+                    case .pressed:
+                        self?.handleHandsfreeShortcut()
+                    case .released:
+                        self?.handleHandsfreeShortcutRelease()
+                    }
                 }
             }
             Log.debug(
@@ -584,6 +591,9 @@ final class HUDController {
     func handleHandsfreeShortcut() {
         Log.debug(
             "[HUDController] Hands-free shortcut pressed (state=\(viewModel.visualState))")
+        if viewModel.visualState != .listeningHandsFree {
+            handsfreeStopOnShortcutRelease = false
+        }
         switch viewModel.visualState {
         case .minimized, .ready:
             // Right Option activation is asynchronous. Space can arrive before
@@ -596,10 +606,19 @@ final class HUDController {
         case .listeningHeld:
             _ = transferHeldSessionToHandsFree()
         case .listeningHandsFree:
-            completePipeline()
+            handsfreeStopOnShortcutRelease = true
         default:
             break
         }
+    }
+
+    /// Finish only after Option-Space is physically released so its Option
+    /// modifier cannot alter the synthetic Command-V used for injection.
+    private func handleHandsfreeShortcutRelease() {
+        guard handsfreeStopOnShortcutRelease else { return }
+        handsfreeStopOnShortcutRelease = false
+        guard viewModel.visualState == .listeningHandsFree else { return }
+        completePipeline()
     }
 
     /// Claim Return, keypad Enter, and Escape only while hands-free recording
@@ -718,7 +737,7 @@ final class HUDController {
     /// Install local and global key event monitors for the paste shortcut.
     ///
     /// The shortcut binding is read from Settings so it updates when the
-    /// user changes it in the settings screen. Default is ⌃⌥V.
+    /// user changes it in the settings screen. Default is ⌃⇧V.
     ///
     /// When the HUD is in the no-target state, the paste shortcut lets the
     /// user select a text field and paste the buffered transcript without

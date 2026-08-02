@@ -14,7 +14,7 @@ struct ShortcutConfigurationTests {
         // With default settings it should reflect Right Option.
         #expect(config.holdToRecordKeyName == Settings.shared.hotkeySetting.displayName)
         // pasteShortcutName is now dynamic, read from Settings.shared.
-        // With default settings it should reflect ⌃⌥V.
+        // With default settings it should reflect ⌃⇧V.
         #expect(config.pasteShortcutName == Settings.shared.pasteShortcutBinding.label)
         #expect(config.dismissKeyName == "Escape")
     }

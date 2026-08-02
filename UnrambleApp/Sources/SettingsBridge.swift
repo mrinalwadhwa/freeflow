@@ -208,7 +208,7 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
     ///   - soundFeedback: Whether sound feedback is enabled.
     ///   - shortcuts: Dictionary of shortcut labels keyed by shortcut name
     ///     (e.g. `["dictate": "Right Option ⌥", "handsfree": "⌥⌥",
-    ///     "paste": "⌃⌥V", "cancel": "Escape"]`).
+    ///     "paste": "⌃⇧V", "cancel": "Escape"]`).
     ///   - language: The ISO-639-1 code of the current language (e.g. "en").
     ///   - languages: Array of dictionaries with "code" and "name" keys
     ///     for all supported languages.

@@ -210,7 +210,7 @@ public final class Settings: @unchecked Sendable {
     }
 
     /// Display label for the paste-last-transcript shortcut.
-    /// Defaults to "⌃⌥V" (Control+Option+V).
+    /// Defaults to "⌃⇧V" (Control+Shift+V).
     public var pasteShortcutLabel: String {
         get {
             defaults.string(forKey: Key.pasteShortcutLabel.rawValue)
@@ -271,12 +271,17 @@ public final class Settings: @unchecked Sendable {
     }
 
     /// The key binding for the paste-last-transcript shortcut.
-    /// Defaults to ⌃⌥V (Control+Option+V, key code 9).
+    /// Defaults to ⌃⇧V (Control+Shift+V, key code 9).
     public var pasteShortcutBinding: ShortcutBinding {
         get {
             guard let data = defaults.data(forKey: Key.pasteShortcutBinding.rawValue),
                 let binding = try? JSONDecoder().decode(ShortcutBinding.self, from: data)
             else {
+                persistDefaultPasteShortcutIfNeeded()
+                return .defaultPaste
+            }
+            if binding == .previousDefaultPaste {
+                persistPasteShortcut(.defaultPaste)
                 return .defaultPaste
             }
             return binding
@@ -287,8 +292,7 @@ public final class Settings: @unchecked Sendable {
                 modeShortcutPolicy(paste: newValue)
                     .validate(retainedModeBinding) == nil
             else { return }
-            if let data = try? JSONEncoder().encode(newValue) {
-                defaults.set(data, forKey: Key.pasteShortcutBinding.rawValue)
+            if persistPasteShortcut(newValue) {
                 // Also update the label to stay in sync.
                 pasteShortcutLabel = newValue.label
             }
@@ -445,6 +449,22 @@ public final class Settings: @unchecked Sendable {
             defaults.set(data, forKey: Key.incognitoModeShortcutBinding.rawValue)
         }
         defaults.set(binding.label, forKey: Key.incognitoModeShortcutLabel.rawValue)
+    }
+
+    @discardableResult
+    private func persistPasteShortcut(_ binding: ShortcutBinding) -> Bool {
+        guard let data = try? JSONEncoder().encode(binding) else { return false }
+        defaults.set(data, forKey: Key.pasteShortcutBinding.rawValue)
+        defaults.set(binding.label, forKey: Key.pasteShortcutLabel.rawValue)
+        return true
+    }
+
+    private func persistDefaultPasteShortcutIfNeeded() {
+        guard
+            defaults.string(forKey: Key.pasteShortcutLabel.rawValue)
+                == ShortcutBinding.previousDefaultPaste.label
+        else { return }
+        persistPasteShortcut(.defaultPaste)
     }
 
     // MARK: - Reset
