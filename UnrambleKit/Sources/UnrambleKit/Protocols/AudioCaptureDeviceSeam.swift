@@ -14,6 +14,8 @@ public protocol AudioInputDeviceSnapshotProviding: AnyObject {
     /// transition lock. This must not synchronously call back into capture.
     func clearUnavailableCaptureSelection()
     func waitUntilInputDeviceSettled() async throws
+    /// Whether starting an output cue is safe after recent device churn.
+    var isSoundFeedbackSafe: Bool { get }
     func micProximityForDevice(_ deviceID: UInt32?) -> MicProximity
     func deviceNameForDevice(_ deviceID: UInt32?) -> String?
 }
@@ -22,6 +24,7 @@ extension AudioInputDeviceSnapshotProviding {
     public var captureDeviceID: UInt32? { selectedDeviceID }
     public func clearUnavailableCaptureSelection() { clearSelection() }
     public func waitUntilInputDeviceSettled() async throws {}
+    public var isSoundFeedbackSafe: Bool { true }
 }
 
 /// Receives a request to rebuild the capture engine after a device change. The

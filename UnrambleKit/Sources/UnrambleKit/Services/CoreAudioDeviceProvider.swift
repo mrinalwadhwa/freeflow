@@ -47,7 +47,12 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
     /// notifications in a burst; coalescing them into one decision avoids the
     /// repeated engine rebuilds that burst otherwise triggers.
     private static let deviceChangeDebounceSeconds = 0.3
+    /// AirPods route changes have blocked output-engine playback for 5.65s in
+    /// live traces. Keep cues off briefly after input-device churn so feedback
+    /// playback cannot delay or disrupt microphone callbacks.
+    static let soundFeedbackCooldownSeconds: TimeInterval = 10
     private let transitionGate = AudioInputDeviceTransitionGate()
+    private var lastDeviceChangeUptime: TimeInterval?
 
     public init() {
         #if canImport(CoreAudio)
@@ -115,8 +120,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 _selectedDeviceID = id
                 return _audioCaptureProvider
             }
-            transitionGate.begin(
-                settleAfter: Self.deviceChangeDebounceSeconds)
+            noteDeviceTransition()
             captureProvider?.markNeedsRebuild()
             Log.debug("[CoreAudioDeviceProvider] Selected device id=\(id)")
         #else
@@ -184,6 +188,17 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         try await transitionGate.waitUntilSettled()
     }
 
+    public var isSoundFeedbackSafe: Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        let age = lock.withLock {
+            lastDeviceChangeUptime.map { now - $0 }
+        }
+        return AudioCaptureSoundFeedbackPolicy.allowsSound(
+            requested: true,
+            secondsSinceDeviceChange: age,
+            cooldown: Self.soundFeedbackCooldownSeconds)
+    }
+
     /// Whether the user is in auto-detect mode (no explicit selection).
     public var isAutoDetect: Bool {
         lock.withLock { _selectedDeviceID == nil }
@@ -195,7 +210,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
             _selectedDeviceID = nil
             return _audioCaptureProvider
         }
-        transitionGate.begin(settleAfter: Self.deviceChangeDebounceSeconds)
+        noteDeviceTransition()
         captureProvider?.markNeedsRebuild()
         Log.debug("[CoreAudioDeviceProvider] Cleared selection, using auto-detect")
     }
@@ -283,6 +298,14 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         #else
             return nil
         #endif
+    }
+
+    private func noteDeviceTransition() {
+        lock.withLock {
+            lastDeviceChangeUptime = ProcessInfo.processInfo.systemUptime
+        }
+        transitionGate.begin(
+            settleAfter: Self.deviceChangeDebounceSeconds)
     }
 
     // MARK: - Core Audio Enumeration
@@ -533,8 +556,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         /// schedule a fresh one, so a burst of notifications settles into a
         /// single rebuild decision instead of one rebuild per notification.
         private func scheduleDeviceChangeCheck() {
-            transitionGate.begin(
-                settleAfter: Self.deviceChangeDebounceSeconds)
+            noteDeviceTransition()
             deviceChangeQueue.async { [weak self] in
                 guard let self else { return }
                 self.pendingDeviceChangeCheck?.cancel()

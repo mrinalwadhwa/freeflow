@@ -7,6 +7,34 @@ import UnrambleKitTestSupport
 @Suite("AudioDevice model")
 struct AudioDeviceTests {
 
+    @Test("Sound feedback is suppressed during the device-change cooldown")
+    func soundFeedbackDeviceChangeCooldown() {
+        #expect(
+            !AudioCaptureSoundFeedbackPolicy.allowsSound(
+                requested: true,
+                secondsSinceDeviceChange: 5.65,
+                cooldown: 10))
+        #expect(
+            AudioCaptureSoundFeedbackPolicy.allowsSound(
+                requested: true,
+                secondsSinceDeviceChange: 10,
+                cooldown: 10))
+        #expect(
+            AudioCaptureSoundFeedbackPolicy.allowsSound(
+                requested: true,
+                secondsSinceDeviceChange: nil,
+                cooldown: 10))
+    }
+
+    @Test("Disabled sound feedback remains disabled on a stable device")
+    func disabledSoundFeedbackRemainsDisabled() {
+        #expect(
+            !AudioCaptureSoundFeedbackPolicy.allowsSound(
+                requested: false,
+                secondsSinceDeviceChange: nil,
+                cooldown: 10))
+    }
+
     @Test("Deferred churn reuses the same concrete capture device")
     func deferredChurnReusesConcreteDevice() {
         #expect(

@@ -45,6 +45,18 @@ enum AudioCaptureEngineReusePolicy {
     }
 }
 
+enum AudioCaptureSoundFeedbackPolicy {
+    static func allowsSound(
+        requested: Bool,
+        secondsSinceDeviceChange: TimeInterval?,
+        cooldown: TimeInterval
+    ) -> Bool {
+        guard requested else { return false }
+        guard let secondsSinceDeviceChange else { return true }
+        return secondsSinceDeviceChange >= cooldown
+    }
+}
+
 /// Publishes preview coverage independently of the provider's engine lock.
 /// Exact tokens prevent delayed teardown from clearing a replacement tap.
 final class AudioPreviewPreRollPublication<Token: Equatable & Sendable>:
@@ -731,6 +743,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             let sink: DictationAudioSink
             let sinkToken: DictationAudioSinkPublication.Token
             let route: TimestampedAudioFrameRouter.Route
+            let playsSoundFeedback: Bool
         }
 
         private struct DictationStopFinalization: Sendable {
@@ -1382,6 +1395,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     }
 
                     var initialDictation: DictationCaptureIdentity?
+                    let playsSoundFeedback = shouldPlaySoundFeedback(
+                        requested: configuration.playsSoundFeedback)
                     if configuration.retainsPCM {
                         let sink = try DictationAudioSink(
                             inputFormat: actualTapFormat,
@@ -1397,7 +1412,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                                 owner: owner,
                                 sink: sink,
                                 sinkToken: sinkToken,
-                                route: route)
+                                route: route,
+                                playsSoundFeedback: playsSoundFeedback)
                         } catch {
                             _ = dictationSinkPublication.clear(sinkToken)
                             sink.discard()
@@ -1436,7 +1452,7 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                         throw resetDuringEngineStartError
                     }
                     didStart = true
-                    return configuration.playsSoundFeedback
+                    return playsSoundFeedback
                         ? _soundFeedbackProvider : nil
                 }
             } catch {
@@ -1477,6 +1493,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 else { throw AudioCaptureError.alreadyRecording }
 
                 removeCompletedStopOperationsLocked()
+                let playsSoundFeedback = shouldPlaySoundFeedback(
+                    requested: configuration.playsSoundFeedback)
 
                 if configuration.retainsPCM {
                     guard dictationCapture == nil, let tapFormat else {
@@ -1496,7 +1514,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                             owner: owner,
                             sink: sink,
                             sinkToken: sinkToken,
-                            route: route)
+                            route: route,
+                            playsSoundFeedback: playsSoundFeedback)
                         metricsOwner = owner
                         retainedMetrics = nil
                         pcmStreamSnapshot.publish(sink.pcmStream)
@@ -1522,9 +1541,20 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     _ = previewPreRollPublication.clear(
                         for: physicalCapture.attempt)
                 }
-                return configuration.playsSoundFeedback
+                return playsSoundFeedback
                     ? _soundFeedbackProvider : nil
             }
+        }
+
+        private func shouldPlaySoundFeedback(requested: Bool) -> Bool {
+            guard requested else { return false }
+            let allowed = _audioDeviceProvider?.isSoundFeedbackSafe ?? true
+            if !allowed {
+                Log.debug(
+                    "[AudioCapture] Suppressing sound feedback during device transition"
+                )
+            }
+            return allowed
         }
 
         private func publishPreviewPreRoll(
@@ -1713,7 +1743,8 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     let engine
                 else { return nil }
                 return (
-                    capture, physical, engine, _soundFeedbackProvider,
+                    capture, physical, engine,
+                    capture.playsSoundFeedback ? _soundFeedbackProvider : nil,
                     releaseDrainTimeout(sampleRate: tapFormat?.sampleRate ?? 0))
             }) else {
                 throw AudioCaptureError.ownerMismatch
