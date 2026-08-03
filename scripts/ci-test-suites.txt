@@ -43,6 +43,7 @@ ci ConvertNumberWordsTests
 ci ConvertOrdinalDatesTests
 ci ConvertScaledNumbersTests
 ci ConvertSpokenTimeTests
+ci CopySelectionContentSourceTests
 ci DetachedPipelineGenerationTests
 ci DiagnosticsPrivacyTests
 ci DictatedPunctuationTests

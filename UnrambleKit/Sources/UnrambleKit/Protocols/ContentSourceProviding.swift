@@ -10,7 +10,9 @@ import Foundation
 public protocol ContentSourceProviding: Sendable {
 
     /// Read content for the given snapshot, or nil when this source does
-    /// not apply. Implementations must not mutate the frontmost app's
-    /// focus, selection, scroll position, or the clipboard.
+    /// not apply. Implementations must not mutate the frontmost app's focus,
+    /// selection, or scroll position. A compatibility source may temporarily
+    /// use the pasteboard only when it restores the prior contents unless an
+    /// external process changed them in the meantime.
     func readContent(for context: AppContext) async throws -> ReadableContent?
 }

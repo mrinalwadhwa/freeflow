@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sources: [
                 SelectionContentSource(
                     selectionReader: AXSelectionReader()),
+                CopySelectionContentSource(
+                    supportedBundleIDs: ["dev.zed.Zed"],
+                    selectionReader: PasteboardCopySelectionReader()),
                 CodingAgentTranscriptSource(
                     processTable: LibprocProcessTable(),
                     terminalFocusReader: AppleEventTerminalFocusReader()),
