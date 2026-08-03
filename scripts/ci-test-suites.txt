@@ -95,6 +95,7 @@ ci NetworkGuardTests
 ci NoiseSoundsStillStrippedTests
 ci NormalizeFormattingTests
 ci NumberWordsSurviveTests
+ci NumbersAndValuesTextContractTests
 ci NumericClockPunctuationTests
 ci OpenAIFileTranscriberStubbedTests
 ci OpenAIRealtimeCommitPolicyTests
