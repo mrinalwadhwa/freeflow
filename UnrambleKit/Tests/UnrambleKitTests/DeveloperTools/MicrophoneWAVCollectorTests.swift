@@ -16,6 +16,7 @@ struct MicrophoneWAVCollectorTests {
     private static let gateVariable = "UNRAMBLE_TEST_SAMPLE_COLLECTION"
     private static let outputDirectoryVariable = "UNRAMBLE_SAMPLE_DIR"
     private static let durationVariable = "UNRAMBLE_SAMPLE_DURATION"
+    private static let readyFileVariable = "UNRAMBLE_SAMPLE_READY_FILE"
 
     enum Failure: Error, Equatable {
         case missingOutputDirectory(String)
@@ -38,6 +39,7 @@ struct MicrophoneWAVCollectorTests {
         let buffer: AudioBuffer
         do {
             try await audio.startRecording()
+            try Self.signalReadyIfRequested()
             try await Task.sleep(for: .seconds(duration))
             audio.closeRecordingBoundary()
             buffer = try await audio.stopRecording()
@@ -94,6 +96,17 @@ struct MicrophoneWAVCollectorTests {
             throw Failure.invalidDuration(value)
         }
         return duration
+    }
+
+    private static func signalReadyIfRequested() throws {
+        guard
+            let path = ProcessInfo.processInfo.environment[readyFileVariable],
+            !path.isEmpty
+        else { return }
+        let created = FileManager.default.createFile(
+            atPath: path, contents: Data(),
+            attributes: [.posixPermissions: 0o600])
+        guard created else { throw Failure.couldNotWrite(path) }
     }
 
     private static func timestamp() -> String {

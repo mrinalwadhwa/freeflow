@@ -25,7 +25,7 @@ struct LocalListFormattingMLXTests {
             adapterDirectory: manager.modelPath(
                 for: "qwen3-0.6b-4bit-list-adapter"))
         let client = MLXPolishClient(engine: engine, timeoutSeconds: 30)
-        let scenarios = allScenarios.filter { $0.category == "list" }
+        let scenarios = evalScenarios().filter { $0.category == "list" }
         var records: [[String: Any]] = []
 
         for (index, scenario) in scenarios.enumerated() {
