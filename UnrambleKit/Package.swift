@@ -26,6 +26,9 @@ let package = Package(
         .package(
             url: "https://github.com/Blaizzy/mlx-audio-swift",
             revision: "4266f988d170a83017d1e82e2e4654602f277f1d"),
+        .package(
+            url: "https://github.com/huggingface/swift-huggingface.git",
+            exact: "0.9.0"),
     ],
     targets: [
         .target(
@@ -39,6 +42,8 @@ let package = Package(
                 "ObjCExceptionCatcher",
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXAudioSTT", package: "mlx-audio-swift"),
+                .product(name: "MLXAudioTTS", package: "mlx-audio-swift"),
+                .product(name: "HuggingFace", package: "swift-huggingface"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Tokenizers", package: "swift-transformers"),

@@ -36,6 +36,23 @@ QWEN_FILES=(
     tokenizer_config.json
     vocab.json
 )
+KOKORO_NAME="kokoro-82m-bf16"
+KOKORO_REPO="mlx-community/Kokoro-82M-bf16"
+KOKORO_REV="a71e4d38b236d968966a2002c4c895dbd12b1c3c"
+KOKORO_FILES=(
+    config.json
+    kokoro-v1_0.safetensors
+    voices/af_heart.safetensors
+)
+KOKORO_G2P_NAME="kokoro-g2p-en"
+KOKORO_G2P_REPO="beshkenadze/kitten-tts-g2p"
+KOKORO_G2P_REV="9c692b92682d959d9013a9cfe6a49541997add18"
+KOKORO_G2P_FILES=(
+    us_bart.safetensors
+    us_bart_config.json
+    us_gold.json
+    us_silver.json
+)
 
 checksums() {
     cat <<'EOF'
@@ -56,6 +73,13 @@ f3f763b9ff233b194df209277ab670d7768745f92eab0efb52b769991743b159  cohere-transcr
 1814ce01458ff6a72b04a6618e75f18ce627be4dc17619cd3a7cd7f71e137f0f  cohere-transcribe-03-2026-mlx-4bit/special_tokens_map.json
 6d21e6a83b2d0d3e1241a7817e4bef8eb63bcb7cfe4a2675af9a35ff3bbf0e14  cohere-transcribe-03-2026-mlx-4bit/tokenizer.model
 0dfeb3eeba07bccaa1b4bf78f3135ad3059acf8d18f681675832b285ac0035b0  cohere-transcribe-03-2026-mlx-4bit/tokenizer_config.json
+5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f  kokoro-82m-bf16/config.json
+4e9ecdf03b8b6cf906070390237feda473dc13327cb8d56a43deaa374c02acd8  kokoro-82m-bf16/kokoro-v1_0.safetensors
+2c1c733b0e6576c810e268d3e440c21dea4e0f0131a3ba4cfc98d7fe6136d094  kokoro-82m-bf16/voices/af_heart.safetensors
+dc4a02e62d4fcb4bb4097ecf00db89b8e1a12a549a52ab6adfbba220b80a55c5  kokoro-g2p-en/us_bart.safetensors
+8deb3537fb29c63cd9f20d75515ae06e4c92f1b6db0703a2d45bca95b33a53a4  kokoro-g2p-en/us_bart_config.json
+8507f89840f0813b10cf584740942f58e9cc9ad3660e24088b442ab0a6b126be  kokoro-g2p-en/us_gold.json
+ea0e1abca0c9b18fb0d3402034633a337154a3153e9a9f49f97d668c908e140c  kokoro-g2p-en/us_silver.json
 EOF
 }
 
@@ -109,7 +133,12 @@ download() {
         --revision "$QWEN_REV" --local-dir "$MODEL_DIR/$QWEN_NAME"
     "$MODEL_HF" download "$COHERE_REPO" "${COHERE_FILES[@]}" \
         --revision "$COHERE_REV" --local-dir "$MODEL_DIR/$COHERE_NAME"
-    rm -rf "$MODEL_DIR/$QWEN_NAME/.cache" "$MODEL_DIR/$COHERE_NAME/.cache"
+    "$MODEL_HF" download "$KOKORO_REPO" "${KOKORO_FILES[@]}" \
+        --revision "$KOKORO_REV" --local-dir "$MODEL_DIR/$KOKORO_NAME"
+    "$MODEL_HF" download "$KOKORO_G2P_REPO" "${KOKORO_G2P_FILES[@]}" \
+        --revision "$KOKORO_G2P_REV" --local-dir "$MODEL_DIR/$KOKORO_G2P_NAME"
+    rm -rf "$MODEL_DIR/$QWEN_NAME/.cache" "$MODEL_DIR/$COHERE_NAME/.cache" \
+        "$MODEL_DIR/$KOKORO_NAME/.cache" "$MODEL_DIR/$KOKORO_G2P_NAME/.cache"
     cp -R "$ADAPTER_SOURCE" "$MODEL_DIR/$ADAPTER_NAME"
     verify "$MODEL_DIR"
 }
