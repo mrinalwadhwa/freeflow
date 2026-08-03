@@ -552,6 +552,30 @@ struct TimestampedAudioFrameRouterTests {
                     affectedFrameCount: 6))
     }
 
+    @Test("The first callback establishes continuity after tap priming")
+    func firstCallbackEstablishesTimestampContinuity() async throws {
+        let probe = SinkProbe()
+        let start = hostTime(seconds: 100)
+        let router = makeRouter(
+            probe: probe,
+            continuousCaptureStartedAt: start)
+        let boundary = AudioCaptureReleaseBoundary(pressHostTime: start)
+        let route = try router.promote(releaseBoundary: boundary)
+
+        // Core Audio may deliver a new tap's first buffer tens of milliseconds
+        // after installation. That interval is tap priming, not a discontinuity
+        // between delivered buffers.
+        router.ingest(
+            try pcmBuffer(values: Array(50..<60)),
+            timestamp: AVAudioTime(hostTime: addingFrames(50, to: start)),
+            observedHostTime: addingFrames(60, to: start))
+        #expect(boundary.publish(releaseHostTime: addingFrames(60, to: start)))
+
+        #expect(await router.waitUntilReleaseObserved(for: route))
+        #expect(probe.integrityFailure == nil)
+        #expect(probe.sampleGroups == [Array(50..<60)])
+    }
+
     @Test("A backward timestamp regression is tolerated on the active route")
     func timestampRegressionToleratedOnActiveRelease() async throws {
         let probe = SinkProbe()

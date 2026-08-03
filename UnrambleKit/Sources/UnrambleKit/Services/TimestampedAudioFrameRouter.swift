@@ -336,11 +336,6 @@ import Foundation
                 continuousCaptureStartedAtHostTime = min(
                     continuousCaptureStartedAtHostTime ?? hostTime,
                     hostTime)
-                if lastDeviceFrameEndHostTime == nil,
-                    !deviceContinuityIsUnknown
-                {
-                    lastDeviceFrameEndHostTime = hostTime
-                }
             }
         }
 
@@ -792,7 +787,46 @@ import Foundation
                 return
             }
 
-            guard let previousEnd = lastDeviceFrameEndHostTime else { return }
+            guard let previousEnd = lastDeviceFrameEndHostTime else {
+                // Installing a tap opens callback admission; it does not prove
+                // that the device clock already covers the interval before its
+                // first callback. Core Audio commonly needs tens of
+                // milliseconds to prime a new tap, especially while unrelated
+                // devices are changing. Establish continuity from the first
+                // device timestamp instead of classifying that priming delay as
+                // lost audio.
+                lastDeviceFrameEndHostTime = frameEndHostTime
+
+                // A release that predates the first callback is different: no
+                // delivered frame can cover the dictation. Preserve the
+                // fail-closed behavior for that genuinely empty interval.
+                if let active = activeRoute,
+                    let releaseHostTime = active.route.releaseBoundary.releaseHostTime,
+                    frame.startHostTime >= releaseHostTime
+                {
+                    let coverageStart = max(
+                        continuousCaptureStartedAtHostTime
+                            ?? active.route.lowerBoundHostTime,
+                        active.route.lowerBoundHostTime)
+                    let missingSeconds = frame.startHostTime > coverageStart
+                        ? AVAudioTime.seconds(
+                            forHostTime: frame.startHostTime - coverageStart)
+                        : 0
+                    let missingFrames = max(
+                        Int(
+                            (missingSeconds * frame.buffer.format.sampleRate)
+                                .rounded()),
+                        1)
+                    record(
+                        LostFrames(
+                            frameCount: missingFrames,
+                            startHostTime: coverageStart,
+                            endHostTime: frame.startHostTime,
+                            stage: .timestampCoverage),
+                        on: active)
+                }
+                return
+            }
             defer {
                 lastDeviceFrameEndHostTime = max(previousEnd, frameEndHostTime)
             }
