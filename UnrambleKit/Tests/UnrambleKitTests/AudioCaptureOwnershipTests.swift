@@ -445,19 +445,31 @@ struct AudioConfigurationChangePolicyTests {
         #expect(
             AudioCaptureConfigurationChangePolicy.action(
                 isRecording: true,
-                inputFormatChanged: false) == .ignore)
+                inputFormatChanged: false,
+                hasConcreteDevice: true) == .ignore)
         #expect(
             AudioCaptureConfigurationChangePolicy.action(
                 isRecording: true,
-                inputFormatChanged: true) == .invalidateActiveCapture)
+                inputFormatChanged: true,
+                hasConcreteDevice: true) == .invalidateActiveCapture)
     }
 
-    @Test("An idle engine can rebuild immediately")
-    func idleEnginePolicy() {
+    @Test("An idle concrete engine waits for reuse validation")
+    func concreteIdleEnginePolicy() {
         #expect(
             AudioCaptureConfigurationChangePolicy.action(
                 isRecording: false,
-                inputFormatChanged: true) == .rebuildIdleEngine)
+                inputFormatChanged: true,
+                hasConcreteDevice: true) == .validateIdleEngine)
+    }
+
+    @Test("An idle system-default engine rebuilds immediately")
+    func defaultIdleEnginePolicy() {
+        #expect(
+            AudioCaptureConfigurationChangePolicy.action(
+                isRecording: false,
+                inputFormatChanged: true,
+                hasConcreteDevice: false) == .rebuildIdleEngine)
     }
 }
 

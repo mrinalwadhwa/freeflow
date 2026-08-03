@@ -11,6 +11,7 @@ import ObjCExceptionCatcher
 
 enum AudioCaptureConfigurationChangeAction: Equatable, Sendable {
     case ignore
+    case validateIdleEngine
     case rebuildIdleEngine
     case invalidateActiveCapture
 }
@@ -18,9 +19,12 @@ enum AudioCaptureConfigurationChangeAction: Equatable, Sendable {
 enum AudioCaptureConfigurationChangePolicy {
     static func action(
         isRecording: Bool,
-        inputFormatChanged: Bool
+        inputFormatChanged: Bool,
+        hasConcreteDevice: Bool
     ) -> AudioCaptureConfigurationChangeAction {
-        guard isRecording else { return .rebuildIdleEngine }
+        guard isRecording else {
+            return hasConcreteDevice ? .validateIdleEngine : .rebuildIdleEngine
+        }
         return inputFormatChanged ? .invalidateActiveCapture : .ignore
     }
 }
@@ -2780,11 +2784,19 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
 
                 switch AudioCaptureConfigurationChangePolicy.action(
                     isRecording: _isRecording,
-                    inputFormatChanged: inputFormatChanged)
+                    inputFormatChanged: inputFormatChanged,
+                    hasConcreteDevice: _configuredDeviceID != nil)
                 {
                 case .ignore:
                     Log.debug(
                         "[AudioCapture] Config change ignored (input format unchanged)")
+                    return []
+
+                case .validateIdleEngine:
+                    _needsEngineRebuild = true
+                    Log.debug(
+                        "[AudioCapture] Retaining concrete idle engine for validation"
+                    )
                     return []
 
                 case .rebuildIdleEngine:
