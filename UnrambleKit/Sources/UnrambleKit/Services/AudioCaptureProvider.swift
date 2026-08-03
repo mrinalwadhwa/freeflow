@@ -25,6 +25,22 @@ enum AudioCaptureConfigurationChangePolicy {
     }
 }
 
+enum AudioCaptureEngineReusePolicy {
+    static func requiresRebuild(
+        configuredDeviceID: UInt32?,
+        desiredDeviceID: UInt32?,
+        deferredRebuild: Bool
+    ) -> Bool {
+        if configuredDeviceID != desiredDeviceID { return true }
+        guard deferredRebuild else { return false }
+
+        // A concrete, unchanged route can be validated and restarted. A nil
+        // route follows the system default, so a default-device notification
+        // may represent a real route change even though both snapshots are nil.
+        return configuredDeviceID == nil
+    }
+}
+
 /// Publishes preview coverage independently of the provider's engine lock.
 /// Exact tokens prevent delayed teardown from clearing a replacement tap.
 final class AudioPreviewPreRollPublication<Token: Equatable & Sendable>:
@@ -2423,10 +2439,16 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 guard engineStartResetLedger.publish(engine, for: attempt) else {
                     throw resetDuringEngineStartError
                 }
-                // If the selected device changed or a config change was
-                // deferred during a previous recording, tear down and
-                // rebuild with the current hardware.
-                if desiredDeviceID != _configuredDeviceID || _needsEngineRebuild {
+                // Rebuild for an actual route change. When Core Audio reports
+                // unrelated churn but auto-detect still resolves to the same
+                // concrete microphone, validate and restart the existing
+                // engine instead. This avoids blocking device routing while
+                // AirPods are changing the system default.
+                if AudioCaptureEngineReusePolicy.requiresRebuild(
+                    configuredDeviceID: _configuredDeviceID,
+                    desiredDeviceID: desiredDeviceID,
+                    deferredRebuild: _needsEngineRebuild)
+                {
                     Log.debug(
                         "[AudioCapture] Device changed from \(_configuredDeviceID?.description ?? "default") "
                             + "to \(desiredDeviceID?.description ?? "default")"
@@ -2437,6 +2459,14 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     tearDownEngineLocked()
                     // Fall through to create a new engine.
                 } else {
+                    if _needsEngineRebuild {
+                        Log.debug(
+                            "[AudioCapture] Capture device remains "
+                                + "\(desiredDeviceID?.description ?? "default"); "
+                                + "validating existing engine after device churn"
+                        )
+                        _needsEngineRebuild = false
+                    }
                     // Engine exists for the correct device. Reuse it
                     // for low latency. Re-query mic proximity in case
                     // the system default device changed while the engine

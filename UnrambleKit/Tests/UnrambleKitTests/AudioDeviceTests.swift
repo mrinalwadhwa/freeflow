@@ -7,6 +7,33 @@ import UnrambleKitTestSupport
 @Suite("AudioDevice model")
 struct AudioDeviceTests {
 
+    @Test("Deferred churn reuses the same concrete capture device")
+    func deferredChurnReusesConcreteDevice() {
+        #expect(
+            !AudioCaptureEngineReusePolicy.requiresRebuild(
+                configuredDeviceID: 88,
+                desiredDeviceID: 88,
+                deferredRebuild: true))
+    }
+
+    @Test("A changed capture device requires an engine rebuild")
+    func changedCaptureDeviceRequiresRebuild() {
+        #expect(
+            AudioCaptureEngineReusePolicy.requiresRebuild(
+                configuredDeviceID: 88,
+                desiredDeviceID: 101,
+                deferredRebuild: false))
+    }
+
+    @Test("Deferred churn rebuilds an unknown system-default route")
+    func deferredChurnRebuildsUnknownDefault() {
+        #expect(
+            AudioCaptureEngineReusePolicy.requiresRebuild(
+                configuredDeviceID: nil,
+                desiredDeviceID: nil,
+                deferredRebuild: true))
+    }
+
     @Test("Auto-detect bypasses a Bluetooth default when built-in input exists")
     func autoDetectPrefersBuiltInOverBluetoothDefault() {
         let devices = [
