@@ -64,7 +64,7 @@ public actor DictationPipeline: PipelineProviding {
     /// A shorter press cannot contain intentional speech before an unopened
     /// microphone becomes live. Treat it as an accidental modifier-key touch
     /// instead of presenting a hardware failure.
-    static let accidentalTapMaximumDuration: TimeInterval = 0.15
+    static let accidentalTapMaximumDuration: TimeInterval = 0.25
 
     /// Lock-free-from-the-provider release ledger. The audio callback publishes
     /// `.live` at the exact provider boundary; key release atomically closes it.

@@ -5603,7 +5603,7 @@ final class StreamingPipelineTests: XCTestCase {
         await pipeline.complete(
             sessionID: sessionID,
             releaseHostTime: pressHostTime
-                + AudioCaptureReleaseFence.hostTime(duration: 0.05))
+                + AudioCaptureReleaseFence.hostTime(duration: 0.20))
 
         let state = await coordinator.state
         let activeSessionID = await pipeline.currentSessionID
