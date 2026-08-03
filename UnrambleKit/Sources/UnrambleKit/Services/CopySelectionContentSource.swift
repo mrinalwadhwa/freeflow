@@ -1,7 +1,10 @@
 import Foundation
 
-/// Reads selected text through a temporary Copy command for explicitly
-/// supported applications that do not expose selections through Accessibility.
+/// Reads text through a temporary Copy command for explicitly supported
+/// applications that do not expose selections through Accessibility.
+///
+/// The returned scope follows the application's Copy semantics. Zed returns the
+/// selection when present and the current line when there is no selection.
 public struct CopySelectionContentSource: ContentSourceProviding {
 
     private let supportedBundleIDs: Set<String>

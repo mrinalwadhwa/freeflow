@@ -5,7 +5,7 @@ import Testing
 @Suite("Copy selection content source")
 struct CopySelectionContentSourceTests {
 
-    @Test("Reads copied text only for an explicitly supported app")
+    @Test("Reads copied focus only for an explicitly supported app")
     func readsSupportedApp() async throws {
         let reader = StubCopySelectionReader(text: "selected in Zed")
         let source = CopySelectionContentSource(
