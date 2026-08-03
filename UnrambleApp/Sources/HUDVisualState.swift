@@ -50,6 +50,18 @@ enum HUDVisualState: Equatable {
     /// Shows "Lost connection" message with Retry and Dismiss buttons.
     case dictationFailed
 
+    /// Read-session acquisition still running 300ms after the press. The
+    /// pill stays at minimized dimensions with a breathing pulse; fast
+    /// acquisitions never reach this state.
+    case readingProcessing
+
+    /// A read session is speaking. Expanded pill with a stop button.
+    case readingSpeaking
+
+    /// A read session found nothing to speak. Shows guidance naming the
+    /// read shortcut and how to select text, with ✕ dismiss.
+    case readingNoContent
+
     /// Whether the HUD should accept mouse events in this state.
     ///
     /// States that rely on the keyboard as the control surface disable mouse
@@ -57,9 +69,11 @@ enum HUDVisualState: Equatable {
     var acceptsMouseEvents: Bool {
         switch self {
         case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
-            .sessionExpired, .dictationFailed:
+            .sessionExpired, .dictationFailed, .readingSpeaking,
+            .readingNoContent:
             return true
-        case .listeningHeld, .processingCollapsing, .processingBreathing:
+        case .listeningHeld, .processingCollapsing, .processingBreathing,
+            .readingProcessing:
             return false
         }
     }
@@ -71,10 +85,12 @@ enum HUDVisualState: Equatable {
     /// (waveform, buttons, or messages).
     var isExpanded: Bool {
         switch self {
-        case .minimized, .ready, .processingCollapsing, .processingBreathing:
+        case .minimized, .ready, .processingCollapsing, .processingBreathing,
+            .readingProcessing:
             return false
         case .listeningHeld, .listeningHandsFree, .processingSlow, .noTarget,
-            .sessionExpired, .dictationFailed:
+            .sessionExpired, .dictationFailed, .readingSpeaking,
+            .readingNoContent:
             return true
         }
     }

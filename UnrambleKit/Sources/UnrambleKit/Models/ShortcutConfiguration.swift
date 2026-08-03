@@ -50,4 +50,18 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     public var noTargetHint: String {
         "Select a text field, then \(pasteShortcutName) to paste"
     }
+
+    /// Display name of the read-aloud shortcut, read dynamically from
+    /// settings.
+    public var readAloudShortcutName: String {
+        Settings.shared.readAloudShortcutBinding.label
+    }
+
+    /// The instructional hint shown when a read session finds nothing to
+    /// speak.
+    ///
+    /// Example: "Select text, then ⌃⇧R to read aloud"
+    public var noReadContentHint: String {
+        "Select text, then \(readAloudShortcutName) to read aloud"
+    }
 }

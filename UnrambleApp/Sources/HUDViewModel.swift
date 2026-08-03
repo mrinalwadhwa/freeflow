@@ -55,6 +55,13 @@ final class HUDViewModel: ObservableObject {
     /// Called when the user taps Retry in the dictation failed state.
     var onRetryDictation: (() -> Void)?
 
+    /// Called when the user taps ■ to stop the read session.
+    var onStopReading: (() -> Void)?
+
+    /// Called when the no-content guidance auto-dismisses or the user
+    /// dismisses it (✕, Escape, or click).
+    var onDismissReadingGuidance: (() -> Void)?
+
     /// Called when the user taps the in-app message body.
     var onMessageTapped: ((InAppMessage) -> Void)?
 
@@ -92,6 +99,14 @@ final class HUDViewModel: ObservableObject {
     private var pipelineState: RecordingState = .idle
     private(set) var pipelineSessionID: DictationSessionID?
 
+    // MARK: - Read-aloud state
+
+    private var readAloudState: ReadAloudState = .idle
+    private var readAloudObservationTask: Task<Void, Never>?
+    private var readingProcessingTask: Task<Void, Never>?
+    private var readingProcessingFired = false
+    private var readingGuidanceTask: Task<Void, Never>?
+
     // MARK: - Audio level
 
     /// The audio provider whose `audioLevelStream` we observe while recording.
@@ -123,12 +138,17 @@ final class HUDViewModel: ObservableObject {
 
     // MARK: - Init
 
+    /// Duration the no-content guidance stays visible before auto-dismissing.
+    private let readingGuidanceDuration: TimeInterval
+
     init(
         shortcuts: ShortcutConfiguration = .default,
-        micCalloutDuration: TimeInterval = 3.0
+        micCalloutDuration: TimeInterval = 3.0,
+        readingGuidanceDuration: TimeInterval = 6.0
     ) {
         self.shortcuts = shortcuts
         self.micCalloutDuration = micCalloutDuration
+        self.readingGuidanceDuration = readingGuidanceDuration
     }
 
     // MARK: - Observation lifecycle
@@ -144,14 +164,32 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
+    /// Begin observing a read-aloud coordinator's state stream to drive the
+    /// HUD's read-session states.
+    func observeReadAloud(coordinator: ReadAloudCoordinator) {
+        readAloudObservationTask?.cancel()
+        readAloudObservationTask = Task { [weak self] in
+            for await state in await coordinator.stateStream {
+                guard !Task.isCancelled else { break }
+                self?.handleReadAloudState(state)
+            }
+        }
+    }
+
     /// Stop observing and reset to minimized.
     func stop() {
         observationTask?.cancel()
         observationTask = nil
+        readAloudObservationTask?.cancel()
+        readAloudObservationTask = nil
         breathingTask?.cancel()
         breathingTask = nil
         slowProcessingTask?.cancel()
         slowProcessingTask = nil
+        readingProcessingTask?.cancel()
+        readingProcessingTask = nil
+        readingGuidanceTask?.cancel()
+        readingGuidanceTask = nil
         hoverGraceTask?.cancel()
         hoverGraceTask = nil
         micCalloutTask?.cancel()
@@ -159,6 +197,8 @@ final class HUDViewModel: ObservableObject {
         stopAudioLevelObservation()
         pipelineState = .idle
         pipelineSessionID = nil
+        readAloudState = .idle
+        readingProcessingFired = false
         breathingFired = false
         slowProcessingFired = false
         inAppMessage = nil
@@ -280,6 +320,57 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Read-aloud state handling
+
+    private func handleReadAloudState(_ state: ReadAloudState) {
+        readAloudState = state
+
+        if state != .acquiring {
+            readingProcessingTask?.cancel()
+            readingProcessingTask = nil
+            readingProcessingFired = false
+        }
+        if state != .noContent {
+            readingGuidanceTask?.cancel()
+            readingGuidanceTask = nil
+        }
+
+        switch state {
+        case .acquiring:
+            startReadingProcessingTimer()
+        case .noContent:
+            startReadingGuidanceTimer()
+        case .idle, .speaking:
+            break
+        }
+        recalculate()
+    }
+
+    /// Delay the processing state so fast acquisitions never flash the HUD.
+    /// Fires 300ms after acquisition starts; speech or session end cancels it.
+    private func startReadingProcessingTimer() {
+        readingProcessingTask?.cancel()
+        readingProcessingFired = false
+        readingProcessingTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            self?.readingProcessingFired = true
+            self?.recalculate()
+        }
+    }
+
+    /// Auto-dismiss the no-content guidance after a few seconds. Dismissal
+    /// routes through the coordinator so its state returns to idle.
+    private func startReadingGuidanceTimer() {
+        readingGuidanceTask?.cancel()
+        readingGuidanceTask = Task { [weak self, readingGuidanceDuration] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(readingGuidanceDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.onDismissReadingGuidance?()
+        }
+    }
+
     // MARK: - Processing timers
 
     /// Whether the pill is in the optimistic collapsing phase.
@@ -322,6 +413,21 @@ final class HUDViewModel: ObservableObject {
     private func deriveVisualState() -> HUDVisualState {
         switch pipelineState {
         case .idle:
+            // Read-session states only show while dictation is idle; the
+            // features are mutually exclusive, so any overlap is a brief
+            // teardown window where dictation wins.
+            switch readAloudState {
+            case .acquiring:
+                if readingProcessingFired {
+                    return .readingProcessing
+                }
+            case .speaking:
+                return .readingSpeaking
+            case .noContent:
+                return .readingNoContent
+            case .idle:
+                break
+            }
             if isHovering {
                 return .ready
             }
@@ -466,8 +572,11 @@ final class HUDViewModel: ObservableObject {
 
     deinit {
         observationTask?.cancel()
+        readAloudObservationTask?.cancel()
         breathingTask?.cancel()
         slowProcessingTask?.cancel()
+        readingProcessingTask?.cancel()
+        readingGuidanceTask?.cancel()
         hoverGraceTask?.cancel()
         micCalloutTask?.cancel()
         audioLevelTask?.cancel()

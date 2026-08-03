@@ -1,3 +1,4 @@
+ci AgentProcessFinderTests
 ci ApplySoftwareGainTests
 ci AsyncSerialOperationQueueTests
 ci AsyncSingleFlightTests
@@ -22,8 +23,11 @@ ci BrowserURLReaderTests
 ci BufferedPasteOwnershipTests
 ci BuildUserPromptTests
 ci CarbonHotkeyProviderTests
+ci ClaudeCodeTranscriptLocatorTests
 ci CloudDictationLiveHarnessTests
 ci CloudReplay
+ci CodexTranscriptLocatorTests
+ci CodingAgentTranscriptSourceTests
 ci CohereRollingRecognitionSessionTests
 ci CohereTranscriptAssemblerTests
 ci CollapseWordRepetitionTests
@@ -46,6 +50,7 @@ ci DictationAudioSinkTests
 ci DictationCompositionFactoryTests
 ci DictationErrorTests
 ci DictationModeAvailabilityTests
+ci DictationModeSpeechSynthesizerTests
 ci DictationModeTransitionTests
 ci DictationPipelineIntegrationTests
 ci DictationPipelineTests
@@ -59,6 +64,9 @@ ci HotkeySettingTests
 ci InjectionErrorTerminalTests
 ci InjectionPlannerTests
 ci InsertVocativeCommaTests
+ci KokoroG2PResourceInstallerTests
+ci KokoroSpeechChunkerTests
+ci KokoroTextNormalizerTests
 ci LeadingSpaceTests
 ci LocalListFormattingPipelineTests
 ci LocalModelManagerTests
@@ -70,6 +78,7 @@ ci LocalUnitPolicyTests
 ci LocalUnitStreamingTests
 ci MLXLLMEngineTests
 ci MLXPolishClientTests
+ci MarkdownSegmenterTests
 ci MergeDollarsAndCentsTests
 ci MicDiagnosticStoreTests
 ci MicrophoneCaptureCoordinatorTests
@@ -98,6 +107,7 @@ ci OpenAIRealtimeSessionSummaryTests
 ci OpenAIRealtimeTranscriptReducerTests
 ci OpenAIRealtimeTranscriptTimeoutTests
 ci OpenAIRealtimeTransportTests
+ci OpenAISpeechSynthesizerTests
 ci PCMConverterLifecycleTests
 ci PipelineDeadlineTests
 ci PipelineDictationTests
@@ -112,6 +122,7 @@ ci PreambleSurvivesTests
 ci ProductionSurfaceTests
 ci PunctuationFalsePositiveTests
 ci PunctuationWordsAsContentTests
+ci ReadAloudCoordinatorTests
 ci RealtimePolishValidationTests
 ci RealtimeSilenceClassificationTests
 ci RealtimeTranscriptLedgerTests
@@ -119,6 +130,7 @@ ci RecombineSplitNumbersTests
 ci RecordingCoordinatorTests
 ci ReduplicationSurvivesTests
 ci RestoreFrequencyAdverbTests
+ci SelectionContentSourceTests
 ci SentenceBoundaryTests
 ci SentenceInitialContentTests
 ci SerializedConverterOwnershipTests
@@ -126,6 +138,7 @@ ci SerializedTextInjectorTests
 ci SettingsTests
 ci ShortcutConfigurationTests
 ci SoundFeedbackOperationGuardTests
+ci SpeechScriptBuilderTests
 ci StrategySelectionTests
 ci StreamingFinishOperationTests
 ci StreamingPipelineTests
@@ -138,9 +151,12 @@ ci TimeoutHelperTests
 ci TimeoutOwnershipTests
 ci TimestampedAudioFrameRouterTests
 ci TranscriptBufferTests
+ci TranscriptFilesTests
 ci VerbPrepRejoinTests
 ci WAVEncoderTests
 ci WAVFixtureTests
+ci WebAreaContentSourceTests
+ci WebContentTreeTests
 gated AudioPipelineTests
 gated KeychainServiceTests
 gated LocalModelIntegrationTests
@@ -151,8 +167,14 @@ gated OpenAIStreamingBenchmarkTests
 gated PolishScenarioDeterministicTests
 gated PolishScenarioRegexTests
 gated ServiceConfigTests
+os AXSelectionReaderTests
+os AXWebContentReaderTests
+os AppleEventTerminalFocusReaderTests
 os CGEventTapHotkeyProviderTests
 os CarbonHotkeyProviderOSTests
 os CoreAudioDeviceProviderTests
+os KokoroSpeechSynthesizerTests
+os LibprocProcessTableTests
 os MainThreadDelayTests
 os SoundFeedbackPathTests
+os SystemSpeechSynthesizerTests

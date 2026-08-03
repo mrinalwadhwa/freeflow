@@ -33,6 +33,7 @@ public final class Settings: @unchecked Sendable {
         case cancelShortcutBinding = "cancelShortcutBinding"
         case incognitoModeShortcutLabel = "incognitoModeShortcutLabel"
         case incognitoModeShortcutBinding = "incognitoModeShortcutBinding"
+        case readAloudShortcutBinding = "readAloudShortcutBinding"
     }
 
     // MARK: - Init
@@ -297,6 +298,21 @@ public final class Settings: @unchecked Sendable {
                 pasteShortcutLabel = newValue.label
             }
         }
+    }
+
+    /// The key binding for the read-aloud shortcut.
+    /// Defaults to ⌃⇧R (Control+Shift+R, key code 15). Read-only until a
+    /// Settings surface exists to rebind it with conflict validation.
+    public var readAloudShortcutBinding: ShortcutBinding {
+        guard
+            let data = defaults.data(
+                forKey: Key.readAloudShortcutBinding.rawValue),
+            let binding = try? JSONDecoder().decode(
+                ShortcutBinding.self, from: data)
+        else {
+            return .defaultReadAloud
+        }
+        return binding
     }
 
     /// The key binding for the cancel shortcut.

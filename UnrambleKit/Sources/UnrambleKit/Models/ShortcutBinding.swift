@@ -182,6 +182,17 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "Escape"
     )
 
+    /// Default read-aloud shortcut: ⌃⇧R (Control+Shift+R, key code 15).
+    ///
+    /// Matches the Control+Shift family of the paste and mode shortcuts.
+    /// The Carbon registration consumes the chord, so it cannot leak into
+    /// the terminal apps read-aloud targets.
+    public static let defaultReadAloud = ShortcutBinding(
+        modifierFlags: controlFlag | shiftFlag,
+        keyCode: 15,
+        label: "⌃⇧R"
+    )
+
     /// Legacy incognito mode shortcut retained only for exact migration.
     public static let legacyDefaultIncognitoMode = ShortcutBinding(
         modifierFlags: controlFlag | optionFlag,

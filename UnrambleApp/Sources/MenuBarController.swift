@@ -49,6 +49,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - Menu items that need dynamic updates
 
     private var pasteItem: NSMenuItem?
+    private var readAloudItem: NSMenuItem?
+
+    /// Called when the user picks Read Aloud from the menu.
+    var onReadAloud: (() -> Void)?
     private var incognitoModeItem: NSMenuItem?
     private var incognitoModeStatusItem: NSMenuItem?
     private var micSubmenuItem: NSMenuItem?
@@ -231,6 +235,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(paste)
         pasteItem = paste
 
+        let readAloud = NSMenuItem(
+            title: "Read Aloud",
+            action: #selector(readAloudAction),
+            keyEquivalent: ""
+        )
+        applyKeyEquivalent(Settings.shared.readAloudShortcutBinding, to: readAloud)
+        readAloud.target = self
+        readAloud.isEnabled = false
+        readAloud.image = NSImage(
+            systemSymbolName: "speaker.wave.2", accessibilityDescription: nil)
+        menu.addItem(readAloud)
+        readAloudItem = readAloud
+
         menu.addItem(.separator())
 
         // --- Input ---
@@ -344,6 +361,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshModeShortcutItem()
         refreshPasteItem()
+        readAloudItem?.isEnabled = onReadAloud != nil
         refreshMicSubmenu()
         refreshLanguageSubmenu()
         refreshCheckForUpdatesItem()
@@ -580,6 +598,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Actions
+
+    /// Reflect the read-aloud session in the menu item title.
+    func setReadAloudSpeaking(_ speaking: Bool) {
+        readAloudItem?.title = speaking ? "Stop Reading" : "Read Aloud"
+    }
+
+    @objc private func readAloudAction() {
+        onReadAloud?()
+    }
 
     @objc private func pasteLastTranscript() {
         guard let pipeline else {

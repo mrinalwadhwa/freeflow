@@ -12,6 +12,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permissionProvider = MicrophonePermissionProvider()
     private let hotkeyProvider = CGEventTapHotkeyProvider()
     private let modeHotkeyProvider = CarbonHotkeyProvider()
+    private let readAloudHotkeyProvider = CarbonHotkeyProvider()
+    private var registeredReadAloudBinding: ShortcutBinding?
+    private var readAloudCoordinator: ReadAloudCoordinator?
+    private var readAloudObservationTask: Task<Void, Never>?
+
+    /// Return the read-aloud coordinator, building it on first use so
+    /// termination and dictation paths never construct the feature's
+    /// graph just to stop a session that does not exist.
+    private func ensureReadAloudCoordinator() -> ReadAloudCoordinator {
+        if let readAloudCoordinator { return readAloudCoordinator }
+        let recordingCoordinator = coordinator
+        let created = ReadAloudCoordinator(
+            contextProvider: AXAppContextProvider(),
+            sources: [
+                SelectionContentSource(
+                    selectionReader: AXSelectionReader()),
+                CodingAgentTranscriptSource(
+                    processTable: LibprocProcessTable(),
+                    terminalFocusReader: AppleEventTerminalFocusReader()),
+                WebAreaContentSource(
+                    webReader: AXWebContentReader()),
+            ],
+            synthesizer: makeSpeechSynthesizer(),
+            isDictationActive: {
+                await recordingCoordinator.state != .idle
+            })
+        readAloudCoordinator = created
+        hudController?.attachReadAloud(created)
+        readAloudObservationTask = Task { [weak self] in
+            for await state in await created.stateStream {
+                guard !Task.isCancelled else { break }
+                await MainActor.run {
+                    // Guidance is not a stoppable session, so the menu
+                    // offers "Stop Reading" only while one is active.
+                    self?.menuBarController?.setReadAloudSpeaking(
+                        state == .acquiring || state == .speaking)
+                }
+            }
+        }
+        return created
+    }
+
+    /// Build the read-aloud voice: the local Kokoro MLX voice when the
+    /// model pack carries its weights and English G2P resources, else the
+    /// system synthesizer.
+    private func makeSpeechSynthesizer() -> any SpeechSynthesizing {
+        // Cloud mode's voice streams from OpenAI — its users chose cloud
+        // processing, often on machines that cannot run the local model —
+        // with the system voice as the offline fallback. Local mode keeps
+        // the voice on the machine. The mode is read per utterance.
+        let cloudVoice = OpenAISpeechSynthesizer(
+            apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
+            fallback: SystemSpeechSynthesizer())
+        let localVoice = makeLocalVoice()
+        return DictationModeSpeechSynthesizer(
+            localVoice: localVoice,
+            cloudVoice: cloudVoice,
+            isCloudMode: { Settings.shared.dictationMode == .cloud })
+    }
+
+    /// The local voice: Kokoro when the model pack carries its weights
+    /// and English G2P resources, else the system synthesizer.
+    private func makeLocalVoice() -> any SpeechSynthesizing {
+        #if arch(arm64)
+        if let modelsRoot = Bundle.main.resourceURL?
+            .appendingPathComponent("models")
+        {
+            let kokoro = modelsRoot.appendingPathComponent("kokoro-82m-bf16")
+            let g2p = modelsRoot.appendingPathComponent("kokoro-g2p-en")
+            let hasWeights = FileManager.default.fileExists(
+                atPath: kokoro.appendingPathComponent(
+                    "kokoro-v1_0.safetensors").path)
+            let hasG2P = FileManager.default.fileExists(
+                atPath: g2p.appendingPathComponent("us_gold.json").path)
+            if hasWeights, hasG2P {
+                Log.debug("[AppDelegate] Read-aloud local voice: Kokoro")
+                return KokoroSpeechSynthesizer(
+                    modelDirectory: kokoro,
+                    g2pResourcesDirectory: g2p)
+            }
+        }
+        #endif
+        Log.debug("[AppDelegate] Read-aloud local voice: system synthesizer")
+        return SystemSpeechSynthesizer()
+    }
+
     private var hotkeyPipelineDriver: HotkeyPipelineDriver?
     private var hotkeyPipelineIdentity: ObjectIdentifier?
     private var dictationHotkeyPublicationRequested = false
@@ -124,6 +210,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localModelPreloadTask?.cancel()
         unregisterHotkey()
         unregisterModeHotkey()
+        unregisterReadAloudHotkey()
+        readAloudObservationTask?.cancel()
+        if let readAloud = readAloudCoordinator {
+            Task { await readAloud.stop() }
+        }
         hudController?.stop()
         menuBarController?.stop()
         permissionController?.stop()
@@ -481,6 +572,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return driver.transferHeldSession(completion)
         }
         controller.viewModel.isIncognitoMode = modeTransition.effectiveMode == .local
+        if let readAloudCoordinator {
+            controller.attachReadAloud(readAloudCoordinator)
+        }
         hudController = controller
     }
 
@@ -512,6 +606,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller.onToggleIncognitoMode = { [weak self] in
             self?.toggleIncognitoMode()
+        }
+
+        controller.onReadAloud = { [weak self] in
+            guard let self else { return }
+            let readAloud = self.ensureReadAloudCoordinator()
+            Task { await readAloud.toggle() }
         }
 
         updateModePresentation()
@@ -977,7 +1077,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !didFenceApplicationTermination else { return }
         dictationHotkeyPublicationRequested = true
         registerModeHotkey()
+        registerReadAloudHotkey()
         publishDictationHotkeyIfReady()
+    }
+
+    private func registerReadAloudHotkey() {
+        guard !didFenceApplicationTermination else { return }
+        let binding = Settings.shared.readAloudShortcutBinding
+        guard registeredReadAloudBinding != binding else { return }
+
+        unregisterReadAloudHotkey()
+        let setting = HotkeySetting.modifierPlusKey(
+            modifierFlags: binding.standardModifierFlags,
+            keyCode: binding.keyCode,
+            keyName: binding.label)
+        do {
+            try readAloudHotkeyProvider.register(with: setting) {
+                [weak self] event in
+                guard event == .pressed else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.ensureReadAloudCoordinator().toggle()
+                }
+            }
+            registeredReadAloudBinding = binding
+            Log.debug(
+                "[AppDelegate] Read-aloud shortcut registered (\(binding.label))")
+        } catch {
+            readAloudHotkeyProvider.unregister()
+            Log.debug(
+                "[AppDelegate] Failed to register read-aloud shortcut: \(error)")
+        }
+    }
+
+    private func unregisterReadAloudHotkey() {
+        readAloudHotkeyProvider.unregister()
+        registeredReadAloudBinding = nil
     }
 
     private func publishDictationHotkeyIfReady() {
@@ -1016,7 +1151,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menuRef = menuBarController
         let driver = HotkeyPipelineDriver(
             pipeline: pipelineRef,
-            heldSessionAccepted: { [weak hudRef] heldSession in
+            heldSessionAccepted: { [weak self, weak hudRef] heldSession in
+                if let readAloud = await self?.readAloudCoordinator {
+                    await readAloud.stop()
+                }
+                // A coordinator that was never built has nothing to stop.
                 await MainActor.run {
                     hudRef?.hotkeySessionAccepted(heldSession)
                 }

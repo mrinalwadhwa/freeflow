@@ -44,6 +44,12 @@ struct HUDContentView: View {
             return 200
         case .dictationFailed:
             return 220
+        case .readingProcessing:
+            return 46
+        case .readingSpeaking:
+            return 170
+        case .readingNoContent:
+            return 290
         }
     }
 
@@ -53,33 +59,35 @@ struct HUDContentView: View {
             return 8
         case .ready:
             return 10
-        case .processingCollapsing, .processingBreathing:
+        case .processingCollapsing, .processingBreathing, .readingProcessing:
             return 8
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed:
+            .dictationFailed, .readingSpeaking, .readingNoContent:
             return 32
         }
     }
 
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
-        case .minimized, .processingCollapsing, .processingBreathing:
+        case .minimized, .processingCollapsing, .processingBreathing,
+            .readingProcessing:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed:
+            .dictationFailed, .readingSpeaking, .readingNoContent:
             return 0.5
         }
     }
 
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
-        case .minimized, .processingCollapsing, .processingBreathing:
+        case .minimized, .processingCollapsing, .processingBreathing,
+            .readingProcessing:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed:
+            .dictationFailed, .readingSpeaking, .readingNoContent:
             return 0.7
         }
     }
@@ -107,13 +115,20 @@ struct HUDContentView: View {
     /// Whether the pill is in a full active state (not minimized/ready).
     private var isActive: Bool {
         switch viewModel.visualState {
-        case .minimized, .ready, .processingCollapsing, .processingBreathing:
+        case .minimized, .ready, .processingCollapsing, .processingBreathing,
+            .readingProcessing:
             return false
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed:
+            .dictationFailed, .readingSpeaking, .readingNoContent:
             return true
         }
+    }
+
+    /// Whether the pill shows the minimized-size breathing pulse.
+    private var isBreathing: Bool {
+        viewModel.visualState == .processingBreathing
+            || viewModel.visualState == .readingProcessing
     }
 
     // MARK: - Body
@@ -150,6 +165,7 @@ struct HUDContentView: View {
                 viewModel.visualState == .minimized
                     || viewModel.visualState == .processingCollapsing
                     || viewModel.visualState == .processingBreathing
+                    || viewModel.visualState == .readingProcessing
                     ? .easeOut(duration: 0.15)
                     : .spring(response: 0.18, dampingFraction: 0.82, blendDuration: 0),
                 value: viewModel.visualState
@@ -176,8 +192,8 @@ struct HUDContentView: View {
                     lineWidth: pillBorderWidth
                 )
 
-            // Breathing pulse overlay for the processingBreathing state.
-            if viewModel.visualState == .processingBreathing {
+            // Breathing pulse overlay while processing or acquiring a read.
+            if isBreathing {
                 BreathingPillOverlay()
                     .clipShape(Capsule())
                     .transition(.opacity)
@@ -196,7 +212,7 @@ struct HUDContentView: View {
             anchor: .center
         )
         .onChange(of: viewModel.visualState) { newState in
-            if newState == .processingBreathing {
+            if newState == .processingBreathing || newState == .readingProcessing {
                 withAnimation(
                     .easeInOut(duration: 0.7)
                         .repeatForever(autoreverses: true)
@@ -217,7 +233,8 @@ struct HUDContentView: View {
     @ViewBuilder
     private var activeContent: some View {
         switch viewModel.visualState {
-        case .minimized, .ready, .processingCollapsing, .processingBreathing:
+        case .minimized, .ready, .processingCollapsing, .processingBreathing,
+            .readingProcessing:
             EmptyView()
         case .listeningHeld:
             listeningHeldContent
@@ -236,6 +253,12 @@ struct HUDContentView: View {
                 .transition(.opacity)
         case .dictationFailed:
             dictationFailedContent
+                .transition(.opacity)
+        case .readingSpeaking:
+            readingSpeakingContent
+                .transition(.opacity)
+        case .readingNoContent:
+            readingNoContentContent
                 .transition(.opacity)
         }
     }
@@ -399,6 +422,57 @@ struct HUDContentView: View {
                 .lineLimit(1)
 
             Button(action: { viewModel.onDismiss?() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - Reading aloud
+
+    /// A read session is speaking. Speaker icon, label, and stop.
+    private var readingSpeakingContent: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.85))
+
+            Text("Reading aloud")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+
+            Button(action: { viewModel.onStopReading?() }) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.red.opacity(0.85))
+                    .frame(width: 10, height: 10)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop reading")
+        }
+        .padding(.horizontal, 12)
+    }
+
+    /// No source yielded content. Names the read shortcut and how to select
+    /// text, with dismiss.
+    private var readingNoContentContent: some View {
+        HStack(spacing: 8) {
+            Text(viewModel.shortcuts.noReadContentHint)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Button(action: { viewModel.onDismissReadingGuidance?() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))

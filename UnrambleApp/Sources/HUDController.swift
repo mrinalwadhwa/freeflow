@@ -18,6 +18,7 @@ final class HUDController {
 
     private weak var coordinator: RecordingCoordinator?
     private weak var pipeline: DictationPipeline?
+    private weak var readAloudCoordinator: ReadAloudCoordinator?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
     private var messageService: InAppMessageService?
 
@@ -199,6 +200,14 @@ final class HUDController {
         }
     }
 
+    /// Begin observing a read-aloud coordinator to drive the HUD's read
+    /// states. The coordinator is built on first use, so this may run
+    /// before or after `start`.
+    func attachReadAloud(_ coordinator: ReadAloudCoordinator) {
+        readAloudCoordinator = coordinator
+        viewModel.observeReadAloud(coordinator: coordinator)
+    }
+
     /// Stop observing and remove the HUD from screen.
     func stop() {
         let pendingActivation = handsFreeActivationTask
@@ -234,6 +243,7 @@ final class HUDController {
         sessionObservationRevision &+= 1
         invalidateHeldSessionTransfer()
         currentSessionID = nil
+        readAloudCoordinator = nil
         viewModel.stop()
         hudWindow?.orderOut(nil)
         hudWindow = nil
@@ -418,6 +428,22 @@ final class HUDController {
         }
     }
 
+    // MARK: - Read-aloud actions
+
+    /// Stop the read session. Called from the ■ button and Escape; the
+    /// read hotkey and dictation start stop it through the app delegate.
+    private func stopReading() {
+        guard let readAloudCoordinator else { return }
+        Task { await readAloudCoordinator.stop() }
+    }
+
+    /// Dismiss the no-content guidance. Called from ✕, Escape, click, and
+    /// the view model's auto-dismiss timer.
+    private func dismissReadingGuidance() {
+        guard let readAloudCoordinator else { return }
+        Task { await readAloudCoordinator.dismissGuidance() }
+    }
+
     /// Discard the saved complete recording and return to minimized.
     func dismissDictationFailure() {
         guard let pipeline, let sessionID = viewModel.pipelineSessionID else {
@@ -455,6 +481,12 @@ final class HUDController {
         viewModel.onRetryDictation = { [weak self] in
             self?.retryDictation()
         }
+        viewModel.onStopReading = { [weak self] in
+            self?.stopReading()
+        }
+        viewModel.onDismissReadingGuidance = { [weak self] in
+            self?.dismissReadingGuidance()
+        }
         viewModel.onMessageTapped = { [weak self] message in
             if let urlString = message.url, let url = URL(string: urlString) {
                 NSWorkspace.shared.open(url)
@@ -486,8 +518,16 @@ final class HUDController {
         handsFreeActivationToken = token
         handsFreeReleaseBoundary = releaseBoundary
         currentSessionID = nil
-        let activationTask = Task {
-            await pipeline.activate(releaseBoundary: releaseBoundary)
+        let readAloud = readAloudCoordinator
+        let activationTask = Task { () -> DictationSessionID? in
+            // A read session may be running invisibly (its processing
+            // state only shows 300ms after the press). Stop it before
+            // capture so synthesized speech never overlaps the
+            // microphone; a no-op when no session exists.
+            if let readAloud {
+                await readAloud.stop()
+            }
+            return await pipeline.activate(releaseBoundary: releaseBoundary)
         }
         handsFreeActivationTask = activationTask
         Task { [weak self] in
@@ -525,6 +565,8 @@ final class HUDController {
                 self.startHandsFreeFromClick()
             case .noTarget:
                 self.dismissNoTarget()
+            case .readingNoContent:
+                self.dismissReadingGuidance()
             default:
                 break
             }
@@ -606,6 +648,10 @@ final class HUDController {
             _ = transferHeldSessionToHandsFree()
         case .listeningHandsFree:
             handsfreeStopOnShortcutRelease = true
+        case .readingProcessing, .readingSpeaking, .readingNoContent:
+            // The activation task stops the read session before capture,
+            // which also clears no-content guidance.
+            startHandsFreeFromClick()
         default:
             break
         }
@@ -842,6 +888,12 @@ final class HUDController {
             return true
         case .dictationFailed:
             dismissDictationFailure()
+            return true
+        case .readingProcessing, .readingSpeaking:
+            stopReading()
+            return true
+        case .readingNoContent:
+            dismissReadingGuidance()
             return true
         case .minimized, .ready, .listeningHeld, .processingCollapsing, .processingBreathing:
             return false
