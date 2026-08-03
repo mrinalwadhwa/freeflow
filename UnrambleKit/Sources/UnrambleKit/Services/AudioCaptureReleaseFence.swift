@@ -50,6 +50,22 @@ import Foundation
             AudioConvertNanosToHostTime(eventTimestampNanoseconds)
         }
 
+        static func hostTime(duration: TimeInterval) -> UInt64 {
+            guard duration > 0 else { return 0 }
+            return AudioConvertNanosToHostTime(
+                UInt64(duration * 1_000_000_000))
+        }
+
+        static func elapsedTime(
+            from startHostTime: UInt64,
+            to endHostTime: UInt64
+        ) -> TimeInterval? {
+            guard endHostTime >= startHostTime else { return nil }
+            return TimeInterval(
+                AudioConvertHostTimeToNanos(endHostTime - startHostTime))
+                / 1_000_000_000
+        }
+
         static func bufferStartHostTime(
             timestamp: AVAudioTime
         ) -> UInt64? {

@@ -5581,6 +5581,37 @@ final class StreamingPipelineTests: XCTestCase {
 
     // MARK: - Audio setup failure during complete
 
+    func testAccidentalTapBeforeCaptureReadyReturnsToIdle() async {
+        let audio = makeStreamingAudioProvider()
+        audio.stubbedStartDelay = 1.0
+        audio.stubbedStartError = NSError(
+            domain: "test", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "BT negotiation failed"])
+
+        let coordinator = RecordingCoordinator()
+        let (pipeline, _, _, _, _, injector, _) = makeStreamingPipeline(
+            audioProvider: audio, coordinator: coordinator)
+        let pressHostTime = AudioCaptureReleaseFence.currentHostTime()
+        let releaseBoundary = AudioCaptureReleaseBoundary(
+            pressHostTime: pressHostTime)
+
+        guard let sessionID = await pipeline.activate(
+            releaseBoundary: releaseBoundary
+        ) else {
+            return XCTFail("Expected activation")
+        }
+        await pipeline.complete(
+            sessionID: sessionID,
+            releaseHostTime: pressHostTime
+                + AudioCaptureReleaseFence.hostTime(duration: 0.05))
+
+        let state = await coordinator.state
+        let activeSessionID = await pipeline.currentSessionID
+        XCTAssertEqual(state, .idle)
+        XCTAssertNil(activeSessionID)
+        XCTAssertEqual(injector.injectionCount, 0)
+    }
+
     func testReleaseBeforeCaptureReadySurfacesNonRetryableFailure() async {
         // The release boundary wins even if a delayed audio start later fails.
         // The HUD must surface the missed capture instead of silently returning
@@ -5594,8 +5625,13 @@ final class StreamingPipelineTests: XCTestCase {
         let coordinator = RecordingCoordinator()
         let (pipeline, _, _, _, _, injector, _) = makeStreamingPipeline(
             audioProvider: audio, coordinator: coordinator)
+        let pressHostTime = AudioCaptureReleaseFence.currentHostTime()
+        let releaseBoundary = AudioCaptureReleaseBoundary(
+            pressHostTime: pressHostTime)
 
-        guard let sessionID = await pipeline.activate() else {
+        guard let sessionID = await pipeline.activate(
+            releaseBoundary: releaseBoundary
+        ) else {
             XCTFail("Expected activation")
             return
         }
@@ -5603,7 +5639,10 @@ final class StreamingPipelineTests: XCTestCase {
         XCTAssertEqual(state1, .recording)
 
         // complete() while audio setup is still sleeping for 1s.
-        await pipeline.complete()
+        await pipeline.complete(
+            sessionID: sessionID,
+            releaseHostTime: pressHostTime
+                + AudioCaptureReleaseFence.hostTime(duration: 0.30))
 
         let state = await coordinator.state
         XCTAssertEqual(

@@ -61,6 +61,11 @@ public enum DictationPipelineCaptureMaintenanceError: Error, Equatable, Sendable
 /// The transcript remains in the buffer for re-paste via the special shortcut.
 public actor DictationPipeline: PipelineProviding {
 
+    /// A shorter press cannot contain intentional speech before an unopened
+    /// microphone becomes live. Treat it as an accidental modifier-key touch
+    /// instead of presenting a hardware failure.
+    static let accidentalTapMaximumDuration: TimeInterval = 0.15
+
     /// Lock-free-from-the-provider release ledger. The audio callback publishes
     /// `.live` at the exact provider boundary; key release atomically closes it.
     private final class CaptureBoundaryLedger: @unchecked Sendable {
@@ -1597,14 +1602,31 @@ public actor DictationPipeline: PipelineProviding {
         }
         let missedCaptureBoundary =
             establishesReleaseBoundary && releaseCaptureStopOperation == nil
+        let missedCaptureHoldDuration = missedCaptureBoundary
+            ? session.releaseBoundary.flatMap { boundary in
+                boundary.releaseHostTime.flatMap { releaseHostTime in
+                    AudioCaptureReleaseFence.elapsedTime(
+                        from: boundary.pressHostTime,
+                        to: releaseHostTime)
+                }
+            }
+            : nil
+        let isAccidentalTapBeforeCapture =
+            !canRecoverPreviewPreRoll
+            && missedCaptureHoldDuration.map {
+                $0 <= Self.accidentalTapMaximumDuration
+            } == true
         if missedCaptureBoundary {
             captureBoundaryMissedSessionID = session.id
             if canRecoverPreviewPreRoll {
                 previewPreRollRecoverySessionID = session.id
             } else {
                 previewPreRollRecoverySessionID = nil
+                let durationDescription = missedCaptureHoldDuration.map {
+                    " after \(Int(($0 * 1_000).rounded()))ms"
+                } ?? ""
                 Log.debug(
-                    "[Pipeline] Capture was not live at key release and has no retained preview coverage; resetting"
+                    "[Pipeline] Capture was not live at key release\(durationDescription) and has no retained preview coverage; resetting audio"
                 )
                 audioProvider.forceReset(owner: captureOwner)
             }
@@ -1893,9 +1915,17 @@ public actor DictationPipeline: PipelineProviding {
         }
 
         if captureBoundaryMissedSessionID == session.id {
-            Log.debug(
-                "[Pipeline] Capture was not live at key release; retaining explicit failure"
-            )
+            if isAccidentalTapBeforeCapture,
+                let missedCaptureHoldDuration
+            {
+                Log.debug(
+                    "[Pipeline] Ignoring accidental \(Int((missedCaptureHoldDuration * 1_000).rounded()))ms tap before capture became live"
+                )
+            } else {
+                Log.debug(
+                    "[Pipeline] Capture was not live at key release; retaining explicit failure"
+                )
+            }
             captureBoundaryMissedSessionID = nil
             previewPreRollRecoverySessionID = nil
             audioSetupFailed = false
@@ -1905,7 +1935,11 @@ public actor DictationPipeline: PipelineProviding {
             if !drainedLateStart {
                 _ = try? await audioProvider.stopRecording(owner: captureOwner)
             }
-            _ = await coordinator.failDictation(sessionID: session.id)
+            if isAccidentalTapBeforeCapture {
+                await resetOwnedSession(session.id)
+            } else {
+                _ = await coordinator.failDictation(sessionID: session.id)
+            }
             return
         }
 
