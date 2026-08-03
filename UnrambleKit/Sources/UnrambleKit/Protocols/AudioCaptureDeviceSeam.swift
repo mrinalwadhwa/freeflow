@@ -36,3 +36,6 @@ public protocol AudioCaptureRebuildSink: AnyObject {
 
 extension CoreAudioDeviceProvider: AudioInputDeviceSnapshotProviding {}
 extension AudioCaptureProvider: AudioCaptureRebuildSink {}
+#if canImport(AVFoundation) && canImport(CoreAudio)
+    extension AUHALAudioCaptureProvider: AudioCaptureRebuildSink {}
+#endif

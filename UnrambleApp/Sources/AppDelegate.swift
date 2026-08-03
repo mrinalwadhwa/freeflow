@@ -448,7 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Pipeline
 
-    private let audioProvider = AudioCaptureProvider()
+    private let audioProvider = AUHALAudioCaptureProvider()
     private lazy var microphoneCaptureCoordinator =
         MicrophoneCaptureCoordinator(
             audioProvider: audioProvider,

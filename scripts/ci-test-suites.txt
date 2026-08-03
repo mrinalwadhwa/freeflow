@@ -1,3 +1,4 @@
+ci AUHALAudioCaptureProviderTests
 ci AgentProcessFinderTests
 ci ApplySoftwareGainTests
 ci AsyncSerialOperationQueueTests
