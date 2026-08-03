@@ -82,7 +82,8 @@ public final class AXAppContextProvider: AppContextProviding, @unchecked Sendabl
                 browserURL: browserURL,
                 focusedFieldContent: fieldInfo.content,
                 selectedText: fieldInfo.selectedText,
-                cursorPosition: fieldInfo.cursorPosition
+                cursorPosition: fieldInfo.cursorPosition,
+                processIdentifier: pid
             )
         }
     #endif

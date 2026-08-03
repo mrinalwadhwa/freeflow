@@ -28,6 +28,9 @@ public struct AppContext: Sendable, Equatable {
     /// Cursor (insertion point) position within the focused field.
     public let cursorPosition: Int?
 
+    /// Process identifier of the frontmost application, when known.
+    public let processIdentifier: Int32?
+
     public init(
         bundleID: String,
         appName: String,
@@ -35,7 +38,8 @@ public struct AppContext: Sendable, Equatable {
         browserURL: String? = nil,
         focusedFieldContent: String? = nil,
         selectedText: String? = nil,
-        cursorPosition: Int? = nil
+        cursorPosition: Int? = nil,
+        processIdentifier: Int32? = nil
     ) {
         self.bundleID = bundleID
         self.appName = appName
@@ -44,6 +48,7 @@ public struct AppContext: Sendable, Equatable {
         self.focusedFieldContent = focusedFieldContent
         self.selectedText = selectedText
         self.cursorPosition = cursorPosition
+        self.processIdentifier = processIdentifier
     }
 
     /// An empty context used as a placeholder when context reading is unavailable.
