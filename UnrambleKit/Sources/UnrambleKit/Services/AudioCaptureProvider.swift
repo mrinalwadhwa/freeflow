@@ -1150,13 +1150,30 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         releaseBoundary: AudioCaptureReleaseBoundary?,
         onCaptureReady: @escaping @Sendable () -> Void
     ) async throws {
+        let startupStartedAt = CFAbsoluteTimeGetCurrent()
+        defer {
+            Log.debug(
+                "[AudioCapture] Startup phase total: "
+                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startupStartedAt))s"
+            )
+        }
+        let deviceSettleStartedAt = CFAbsoluteTimeGetCurrent()
         try await _audioDeviceProvider?.waitUntilInputDeviceSettled()
+        Log.debug(
+            "[AudioCapture] Startup phase device-settle: "
+                + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - deviceSettleStartedAt))s"
+        )
         try Task.checkCancellation()
         guard captureDemands.insert(owner) else {
             throw AudioCaptureError.alreadyRecording
         }
         do {
+            let transitionQueuedAt = CFAbsoluteTimeGetCurrent()
             try await captureTransitions.run { [self] in
+                Log.debug(
+                    "[AudioCapture] Startup phase transition-queue: "
+                        + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - transitionQueuedAt))s"
+                )
                 try Task.checkCancellation()
                 guard captureDemands.contains(owner) else {
                     throw CancellationError()
@@ -2387,7 +2404,20 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
         private func ensureEngine(
             for attempt: AudioEngineStartResetLedger<AVAudioEngine>.Attempt
         ) throws -> AVAudioEngine {
+            let ensureStartedAt = CFAbsoluteTimeGetCurrent()
+            let initialPath = engine == nil ? "cold" : "reuse"
+            defer {
+                Log.debug(
+                    "[AudioCapture] Startup phase ensure-engine (\(initialPath)): "
+                        + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - ensureStartedAt))s"
+                )
+            }
+            let deviceResolutionStartedAt = CFAbsoluteTimeGetCurrent()
             var desiredDeviceID = _audioDeviceProvider?.captureDeviceID
+            Log.debug(
+                "[AudioCapture] Startup phase device-resolution: "
+                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - deviceResolutionStartedAt))s"
+            )
 
             if let engine {
                 guard engineStartResetLedger.publish(engine, for: attempt) else {
@@ -2447,11 +2477,21 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                             guard engineStartResetLedger.isValid(attempt) else {
                                 throw resetDuringEngineStartError
                             }
+                            let prepareStartedAt = CFAbsoluteTimeGetCurrent()
                             engine.prepare()
+                            Log.debug(
+                                "[AudioCapture] Startup phase engine-prepare (reuse): "
+                                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - prepareStartedAt))s"
+                            )
                             var startError: Error?
+                            let startStartedAt = CFAbsoluteTimeGetCurrent()
                             let startException = ObjCTryCatch {
                                 do { try engine.start() } catch { startError = error }
                             }
+                            Log.debug(
+                                "[AudioCapture] Startup phase engine-start (reuse): "
+                                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startStartedAt))s"
+                            )
                             if let startException {
                                 Log.debug(
                                     "[AudioCapture] engine.start() ObjC exception on reuse: "
@@ -2489,7 +2529,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 throw resetDuringEngineStartError
             }
 
+            let engineCreationStartedAt = CFAbsoluteTimeGetCurrent()
             let engine = AVAudioEngine()
+            Log.debug(
+                "[AudioCapture] Startup phase engine-create: "
+                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - engineCreationStartedAt))s"
+            )
             guard engineStartResetLedger.publish(engine, for: attempt) else {
                 throw resetDuringEngineStartError
             }
@@ -2500,7 +2545,12 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
             #if canImport(CoreAudio)
                 if let deviceID = desiredDeviceID {
                     do {
+                        let deviceRoutingStartedAt = CFAbsoluteTimeGetCurrent()
                         try setInputDevice(deviceID, on: engine)
+                        Log.debug(
+                            "[AudioCapture] Startup phase device-routing: "
+                                + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - deviceRoutingStartedAt))s"
+                        )
                     } catch {
                         // Device is no longer available (disconnected
                         // AirPods, unplugged USB mic, etc.). Clear the
@@ -2527,9 +2577,13 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                     _configuredDeviceID
                 ) ?? "System Default"
 
+            let inputFormatStartedAt = CFAbsoluteTimeGetCurrent()
             let inputNode = engine.inputNode
-
             let hardwareFormat = inputNode.outputFormat(forBus: 0)
+            Log.debug(
+                "[AudioCapture] Startup phase input-format: "
+                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - inputFormatStartedAt))s"
+            )
             guard hardwareFormat.sampleRate > 0 else {
                 throw AudioCaptureError.noInputDevice
             }
@@ -2546,15 +2600,25 @@ public final class AudioCaptureProvider: AudioProviding, @unchecked Sendable {
                 throw AudioCaptureError.formatError
             }
 
+            let prepareStartedAt = CFAbsoluteTimeGetCurrent()
             engine.prepare()
+            Log.debug(
+                "[AudioCapture] Startup phase engine-prepare (cold): "
+                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - prepareStartedAt))s"
+            )
             guard engineStartResetLedger.isValid(attempt) else {
                 engine.stop()
                 throw resetDuringEngineStartError
             }
             var startError: Error?
+            let startStartedAt = CFAbsoluteTimeGetCurrent()
             let startException = ObjCTryCatch {
                 do { try engine.start() } catch { startError = error }
             }
+            Log.debug(
+                "[AudioCapture] Startup phase engine-start (cold): "
+                    + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startStartedAt))s"
+            )
             if let startException {
                 throw AudioCaptureError.engineStartFailed(
                     startException.reason ?? startException.name.rawValue

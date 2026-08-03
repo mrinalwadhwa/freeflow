@@ -1195,6 +1195,10 @@ public actor DictationPipeline: PipelineProviding {
         let detachedStart = DetachedOperation<Result<Void, Error>> {
             do {
                 let onCaptureReady: @Sendable () -> Void = {
+                    Log.debug(
+                        "[Pipeline] Audio capture ready after "
+                            + "\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - t3))s"
+                    )
                     captureLedger.markCaptureLive()
                 }
                 try await audioProviderRef.startRecording(
