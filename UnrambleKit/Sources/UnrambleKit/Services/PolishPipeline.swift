@@ -217,7 +217,7 @@ public enum PolishPipeline {
             with: ".$1",
             options: .regularExpression)
         result = result.replacingOccurrences(
-            of: #"([^.!?\s])\s*(<keep>\[(?:PAR|NL)\]</keep>)"#,
+            of: #"([^.!?:\s])\s*(<keep>\[(?:PAR|NL)\]</keep>)"#,
             with: "$1.$2",
             options: .regularExpression)
 
@@ -916,7 +916,7 @@ public enum PolishPipeline {
         let minute = "o'?clock|oh\\s+(?:one|two|three|four|five|six|seven|eight"
             + "|nine)|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen"
             + "|seventeen|eighteen|nineteen|(?:twenty|thirty|forty|fifty)"
-            + "(?:\\s+(?:one|two|three|four|five|six|seven|eight|nine))?"
+            + "(?:[\\s-]+(?:one|two|three|four|five|six|seven|eight|nine))?"
         let pattern = "(?i)\\b(\(prep))\\s+(\(hour))\\s+(\(minute))"
             + "(?=\\s|[.,!?;:]|$)"
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -933,6 +933,7 @@ public enum PolishPipeline {
                 let h = parseHour(String(result[hourR])),
                 let m = parseMinute(
                     String(result[minR]).lowercased()
+                        .replacingOccurrences(of: "-", with: " ")
                         .split(separator: " ").map(String.init))
             else { continue }
             result.replaceSubrange(
@@ -1621,6 +1622,17 @@ public enum PolishPipeline {
         result = result.replacingOccurrences(
             of: #"\b([01]?\d|2[0-3])\.([0-5]\d)(?=\s+(?:AM|PM)\b)"#,
             with: "$1:$2", options: .regularExpression)
+
+        // Cohere can also render a spoken clock time as a decimal without a
+        // meridiem ("meet at three thirty" -> "meet at 3.30"). Only repair
+        // an `at`-introduced value when what follows is recognizably temporal
+        // or another coordinated time; measurement decimals remain untouched.
+        let bareClockFollower = "AM|PM|today|tomorrow|tonight|on|and|or"
+            + "|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"
+        result = result.replacingOccurrences(
+            of: #"\b(at\s+)([01]?\d|2[0-3])\.([0-5]\d)(?=\s+(?:"#
+                + bareClockFollower + #")\b|[.,!?;:]|$)"#,
+            with: "$1$2:$3", options: [.regularExpression, .caseInsensitive])
 
         // A bare spoken hour before a meridiem takes a numeral: "three PM" ->
         // "3 PM", "nine AM" -> "9 AM". H:MM times are digitized upstream; this

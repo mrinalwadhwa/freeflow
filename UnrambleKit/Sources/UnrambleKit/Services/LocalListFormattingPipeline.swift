@@ -28,6 +28,11 @@ enum LocalListFormattingPipeline {
     private static let leadInPatterns = [
         #"\b(?:priorities|action items|focus areas|key takeaways|steps|tasks|items)\s+(?:are|include)\b"#,
         #"\btasks\s+for\s+(?:this|the)\s+\w+\s+(?:are|include)\b"#,
+        #"\b(?:release\s+)?checklist\s+is\b"#,
+        #"\b(?:lay\s+out|share)\s+(?:a\s+)?few\s+(?:theories|reasons|options)\b"#,
+        #"\ba\s+bunch\s+of\s+(?:stuff|things|issues|problems)(?:\s+from\s+[^.!?:,]+)?\b"#,
+        #"\bbefore\s+[^.!?]{1,80}\bwe\s+(?:still\s+)?need\s+to\b"#,
+        #"\b(?:launch|release|rollout)\s+plan\b"#,
         #"\b(?:i|we)\s+need\s+to\s+(?:buy|get|order|pick\s+up)\b"#,
         #"\bplease\s+(?:buy|get|order)\b"#,
         #"\b(?:picked|picking)\s+up\s+(?:at|from)\b"#,
@@ -48,6 +53,18 @@ enum LocalListFormattingPipeline {
 
     private static let itemMarkerPattern = try! NSRegularExpression(
         pattern: #"^\s*(?:[-*•]\s+|(?:step\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)[.):]?\s+)"#,
+        options: [.caseInsensitive])
+
+    private static let ordinalSentenceListPattern = try! NSRegularExpression(
+        pattern: #"^(.*?)(\bthe\s+first\b.*?[.!?])\s+(\bthe\s+second\b.*?[.!?])\s+(\bthe\s+third\b.*?[.!?])(?:\s+(.*))?$"#,
+        options: [.caseInsensitive, .dotMatchesLineSeparators])
+
+    private static let issueReportLeadInPattern = try! NSRegularExpression(
+        pattern: #"\ba\s+bunch\s+of\s+(?:stuff|things|issues|problems)\s+from\s+[\p{L}\p{N}'-]+\b"#,
+        options: [.caseInsensitive])
+
+    private static let issueClauseSeparatorPattern = try! NSRegularExpression(
+        pattern: #"[,;.!?]\s+(?:and\s+)?(?=the\b)"#,
         options: [.caseInsensitive])
 
     struct Token: Equatable {
@@ -106,6 +123,11 @@ enum LocalListFormattingPipeline {
             casual: tone == "casual")
         guard isCandidate(validationSource) else { return nil }
 
+        if let deterministic = deterministicFormatIfSafe(validationSource) {
+            Log.debug("[LocalListFormatting] accepted deterministic list")
+            return deterministic
+        }
+
         let formatted = await PolishPipeline.polish(
             source,
             chatClient: chatClient,
@@ -121,6 +143,21 @@ enum LocalListFormattingPipeline {
         }
         Log.debug("[LocalListFormatting] accepted vertical list")
         return formatted
+    }
+
+    /// Format only two exceptionally strong structures without asking the
+    /// model to reinterpret them. The final validator still proves lexical
+    /// preservation, source order, and boundary support before either result
+    /// is returned.
+    static func deterministicFormatIfSafe(_ source: String) -> String? {
+        guard isCandidate(source) else { return nil }
+        let candidates = [
+            formatOrdinalSentenceList(source),
+            formatIssueReport(source),
+        ]
+        return candidates.compactMap { $0 }.first {
+            validates(source: source, formatted: $0)
+        }
     }
 
     static func validates(source: String, formatted: String) -> Bool {
@@ -154,7 +191,10 @@ enum LocalListFormattingPipeline {
 
         let sourceWords = sourceTokens.map(\.canonical)
         let outputWords = outputTokens.map(\.canonical)
-        if sourceWords == outputWords { return true }
+        let semanticOutputWords = tokens(
+            in: strippingItemMarkers(from: formatted)).map(\.canonical)
+        let outputCandidates = [outputWords, semanticOutputWords]
+        if outputCandidates.contains(sourceWords) { return true }
 
         // A vertical list conventionally drops the final spoken conjunction.
         // Permit that one omission only when it lies between the penultimate
@@ -168,9 +208,105 @@ enum LocalListFormattingPipeline {
         {
             var withoutConjunction = sourceWords
             withoutConjunction.remove(at: index)
-            if withoutConjunction == outputWords { return true }
+            if outputCandidates.contains(withoutConjunction) { return true }
         }
         return false
+    }
+
+    /// Cloud may polish more broadly than Local, but it must not manufacture a
+    /// vertical list when the transcript has no strong list-intent signal.
+    static func allowsGeneratedList(source: String, formatted: String) -> Bool {
+        guard let items = parsedItems(from: formatted), items.count >= 3
+        else { return true }
+        return isCandidate(source)
+    }
+
+    /// List markers are presentation, not dictated content. Compare both the
+    /// literal formatted text and a marker-free form so an unordered spoken
+    /// checklist may safely use either bullets or generated numbering.
+    private static func strippingItemMarkers(from output: String) -> String {
+        output.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                let value = String(line)
+                let nsRange = NSRange(value.startIndex..., in: value)
+                guard let match = itemMarkerPattern.firstMatch(
+                    in: value, range: nsRange),
+                    let marker = Range(match.range, in: value)
+                else { return value }
+                return String(value[marker.upperBound...])
+            }
+            .joined(separator: "\n")
+    }
+
+    private static func formatOrdinalSentenceList(_ source: String) -> String? {
+        let fullRange = NSRange(source.startIndex..., in: source)
+        guard let match = ordinalSentenceListPattern.firstMatch(
+            in: source, range: fullRange)
+        else { return nil }
+
+        func capture(_ index: Int) -> String? {
+            guard match.range(at: index).location != NSNotFound,
+                let range = Range(match.range(at: index), in: source)
+            else { return nil }
+            let value = source[range].trimmingCharacters(
+                in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+
+        guard let first = capture(2), let second = capture(3),
+            let third = capture(4)
+        else { return nil }
+
+        var blocks: [String] = []
+        if let prefix = capture(1) { blocks.append(prefix) }
+        blocks.append("1. \(first)\n2. \(second)\n3. \(third)")
+        if let suffix = capture(5) { blocks.append(suffix) }
+        return blocks.joined(separator: "\n\n")
+    }
+
+    private static func formatIssueReport(_ source: String) -> String? {
+        let fullRange = NSRange(source.startIndex..., in: source)
+        guard let leadIn = issueReportLeadInPattern.firstMatch(
+            in: source, range: fullRange),
+            let leadRange = Range(leadIn.range, in: source)
+        else { return nil }
+
+        var bodyStart = leadRange.upperBound
+        while bodyStart < source.endIndex,
+            source[bodyStart].isWhitespace || ":,;-".contains(source[bodyStart])
+        {
+            bodyStart = source.index(after: bodyStart)
+        }
+        guard bodyStart < source.endIndex else { return nil }
+
+        let body = String(source[bodyStart...])
+        guard body.lowercased().hasPrefix("the ") else { return nil }
+        let bodyRange = NSRange(body.startIndex..., in: body)
+        let separators = issueClauseSeparatorPattern.matches(
+            in: body, range: bodyRange)
+        guard separators.count >= 2 else { return nil }
+
+        var items: [String] = []
+        var cursor = body.startIndex
+        for separator in separators {
+            guard let range = Range(separator.range, in: body) else {
+                return nil
+            }
+            let item = body[cursor..<range.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !item.isEmpty else { return nil }
+            items.append(item)
+            cursor = range.upperBound
+        }
+        let finalItem = body[cursor...].trimmingCharacters(
+            in: .whitespacesAndNewlines)
+        guard !finalItem.isEmpty else { return nil }
+        items.append(finalItem)
+
+        let prefix = source[..<leadRange.upperBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let list = items.map { "- \($0)" }.joined(separator: "\n")
+        return "\(prefix):\n\(list)"
     }
 
     private static func parsedItems(from output: String) -> [String]? {

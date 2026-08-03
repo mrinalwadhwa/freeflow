@@ -559,6 +559,14 @@ struct StripKeepTagsTests {
         #expect(result.contains("summary.<keep>[NL]</keep>"))
     }
 
+    @Test("new line after a colon does not add a period")
+    func newLineAfterColonKeepsColon() {
+        let result = PolishPipeline.substituteDictatedPunctuation(
+            "Here's the checklist: new line first item")
+        #expect(result.contains("checklist: <keep>[NL]</keep>"))
+        #expect(!result.contains(":.<keep>"))
+    }
+
     @Test("multiple breaks each get period")
     func multipleBreaks() {
         let result = PolishPipeline.substituteDictatedPunctuation(
@@ -1026,24 +1034,6 @@ struct BuildUserPromptTests {
 @Suite("PolishPipeline – systemPrompts")
 struct SystemPromptTests {
 
-    @Test("English prompt starts correctly")
-    func englishPromptStart() {
-        #expect(PolishPipeline.systemPromptEnglish.hasPrefix(
-            "You are a speech-to-text cleanup assistant."))
-    }
-
-    @Test("English prompt contains cleanup instruction")
-    func englishPromptContainsCleanup() {
-        let p = PolishPipeline.systemPromptEnglish
-        #expect(p.contains("clean"))
-    }
-
-    @Test("English prompt ends with cleaned text instruction")
-    func englishPromptEnd() {
-        #expect(PolishPipeline.systemPromptEnglish.contains(
-            "cleaned text"))
-    }
-
     @Test("Minimal prompt starts correctly")
     func minimalPromptStart() {
         #expect(PolishPipeline.systemPromptMinimal.hasPrefix(
@@ -1359,6 +1349,8 @@ struct ConvertSpokenTimeTests {
             == "the review is at 3:30")
         #expect(PolishPipeline.convertSpokenTime("standup at nine forty five today")
             == "standup at 9:45 today")
+        #expect(PolishPipeline.convertSpokenTime("standup at nine forty-five today")
+            == "standup at 9:45 today")
         #expect(PolishPipeline.convertSpokenTime("let's meet at ten fifteen")
             == "let's meet at 10:15")
         #expect(PolishPipeline.convertSpokenTime("by twelve thirty")
@@ -1668,12 +1660,102 @@ struct NumericClockPunctuationTests {
             == "The meeting is at 2:30 PM on March 15th.")
         #expect(PolishPipeline.normalizeFormatting("Meet at 09.05 AM.")
             == "Meet at 09:05 AM.")
+        #expect(PolishPipeline.normalizeFormatting(
+            "Let's meet at 3.30 and again at 9.15 tomorrow.")
+            == "Let's meet at 3:30 and again at 9:15 tomorrow.")
     }
 
     @Test("An ordinary decimal remains a decimal")
     func ordinaryDecimalUnaffected() {
         #expect(PolishPipeline.normalizeFormatting("The result is 2.30 points.")
             == "The result is 2.30 points.")
+        #expect(PolishPipeline.normalizeFormatting(
+            "Latency settled at 2.30 seconds today.")
+            == "Latency settled at 2.30 seconds today.")
+    }
+}
+
+@Suite("Numbers and values text contract")
+struct NumbersAndValuesTextContractTests {
+    private func process(_ input: String) -> String {
+        PolishPipeline.normalizeFormatting(
+            PolishPipeline.stripKeepTags(
+                PolishPipeline.substituteDictatedPunctuation(input)))
+    }
+
+    @Test("Versions preserve both endpoints")
+    func versions() {
+        let out = process(
+            "We're shipping version four point three tomorrow, and the rollback target is three point nine.")
+        #expect(out.contains("version 4.3"))
+        #expect(out.contains("rollback target is 3.9"))
+    }
+
+    @Test("Decimal duration preserves both values")
+    func decimalDuration() {
+        let out = process(
+            "Latency dropped from two point one seconds to zero point eight after the fix.")
+        #expect(out.contains("from 2.1 seconds to 0.8"))
+    }
+
+    @Test("Spoken clock times use colons")
+    func clockTimes() {
+        let out = process(
+            "Let's meet at three thirty and again at nine fifteen tomorrow to go over the numbers.")
+        #expect(out.contains("at 3:30"))
+        #expect(out.contains("at 9:15"))
+    }
+
+    @Test("Percentages preserve values and approximation")
+    func percentages() {
+        let out = process(
+            "Revenue grew about twelve percent last quarter, and churn dropped from five point two to three point one percent.")
+        #expect(out.contains("about 12%"))
+        #expect(out.contains("from 5.2 to 3.1%"))
+    }
+
+    @Test("Approximate money preserves uncertainty")
+    func approximateMoney() {
+        let out = process(
+            "The budget is around forty-five thousand dollars, give or take a few thousand.")
+        #expect(out.contains("around $45,000"))
+        #expect(out.contains("give or take a few thousand"))
+    }
+
+    @Test("Times remain attached to the right events")
+    func eventTimes() {
+        let out = process(
+            "Let's move standup to nine forty-five and keep the retro at four thirty on Friday.")
+        #expect(out.contains("standup to 9:45"))
+        #expect(out.contains("retro at 4:30 on Friday"))
+    }
+
+    @Test("Version upgrade preserves direction")
+    func versionUpgrade() {
+        let out = process(
+            "We're upgrading from version three point two to version four point one sometime next week.")
+        #expect(out.contains("from version 3.2 to version 4.1"))
+        #expect(out.contains("sometime next week"))
+    }
+
+    @Test("Decimal magnitude preserves eighty gigabytes")
+    func decimalMagnitudeAndUnit() {
+        let out = process(
+            "The dataset is around two point five million rows and takes up roughly eighty gigabytes on disk.")
+        #expect(out.contains("around 2.5 million rows"))
+        #expect(out.contains("roughly 80 gigabytes on disk"))
+    }
+
+    @Test("Eight and eighty remain distinct")
+    func eightVersusEighty() {
+        let eight = process(
+            "The compressed archive takes up exactly eight gigabytes on disk.")
+        let eighty = process(
+            "The compressed archive takes up exactly eighty gigabytes on disk.")
+        #expect(eight.contains("exactly eight gigabytes"))
+        #expect(!eight.contains("80 gigabytes"))
+        #expect(eighty.contains("exactly 80 gigabytes"))
+        #expect(!eighty.contains("exactly 8 gigabytes"))
     }
 }
 

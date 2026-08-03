@@ -26,6 +26,23 @@ struct LocalListFormattingPipelineTests {
         #expect(LocalListFormattingPipeline.isCandidate(
             "The tasks for this sprint are first set up CI second write tests "
                 + "and third update deployment"))
+        #expect(LocalListFormattingPipeline.isCandidate(
+            "The release checklist is: run the migration, clear the cache, "
+                + "restart the workers, and verify the dashboards."))
+        #expect(LocalListFormattingPipeline.isCandidate(
+            "I want to lay out a few theories. The first is technical debt. "
+                + "The second is slow review. The third is context switching."))
+        #expect(LocalListFormattingPipeline.isCandidate(
+            "Okay, a bunch of stuff from testing: the search is slow, the "
+                + "filters don't persist, the export times out, and errors "
+                + "are vague."))
+        #expect(LocalListFormattingPipeline.isCandidate(
+            "Before launch, we still need to finalize pricing, set up "
+                + "monitoring, write the guide, and schedule the emails."))
+        #expect(LocalListFormattingPipeline.isCandidate(
+            "Here's the launch plan. In the first week, release to a small "
+                + "group. In the second week, open it up. In the third week, "
+                + "run the ad push."))
     }
 
     @Test("Leaves two-item phrases and ordinary prose out of Qwen")
@@ -46,6 +63,9 @@ struct LocalListFormattingPipelineTests {
             "Attach it to number two, one, two, three, four. Is that correct?"))
         #expect(!LocalListFormattingPipeline.isCandidate(
             "I need to buy eggs milk bread butter and cheese."))
+        #expect(!LocalListFormattingPipeline.isCandidate(
+            "Grab milk, eggs, a loaf of bread, some coffee, and a couple of "
+                + "bananas on the way home."))
         #expect(!LocalListFormattingPipeline.isCandidate(
             "First the database second the cache third the load balancer"))
         #expect(!LocalListFormattingPipeline.isCandidate(
@@ -129,6 +149,116 @@ struct LocalListFormattingPipelineTests {
 
         #expect(LocalListFormattingPipeline.validates(
             source: source, formatted: formatted))
+    }
+
+    @Test("Accepts generated numbering for an unordered spoken checklist")
+    func validatesGeneratedNumbering() {
+        let source = "The release checklist is: run the migration, clear the "
+            + "cache, restart the workers, and verify the dashboards."
+        let formatted = """
+            The release checklist is:
+            1. Run the migration
+            2. Clear the cache
+            3. Restart the workers
+            4. Verify the dashboards
+            """
+
+        #expect(LocalListFormattingPipeline.validates(
+            source: source, formatted: formatted))
+    }
+
+    @Test("Generated lists require a strong list-intent signal")
+    func generatedListRequiresIntent() {
+        let compact = "Grab milk, eggs, a loaf of bread, some coffee, and a "
+            + "couple of bananas on the way home."
+        let compactList = """
+            Grab:
+            - Milk
+            - Eggs
+            - A loaf of bread
+            - Some coffee
+            - A couple of bananas on the way home
+            """
+        #expect(!LocalListFormattingPipeline.allowsGeneratedList(
+            source: compact, formatted: compactList))
+
+        let checklist = "The release checklist is: run the migration, clear "
+            + "the cache, restart the workers, and verify the dashboards."
+        let checklistList = """
+            The release checklist is:
+            - Run the migration
+            - Clear the cache
+            - Restart the workers
+            - Verify the dashboards
+            """
+        #expect(LocalListFormattingPipeline.allowsGeneratedList(
+            source: checklist, formatted: checklistList))
+        #expect(LocalListFormattingPipeline.allowsGeneratedList(
+            source: compact, formatted: compact))
+    }
+
+    @Test("Deterministically formats ordinal theories without absorbing conclusion")
+    func deterministicallyFormatsOrdinalTheories() {
+        let source = "I want to lay out a few theories. The first is technical "
+            + "debt. The second is slow review. The third is context switching. "
+            + "If I had to choose, I would fix context switching."
+        let output = LocalListFormattingPipeline.deterministicFormatIfSafe(
+            source)
+
+        #expect(output?.contains("\n1. The first is technical debt.") == true)
+        #expect(output?.contains("\n2. The second is slow review.") == true)
+        #expect(output?.contains("\n3. The third is context switching.") == true)
+        #expect(output?.hasSuffix(
+            "If I had to choose, I would fix context switching.") == true)
+        #expect(LocalListFormattingPipeline.validates(
+            source: source, formatted: output ?? ""))
+    }
+
+    @Test("Deterministically formats a signaled multi-clause issue report")
+    func deterministicallyFormatsIssueReport() {
+        let source = "Okay, a bunch of stuff from testing: the search is slow, "
+            + "the filters don't persist, the export times out, and the errors "
+            + "are vague."
+        let output = LocalListFormattingPipeline.deterministicFormatIfSafe(
+            source)
+
+        #expect(output?.contains("\n- the search is slow") == true)
+        #expect(output?.contains("\n- the filters don't persist") == true)
+        #expect(output?.contains("\n- the export times out") == true)
+        #expect(output?.contains("\n- the errors are vague.") == true)
+        #expect(LocalListFormattingPipeline.validates(
+            source: source, formatted: output ?? ""))
+    }
+
+    @Test("Formats the recorded issue report when STT omits its colon")
+    func deterministicallyFormatsIssueReportWithoutColon() {
+        let source = "Okay, a bunch of stuff from testing the search is slow. "
+            + "The filters don't persist, the export time's out on big data "
+            + "sets. The mobile layout breaks on small screens, and the error "
+            + "messages are still too vague."
+        let output = LocalListFormattingPipeline.deterministicFormatIfSafe(
+            source)
+
+        #expect(output?.contains("\n- the search is slow") == true)
+        #expect(output?.contains("\n- The filters don't persist") == true)
+        #expect(output?.contains("\n- the export time's out on big data sets")
+            == true)
+        #expect(output?.contains("\n- The mobile layout breaks on small screens")
+            == true)
+        #expect(output?.contains("\n- the error messages are still too vague.")
+            == true)
+        #expect(LocalListFormattingPipeline.validates(
+            source: source, formatted: output ?? ""))
+    }
+
+    @Test("Deterministic formatting ignores compact noun sequences")
+    func deterministicFormattingRejectsCompactSeries() {
+        #expect(LocalListFormattingPipeline.deterministicFormatIfSafe(
+            "Grab milk, eggs, bread, coffee, and bananas on the way home.")
+            == nil)
+        #expect(LocalListFormattingPipeline.deterministicFormatIfSafe(
+            "A bunch of things happened. The database recovered. The team "
+                + "met. The release continued.") == nil)
     }
 
     @Test("Accepts boundaries encoded by unpunctuated ordinals and quantities")

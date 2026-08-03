@@ -64,6 +64,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
     private let sttModel: String
     private let commitPolicy: RealtimeCommitPolicy
     private let maxUnresolvedItems: Int
+    private let polishInstructionsOverride: String?
     typealias EvidenceObserver = @Sendable (
         OpenAIRealtimeCommitSession.EvidenceSnapshot
     ) async -> Void
@@ -234,6 +235,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
         commitPolicy: RealtimeCommitPolicy,
         maxUnresolvedItems: Int,
         evidenceObserver: EvidenceObserver?,
+        polishInstructionsOverride: String? = nil,
         transportFactory: @escaping TransportFactory = {
             try OpenAIRealtimeTransportFactory.buildTransport(apiKey: $0, model: $1)
         },
@@ -253,6 +255,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
         self.commitPolicy = commitPolicy
         self.maxUnresolvedItems = maxUnresolvedItems
         self.evidenceObserver = evidenceObserver
+        self.polishInstructionsOverride = polishInstructionsOverride
         self.transportFactory = transportFactory
         self.setupAdmission = setupAdmission
         self.backupReadyObserver = backupReadyObserver
@@ -388,7 +391,8 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
             let update = Self.buildSessionUpdate(
                 sttModel: freshSTTModel,
                 language: language,
-                context: context)
+                context: context,
+                polishInstructionsOverride: self.polishInstructionsOverride)
             try await candidate.send(update)
             try Task.checkCancellation()
 
@@ -1149,18 +1153,22 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
     static func buildSessionUpdate(
         sttModel: String,
         language: String?,
-        context: AppContext
+        context: AppContext,
+        polishInstructionsOverride: String? = nil
     ) -> String {
         var transcription: [String: Any] = [
             "model": sttModel,
+            "prompt": "A dictation that may contain the literal phrases "
+                + "'new line' and 'new paragraph' as formatting commands.",
         ]
         if let language {
             transcription["language"] = language
         }
 
-        let polishInstructions =
-            PolishPipeline.buildCloudSystemPrompt(
+        let basePolishInstructions = polishInstructionsOverride
+            ?? PolishPipeline.buildCloudSystemPrompt(
                 context: context, language: language)
+        let polishInstructions = basePolishInstructions
             + "\n\n" + multiCommitPolishFidelityInstructions
         let session: [String: Any] = [
             "type": "realtime",

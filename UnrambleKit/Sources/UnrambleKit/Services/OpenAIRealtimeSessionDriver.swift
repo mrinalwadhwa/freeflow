@@ -191,6 +191,12 @@ enum OpenAIRealtimeSessionDriver {
             return rawTranscript
         }
 
+        if repeatsEntireTranscript(candidate, rawTranscript: rawTranscript) {
+            Log.debug(
+                "[REALTIME_POLISH_RAW_FALLBACK] whole transcript duplicated")
+            return rawTranscript
+        }
+
         let guardFires = PolishPipeline.guardAgainstHallucination(
                 polished: candidate,
                 preprocessed: rawTranscript) != nil
@@ -210,12 +216,42 @@ enum OpenAIRealtimeSessionDriver {
             || PolishPipeline.guardAgainstNumberChange(
                 polished: candidate,
                 preprocessed: rawTranscript) != nil
+            || !LocalListFormattingPipeline.allowsGeneratedList(
+                source: rawTranscript,
+                formatted: candidate)
         if guardFires {
             Log.debug(
                 "[REALTIME_POLISH_RAW_FALLBACK] fidelity guard rejected polish")
             return rawTranscript
         }
         return candidate
+    }
+
+    /// Detect the narrow failure where the model emits the complete input two
+    /// or more times. Compare words rather than punctuation so a duplicated
+    /// copy with different capitalization or sentence punctuation is still
+    /// rejected. Internal repetition in the dictated transcript remains valid
+    /// because the candidate must equal repetitions of the *entire* input.
+    private static func repeatsEntireTranscript(
+        _ candidate: String,
+        rawTranscript: String
+    ) -> Bool {
+        func words(in text: String) -> [String] {
+            text.components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+                .map { $0.lowercased() }
+        }
+
+        let source = words(in: rawTranscript)
+        let output = words(in: candidate)
+        guard !source.isEmpty,
+            output.count >= source.count * 2,
+            output.count.isMultiple(of: source.count)
+        else { return false }
+
+        return output.enumerated().allSatisfy { index, word in
+            word == source[index % source.count]
+        }
     }
 
     static func readRealtimeSessionEvents(

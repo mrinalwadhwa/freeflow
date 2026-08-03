@@ -68,6 +68,10 @@ struct OpenAIRealtimeMessageTests {
         let transcription = try #require(input["transcription"] as? [String: Any])
         #expect(transcription["model"] as? String == "gpt-4o-mini-transcribe")
         #expect(transcription["language"] as? String == "en")
+        let transcriptionPrompt = try #require(
+            transcription["prompt"] as? String)
+        #expect(transcriptionPrompt.contains("'new line'"))
+        #expect(transcriptionPrompt.contains("'new paragraph'"))
 
         // turn_detection must be NSNull so the server does not auto-commit.
         #expect(input["turn_detection"] is NSNull)
@@ -121,6 +125,24 @@ struct OpenAIRealtimeMessageTests {
         #expect(instructions.contains("Never delete or summarize a complete sentence or clause"))
         #expect(instructions.contains("Just circling back on this"))
         #expect(instructions.contains("explicit self-corrections or restarts"))
+    }
+
+    @Test("session.update isolates a base prompt override")
+    func sessionUpdatePromptOverride() throws {
+        let json = OpenAIStreamingProvider.buildSessionUpdate(
+            sttModel: "m",
+            language: "en",
+            context: context,
+            polishInstructionsOverride: "candidate prompt")
+        let obj = try #require(
+            try JSONSerialization.jsonObject(
+                with: json.data(using: .utf8)!) as? [String: Any])
+        let session = try #require(obj["session"] as? [String: Any])
+        let instructions = try #require(session["instructions"] as? String)
+
+        #expect(instructions.hasPrefix("candidate prompt\n\n"))
+        #expect(instructions.contains("complete ordered transcript"))
+        #expect(!instructions.contains("Preceding text:"))
     }
 
     @Test("polish request preserves the transcript exactly")

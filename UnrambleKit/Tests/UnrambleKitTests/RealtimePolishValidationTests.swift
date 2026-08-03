@@ -51,6 +51,54 @@ struct RealtimePolishValidationTests {
         #expect(validate(polished, raw: raw) == polished)
     }
 
+    @Test("a complete transcript emitted twice falls back")
+    func completeTranscriptDuplicatedFallsBack() {
+        let raw = "Fix the bug!"
+        let polished = "Fix the bug!\n\nFix the bug."
+        #expect(validate(polished, raw: raw) == raw)
+    }
+
+    @Test("an unchanged transcript with internal repetition passes")
+    func internalRepetitionPasses() {
+        let raw = "No, no, no, we cannot do that."
+        #expect(validate(raw, raw: raw) == raw)
+    }
+
+    @Test("repeated phrases already present in the transcript pass")
+    func dictatedRepeatedPhrasesPass() {
+        let raw = "This is very good, very good work."
+        #expect(validate(raw, raw: raw) == raw)
+    }
+
+    @Test("an unrequested compact-series list falls back to prose")
+    func compactSeriesListFallsBack() {
+        let raw = "Grab milk, eggs, a loaf of bread, some coffee, and a couple "
+            + "of bananas on the way home."
+        let polished = """
+            Grab:
+            - Milk
+            - Eggs
+            - A loaf of bread
+            - Some coffee
+            - A couple of bananas on the way home
+            """
+        #expect(validate(polished, raw: raw) == raw)
+    }
+
+    @Test("a strongly signaled checklist may become a list")
+    func signaledChecklistPasses() {
+        let raw = "The release checklist is: run the migration, clear the "
+            + "cache, restart the workers, and verify the dashboards."
+        let polished = """
+            The release checklist is:
+            - Run the migration
+            - Clear the cache
+            - Restart the workers
+            - Verify the dashboards
+            """
+        #expect(validate(polished, raw: raw) == polished)
+    }
+
     // MARK: - Existing floor still holds
 
     @Test("a dropped clause still falls back to the transcript")

@@ -49,6 +49,16 @@ struct PolishBreakModeTests {
         #expect(out == "See the summary.\nDetails are below.")
     }
 
+    @Test("commandsOnly preserves a colon before a dictated new line")
+    func commandsOnlyKeepsColonBeforeNewLine() async throws {
+        let out = await PolishPipeline.polish(
+            "Here's the checklist: new line finalize the pricing page",
+            chatClient: nil, breakMode: .commandsOnly)
+
+        #expect(out == "Here's the checklist:\nFinalize the pricing page")
+        #expect(!out.contains(":."))
+    }
+
     @Test("commandsOnly strips a break the model invents")
     func commandsOnlyStripsModelBreak() async throws {
         // No command in the input, but the model injects a paragraph break.
