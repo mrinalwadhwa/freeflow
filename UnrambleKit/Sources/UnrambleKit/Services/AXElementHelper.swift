@@ -85,6 +85,29 @@ public enum AXElementHelper {
         return range
     }
 
+    /// Read text for a range through an element's parameterized Accessibility
+    /// API. Custom editors sometimes expose a selection range without exposing
+    /// `AXSelectedText`; `AXStringForRange` is the passive equivalent.
+    public static func stringForRange(
+        _ range: CFRange, from element: AXUIElement
+    ) -> String? {
+        guard range.location != kCFNotFound, range.length > 0 else {
+            return nil
+        }
+        var mutableRange = range
+        guard let parameter = AXValueCreate(.cfRange, &mutableRange) else {
+            return nil
+        }
+        var value: CFTypeRef?
+        let result = AXUIElementCopyParameterizedAttributeValue(
+            element,
+            kAXStringForRangeParameterizedAttribute as CFString,
+            parameter,
+            &value)
+        guard result == .success else { return nil }
+        return value as? String
+    }
+
     // MARK: - Focused Element
 
     /// Return the currently focused UI element across the entire system.
@@ -144,7 +167,34 @@ public enum AXElementHelper {
 
     /// Read the currently selected text in a text input element.
     public static func selectedText(of element: AXUIElement) -> String? {
-        return stringValue(of: kAXSelectedTextAttribute, from: element)
+        if let selected = stringValue(
+            of: kAXSelectedTextAttribute, from: element),
+            !selected.isEmpty
+        {
+            return selected
+        }
+
+        guard let range = rangeValue(
+            of: kAXSelectedTextRangeAttribute, from: element),
+            range.location != kCFNotFound, range.length > 0
+        else { return nil }
+
+        if let selected = stringForRange(range, from: element),
+            !selected.isEmpty
+        {
+            return selected
+        }
+
+        // Some custom editors expose only AXValue plus AXSelectedTextRange.
+        // Accessibility ranges use UTF-16 offsets, so slice via NSString.
+        guard let text = textContent(of: element) else { return nil }
+        let nsText = text as NSString
+        guard range.location >= 0, range.length >= 0,
+            range.location <= nsText.length,
+            range.length <= nsText.length - range.location
+        else { return nil }
+        return nsText.substring(with: NSRange(
+            location: range.location, length: range.length))
     }
 
     /// Read the cursor (insertion point) position in a text input element.

@@ -21,10 +21,24 @@ public struct AXSelectionReader: SelectionReading {
     public func readSelectedText() async -> String? {
         #if canImport(ApplicationServices)
             let result = await withTimeout(seconds: timeout) {
-                guard let focused = AXElementHelper.focusedElement() else {
+                var element = AXElementHelper.focusedElement()
+                guard element != nil else {
                     return nil as String?
                 }
-                return AXElementHelper.selectedText(of: focused)
+
+                // Native text controls normally expose the selection directly.
+                // Custom editors may put the range on a parent accessibility
+                // element, so inspect a small bounded ancestor chain as well.
+                for _ in 0..<6 {
+                    guard let current = element else { break }
+                    if let selected = AXElementHelper.selectedText(of: current),
+                        !selected.isEmpty
+                    {
+                        return selected
+                    }
+                    element = AXElementHelper.parent(of: current)
+                }
+                return nil
             }
             return result ?? nil
         #else
