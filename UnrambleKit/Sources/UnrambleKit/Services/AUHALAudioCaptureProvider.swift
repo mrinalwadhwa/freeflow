@@ -427,13 +427,18 @@ import Foundation
             timestamp: AVAudioTime,
             router: TimestampedAudioFrameRouter
         ) {
+            let callbackStartedAtHostTime =
+                AudioCaptureReleaseFence.currentHostTime()
             let previewContinuation = lock.withLock { preview?.continuation }
             if let previewContinuation,
                 let rms = Self.rms(buffer)
             {
                 previewContinuation.yield(min(sqrtf(rms * 25), 1))
             }
-            _ = router.ingest(buffer, timestamp: timestamp)
+            _ = router.ingestFromAudioCallback(
+                buffer,
+                timestamp: timestamp,
+                callbackStartedAtHostTime: callbackStartedAtHostTime)
         }
 
         private static func rms(_ buffer: AVAudioPCMBuffer) -> Float? {
@@ -582,7 +587,9 @@ import Foundation
                 max(3 * 512 / claim.physical.transport.format.sampleRate, 0.25),
                 2)
 
-            switch await drain.outcome(timeout: timeout) {
+            let outcome = await drain.outcome(timeout: timeout)
+            logCallbackDiagnostics(router.callbackDiagnostics)
+            switch outcome {
             case .completed(.finalized(let finalization)):
                 let transportToStop = lock.withLock {
                     guard dictation?.owner == owner,
@@ -623,6 +630,20 @@ import Foundation
                     sink: sink)
                 throw AudioCaptureError.incompleteCapture(recovery, failure)
             }
+        }
+
+        private func logCallbackDiagnostics(
+            _ diagnostics: TimestampedAudioFrameRouter.CallbackDiagnostics
+        ) {
+            #if DEBUG
+                Log.debug(
+                    "[AUHALCapture] Callback diagnostics count="
+                        + "\(diagnostics.callbackCount) maxMs="
+                        + String(
+                            format: "%.3f",
+                            diagnostics.maximumProcessingDuration * 1_000)
+                        + " deadlineMisses=\(diagnostics.deadlineMissCount)")
+            #endif
         }
 
         private func failCapture(

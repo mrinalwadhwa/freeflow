@@ -110,6 +110,12 @@ import Foundation
             public let activeReleaseWaiterCount: Int
         }
 
+        struct CallbackDiagnostics: Sendable, Equatable {
+            let callbackCount: Int
+            let maximumProcessingDuration: TimeInterval
+            let deadlineMissCount: Int
+        }
+
         public struct DictationSink: @unchecked Sendable {
             fileprivate let integrity: AudioCaptureIntegrityPublication
             private let consumeFrame: @Sendable (RoutedFrame) -> Void
@@ -159,6 +165,7 @@ import Foundation
         private struct PreparedFrame: @unchecked Sendable {
             let buffer: AVAudioPCMBuffer
             let startHostTime: UInt64
+            let startSampleTime: AVAudioFramePosition?
             let bytesPerFrame: Int
             let timestampOrigin: TimestampOrigin
             let invalidTimestampDroppedFrameCount: Int
@@ -240,6 +247,7 @@ import Foundation
             var pendingIndex = 0
             var isDelivering = false
             var hasObservedRelease = false
+            var toleratedForwardGapHostTime: UInt64 = 0
             var releaseWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
             init(route: Route, sink: DictationSink) {
@@ -272,6 +280,15 @@ import Foundation
         private var deviceContinuityIsUnknown = false
         private var deviceContinuityUnknownSinceHostTime: UInt64?
         private var lastDeviceFrameEndHostTime: UInt64?
+        private var lastDeviceFrameEndSampleTime: AVAudioFramePosition?
+        private var callbackCount = 0
+        private var maximumCallbackProcessingHostTime: UInt64 = 0
+        private var callbackDeadlineMissCount = 0
+
+        // Accept a short callback hiccup without discarding an otherwise usable
+        // recording. Larger or repeated holes still fail closed.
+        private static let maximumSingleForwardGap: TimeInterval = 0.020
+        private static let maximumCumulativeForwardGap: TimeInterval = 0.040
 
         public init(
             limits: Limits = Limits(),
@@ -347,6 +364,31 @@ import Foundation
             timestamp: AVAudioTime,
             observedHostTime: UInt64
         ) -> IngestResult {
+            ingest(
+                buffer,
+                timestamp: timestamp,
+                observedHostTime: observedHostTime,
+                callbackStartedAtHostTime: nil)
+        }
+
+        func ingestFromAudioCallback(
+            _ buffer: AVAudioPCMBuffer,
+            timestamp: AVAudioTime,
+            callbackStartedAtHostTime: UInt64
+        ) -> IngestResult {
+            ingest(
+                buffer,
+                timestamp: timestamp,
+                observedHostTime: AudioCaptureReleaseFence.currentHostTime(),
+                callbackStartedAtHostTime: callbackStartedAtHostTime)
+        }
+
+        private func ingest(
+            _ buffer: AVAudioPCMBuffer,
+            timestamp: AVAudioTime,
+            observedHostTime: UInt64,
+            callbackStartedAtHostTime: UInt64?
+        ) -> IngestResult {
             guard buffer.frameLength > 0 else { return .empty }
 
             let preparation = prepareFrame(
@@ -404,9 +446,32 @@ import Foundation
                         observeReleaseCrossing(
                             on: activeRoute,
                             candidateEndHostTime: stored.endHostTime)
+                        recordCallbackDuration(
+                            startedAtHostTime: callbackStartedAtHostTime,
+                            frame: prepared)
                     }
                 }
                 return .routed
+            }
+        }
+
+        private func recordCallbackDuration(
+            startedAtHostTime: UInt64?,
+            frame: PreparedFrame
+        ) {
+            guard let startedAtHostTime else { return }
+            let completedAtHostTime = AudioCaptureReleaseFence.currentHostTime()
+            guard completedAtHostTime >= startedAtHostTime else { return }
+            let duration = completedAtHostTime - startedAtHostTime
+            callbackCount += 1
+            maximumCallbackProcessingHostTime = max(
+                maximumCallbackProcessingHostTime,
+                duration)
+            let deadline = AVAudioTime.hostTime(
+                forSeconds: Double(frame.buffer.frameLength)
+                    / frame.buffer.format.sampleRate)
+            if duration > deadline {
+                callbackDeadlineMissCount += 1
             }
         }
 
@@ -457,6 +522,9 @@ import Foundation
                 let active = ActiveRoute(route: route, sink: sink)
                 active.pendingFrames = preRoll
                 activeRoute = active
+                callbackCount = 0
+                maximumCallbackProcessingHostTime = 0
+                callbackDeadlineMissCount = 0
                 drain(active)
                 observeReleaseCrossing(on: active, candidateEndHostTime: nil)
                 return route
@@ -578,6 +646,10 @@ import Foundation
                 deviceContinuityIsUnknown = false
                 deviceContinuityUnknownSinceHostTime = nil
                 lastDeviceFrameEndHostTime = nil
+                lastDeviceFrameEndSampleTime = nil
+                callbackCount = 0
+                maximumCallbackProcessingHostTime = 0
+                callbackDeadlineMissCount = 0
             }
         }
 
@@ -611,6 +683,16 @@ import Foundation
             }
         }
 
+        var callbackDiagnostics: CallbackDiagnostics {
+            serialized {
+                CallbackDiagnostics(
+                    callbackCount: callbackCount,
+                    maximumProcessingDuration: AVAudioTime.seconds(
+                        forHostTime: maximumCallbackProcessingHostTime),
+                    deadlineMissCount: callbackDeadlineMissCount)
+            }
+        }
+
         private enum Preparation {
             case frame(PreparedFrame)
             case invalidTimestampDiscarded(LostFrames)
@@ -625,6 +707,9 @@ import Foundation
             let sourceFrameCount = Int(buffer.frameLength)
             let deviceStartHostTime = AudioCaptureReleaseFence.bufferStartHostTime(
                 timestamp: timestamp)
+            let deviceStartSampleTime = timestamp.isSampleTimeValid
+                ? timestamp.sampleTime
+                : nil
             let estimatedStartHostTime = Self.subtractingFrames(
                 sourceFrameCount,
                 from: observedHostTime,
@@ -666,6 +751,7 @@ import Foundation
                     PreparedFrame(
                         buffer: copied,
                         startHostTime: startHostTime,
+                        startSampleTime: deviceStartSampleTime,
                         bytesPerFrame: bytesPerFrame,
                         timestampOrigin: .audioDevice,
                         invalidTimestampDroppedFrameCount: 0,
@@ -714,6 +800,7 @@ import Foundation
                     PreparedFrame(
                         buffer: copied,
                         startHostTime: startHostTime,
+                        startSampleTime: nil,
                         bytesPerFrame: bytesPerFrame,
                         timestampOrigin: .estimatedFromObservation,
                         invalidTimestampDroppedFrameCount: droppedFrameCount,
@@ -751,6 +838,9 @@ import Foundation
                 Int(frame.buffer.frameLength),
                 to: frame.startHostTime,
                 sampleRate: frame.buffer.format.sampleRate)
+            let frameEndSampleTime = frame.startSampleTime.map {
+                $0 + AVAudioFramePosition(frame.buffer.frameLength)
+            }
 
             if deviceContinuityIsUnknown {
                 let unknownSince = deviceContinuityUnknownSinceHostTime
@@ -784,6 +874,7 @@ import Foundation
                 deviceContinuityIsUnknown = false
                 deviceContinuityUnknownSinceHostTime = nil
                 lastDeviceFrameEndHostTime = frameEndHostTime
+                lastDeviceFrameEndSampleTime = frameEndSampleTime
                 return
             }
 
@@ -796,6 +887,7 @@ import Foundation
                 // device timestamp instead of classifying that priming delay as
                 // lost audio.
                 lastDeviceFrameEndHostTime = frameEndHostTime
+                lastDeviceFrameEndSampleTime = frameEndSampleTime
 
                 // A release that predates the first callback is different: no
                 // delivered frame can cover the dictation. Preserve the
@@ -829,6 +921,11 @@ import Foundation
             }
             defer {
                 lastDeviceFrameEndHostTime = max(previousEnd, frameEndHostTime)
+                lastDeviceFrameEndSampleTime = frameEndSampleTime
+            }
+
+            let sampleTimeDelta = frame.startSampleTime.flatMap { start in
+                lastDeviceFrameEndSampleTime.map { start - $0 }
             }
 
             // A forward GAP (the next buffer starts after the previous ended)
@@ -848,7 +945,10 @@ import Foundation
                 logDeviceTimestampDiscontinuity(
                     "regression", hostTicks: regression,
                     sampleRate: frame.buffer.format.sampleRate,
-                    tolerated: regression <= regressionTolerance)
+                    sampleTimeDelta: sampleTimeDelta,
+                    tolerated: regression <= regressionTolerance,
+                    cumulativeToleratedHostTicks: activeRoute?
+                        .toleratedForwardGapHostTime)
                 guard regression > regressionTolerance else { return }
                 let affectedSeconds = AVAudioTime.seconds(
                     forHostTime: regression)
@@ -868,11 +968,41 @@ import Foundation
             }
 
             let gap = frame.startHostTime - previousEnd
+            let activeGapCanBeTolerated: Bool
+            if gap > gapTolerance, let active = activeRoute,
+                failedFrameMayBelong(
+                    startHostTime: previousEnd,
+                    endHostTime: frame.startHostTime,
+                    to: active.route)
+            {
+                let singleLimit = AVAudioTime.hostTime(
+                    forSeconds: Self.maximumSingleForwardGap)
+                let cumulativeLimit = AVAudioTime.hostTime(
+                    forSeconds: Self.maximumCumulativeForwardGap)
+                let (cumulativeGap, overflow) =
+                    active.toleratedForwardGapHostTime
+                    .addingReportingOverflow(gap)
+                if gap <= singleLimit, !overflow,
+                    cumulativeGap <= cumulativeLimit
+                {
+                    active.toleratedForwardGapHostTime = cumulativeGap
+                    activeGapCanBeTolerated = true
+                } else {
+                    activeGapCanBeTolerated = false
+                }
+            } else {
+                activeGapCanBeTolerated = false
+            }
+            let gapIsTolerated = gap <= gapTolerance
+                || activeGapCanBeTolerated
             logDeviceTimestampDiscontinuity(
                 "gap", hostTicks: gap,
                 sampleRate: frame.buffer.format.sampleRate,
-                tolerated: gap <= gapTolerance)
-            guard gap > gapTolerance else { return }
+                sampleTimeDelta: sampleTimeDelta,
+                tolerated: gapIsTolerated,
+                cumulativeToleratedHostTicks: activeRoute?
+                    .toleratedForwardGapHostTime)
+            guard !gapIsTolerated else { return }
 
             let missingSeconds = AVAudioTime.seconds(forHostTime: gap)
             let missingFrames = max(
@@ -893,7 +1023,8 @@ import Foundation
         /// file is present. Compiled out of Release builds.
         private func logDeviceTimestampDiscontinuity(
             _ kind: String, hostTicks: UInt64, sampleRate: Double,
-            tolerated: Bool
+            sampleTimeDelta: AVAudioFramePosition?, tolerated: Bool,
+            cumulativeToleratedHostTicks: UInt64?
         ) {
             #if DEBUG
                 guard FileManager.default.fileExists(
@@ -903,9 +1034,17 @@ import Foundation
                 guard hostTicks > oneSample else { return }
                 let frames = AVAudioTime.seconds(
                     forHostTime: hostTicks) * sampleRate
+                let sampleDelta = sampleTimeDelta.map(String.init) ?? "unknown"
+                let cumulativeFrames = cumulativeToleratedHostTicks.map {
+                    AVAudioTime.seconds(forHostTime: $0) * sampleRate
+                } ?? 0
                 Log.debug(
                     "[[TSGAP]] \(kind) frames="
-                    + "\(String(format: "%.2f", frames)) tolerated=\(tolerated)")
+                    + "\(String(format: "%.2f", frames)) "
+                    + "sampleDelta=\(sampleDelta) "
+                    + "cumulativeToleratedFrames="
+                    + "\(String(format: "%.2f", cumulativeFrames)) "
+                    + "tolerated=\(tolerated)")
             #endif
         }
 
@@ -923,6 +1062,7 @@ import Foundation
                 deviceContinuityUnknownSinceHostTime = hostTime
             }
             lastDeviceFrameEndHostTime = nil
+            lastDeviceFrameEndSampleTime = nil
         }
 
         private func appendToPreRoll(_ frame: StoredFrame) {

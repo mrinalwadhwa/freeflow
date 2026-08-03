@@ -523,8 +523,8 @@ struct TimestampedAudioFrameRouterTests {
         #expect(await releaseDrain.task.value)
     }
 
-    @Test("A timestamp gap crossing release fails the active route")
-    func timestampGapFailsActiveReleaseDrain() async throws {
+    @Test("An oversized timestamp gap crossing release fails the active route")
+    func oversizedTimestampGapFailsActiveReleaseDrain() async throws {
         let probe = SinkProbe()
         let router = makeRouter(probe: probe)
         let start = hostTime(seconds: 100)
@@ -541,15 +541,106 @@ struct TimestampedAudioFrameRouterTests {
 
         router.ingest(
             try pcmBuffer(values: [10, 11, 12, 13]),
-            timestamp: AVAudioTime(hostTime: addingFrames(10, to: start)),
-            observedHostTime: addingFrames(14, to: start))
+            timestamp: AVAudioTime(hostTime: addingFrames(29, to: start)),
+            observedHostTime: addingFrames(33, to: start))
 
         #expect(!(await wait.value))
         #expect(
             probe.integrityFailure
                 == AudioCaptureIntegrityFailure(
                     stage: .timestampCoverage,
-                    affectedFrameCount: 6))
+                    affectedFrameCount: 25))
+    }
+
+    @Test("An isolated 12 ms timestamp gap preserves the active route")
+    func isolatedTimestampGapPreservesActiveRoute() async throws {
+        let probe = SinkProbe()
+        let router = makeRouter(probe: probe)
+        let start = hostTime(seconds: 100)
+        let boundary = AudioCaptureReleaseBoundary(pressHostTime: start)
+        let route = try router.promote(releaseBoundary: boundary)
+
+        router.ingest(
+            try pcmBuffer(values: [0, 1, 2, 3]),
+            timestamp: AVAudioTime(hostTime: start),
+            observedHostTime: addingFrames(4, to: start))
+        #expect(boundary.publish(releaseHostTime: addingFrames(17, to: start)))
+        let wait = Task { await router.waitUntilReleaseObserved(for: route) }
+        #expect(await waitForReleaseWaiter(on: router))
+
+        router.ingest(
+            try pcmBuffer(values: [10, 11, 12, 13]),
+            timestamp: AVAudioTime(hostTime: addingFrames(16, to: start)),
+            observedHostTime: addingFrames(20, to: start))
+
+        #expect(await wait.value)
+        #expect(probe.integrityFailure == nil)
+    }
+
+    @Test("Small timestamp gaps share a 40 ms route budget")
+    func timestampGapsWithinCumulativeBudgetPreserveActiveRoute() async throws {
+        let probe = SinkProbe()
+        let router = makeRouter(probe: probe)
+        let start = hostTime(seconds: 100)
+        let boundary = AudioCaptureReleaseBoundary(pressHostTime: start)
+        let route = try router.promote(releaseBoundary: boundary)
+
+        router.ingest(
+            try pcmBuffer(values: [0, 1, 2, 3]),
+            timestamp: AVAudioTime(hostTime: start),
+            observedHostTime: addingFrames(4, to: start))
+        #expect(boundary.publish(releaseHostTime: addingFrames(41, to: start)))
+        let wait = Task { await router.waitUntilReleaseObserved(for: route) }
+        #expect(await waitForReleaseWaiter(on: router))
+
+        router.ingest(
+            try pcmBuffer(values: [10, 11, 12, 13]),
+            timestamp: AVAudioTime(hostTime: addingFrames(19, to: start)),
+            observedHostTime: addingFrames(23, to: start))
+        router.ingest(
+            try pcmBuffer(values: [20, 21, 22, 23]),
+            timestamp: AVAudioTime(hostTime: addingFrames(38, to: start)),
+            observedHostTime: addingFrames(42, to: start))
+
+        #expect(await wait.value)
+        #expect(probe.integrityFailure == nil)
+    }
+
+    @Test("Repeated timestamp gaps that exceed the route budget fail closed")
+    func timestampGapsOverCumulativeBudgetFailActiveRoute() async throws {
+        let probe = SinkProbe()
+        let router = makeRouter(probe: probe)
+        let start = hostTime(seconds: 100)
+        let boundary = AudioCaptureReleaseBoundary(pressHostTime: start)
+        let route = try router.promote(releaseBoundary: boundary)
+
+        router.ingest(
+            try pcmBuffer(values: [0, 1, 2, 3]),
+            timestamp: AVAudioTime(hostTime: start),
+            observedHostTime: addingFrames(4, to: start))
+        #expect(boundary.publish(releaseHostTime: addingFrames(60, to: start)))
+        let wait = Task { await router.waitUntilReleaseObserved(for: route) }
+        #expect(await waitForReleaseWaiter(on: router))
+
+        router.ingest(
+            try pcmBuffer(values: [10, 11, 12, 13]),
+            timestamp: AVAudioTime(hostTime: addingFrames(19, to: start)),
+            observedHostTime: addingFrames(23, to: start))
+        router.ingest(
+            try pcmBuffer(values: [20, 21, 22, 23]),
+            timestamp: AVAudioTime(hostTime: addingFrames(38, to: start)),
+            observedHostTime: addingFrames(42, to: start))
+        router.ingest(
+            try pcmBuffer(values: [30, 31, 32, 33]),
+            timestamp: AVAudioTime(hostTime: addingFrames(57, to: start)),
+            observedHostTime: addingFrames(61, to: start))
+
+        #expect(!(await wait.value))
+        #expect(
+            probe.integrityFailure
+                == AudioCaptureIntegrityFailure(
+                    stage: .timestampCoverage,
+                    affectedFrameCount: 15))
     }
 
     @Test("The first callback establishes continuity after tap priming")
