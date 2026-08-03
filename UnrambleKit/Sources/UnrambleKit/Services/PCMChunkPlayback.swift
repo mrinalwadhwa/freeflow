@@ -9,9 +9,7 @@ import Foundation
 /// or the playback was stopped.
 final class PCMChunkPlayback: @unchecked Sendable {
 
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private let format: AVAudioFormat?
+    private let player: any PCMChunkPlaying
 
     private let lock = NSLock()
     private var pendingBuffers = 0
@@ -21,19 +19,15 @@ final class PCMChunkPlayback: @unchecked Sendable {
     private var started = false
 
     init(sampleRate: Double) {
-        format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false)
-        if let format {
-            engine.attach(player)
-            engine.connect(player, to: engine.mainMixerNode, format: format)
-        }
+        player = AVAudioPCMChunkPlayer(sampleRate: sampleRate)
+    }
+
+    init(player: any PCMChunkPlaying) {
+        self.player = player
     }
 
     func schedule(samples: [Float]) throws {
-        guard let format,
+        guard let format = player.format,
             let buffer = AVAudioPCMBuffer(
                 pcmFormat: format,
                 frameCapacity: AVAudioFrameCount(samples.count))
@@ -55,20 +49,20 @@ final class PCMChunkPlayback: @unchecked Sendable {
             }
             return false
         }
+
+        // Queue the first buffer before playback starts. Starting an empty
+        // player lets the audio graph run ahead of the buffer and can clip
+        // the opening word from a newly synthesized utterance.
+        player.schedule(buffer: buffer) { [weak self] in
+            self?.bufferFinished()
+        }
         if shouldStart {
             do {
-                try engine.start()
+                try player.start()
             } catch {
                 lock.withLock { pendingBuffers -= 1 }
                 throw error
             }
-            player.play()
-        }
-
-        player.scheduleBuffer(
-            buffer, completionCallbackType: .dataPlayedBack
-        ) { [weak self] _ in
-            self?.bufferFinished()
         }
     }
 
@@ -103,7 +97,6 @@ final class PCMChunkPlayback: @unchecked Sendable {
             }
         if wasStarted {
             player.stop()
-            engine.stop()
         }
         continuation?.resume()
     }
@@ -122,4 +115,55 @@ final class PCMChunkPlayback: @unchecked Sendable {
 
 enum PCMChunkPlaybackError: Error {
     case bufferAllocationFailed
+}
+
+protocol PCMChunkPlaying: AnyObject {
+    var format: AVAudioFormat? { get }
+
+    func schedule(
+        buffer: AVAudioPCMBuffer,
+        completion: @escaping @Sendable () -> Void)
+    func start() throws
+    func stop()
+}
+
+private final class AVAudioPCMChunkPlayer: PCMChunkPlaying,
+    @unchecked Sendable
+{
+    private let engine = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
+    let format: AVAudioFormat?
+
+    init(sampleRate: Double) {
+        format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false)
+        if let format {
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+        }
+    }
+
+    func schedule(
+        buffer: AVAudioPCMBuffer,
+        completion: @escaping @Sendable () -> Void
+    ) {
+        player.scheduleBuffer(
+            buffer, completionCallbackType: .dataPlayedBack
+        ) { _ in
+            completion()
+        }
+    }
+
+    func start() throws {
+        try engine.start()
+        player.play()
+    }
+
+    func stop() {
+        player.stop()
+        engine.stop()
+    }
 }

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 
@@ -36,5 +37,48 @@ struct KokoroSpeechSynthesizerTests {
             modelDirectory: makeMissingDirectory(),
             g2pResourcesDirectory: makeMissingDirectory())
         await synthesizer.speak("   \n ")
+    }
+
+    @Test("Playback queues its first buffer before starting")
+    func playbackQueuesBeforeStarting() throws {
+        let player = RecordingPCMChunkPlayer()
+        let playback = PCMChunkPlayback(player: player)
+
+        try playback.schedule(samples: [0.1, 0.2])
+
+        #expect(player.events == [.scheduled, .started])
+        playback.stop()
+    }
+}
+
+private final class RecordingPCMChunkPlayer: PCMChunkPlaying,
+    @unchecked Sendable
+{
+    enum Event: Equatable {
+        case scheduled
+        case started
+        case stopped
+    }
+
+    let format = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 24_000,
+        channels: 1,
+        interleaved: false)
+    private(set) var events: [Event] = []
+
+    func schedule(
+        buffer: AVAudioPCMBuffer,
+        completion: @escaping @Sendable () -> Void
+    ) {
+        events.append(.scheduled)
+    }
+
+    func start() throws {
+        events.append(.started)
+    }
+
+    func stop() {
+        events.append(.stopped)
     }
 }
