@@ -24,7 +24,26 @@ public enum DegenerateTranscriptDetector {
     /// one before the utterance is judged a loop.
     private static let repeatedFractionThreshold = 0.5
 
+    /// Whole-turn transcripts that recognizers invent from
+    /// near-silence. The set is tiny and famous — trailing-noise
+    /// decodes converge on polite sign-offs — and a call turn that
+    /// is nothing but one of them is noise, not speech.
+    private static let silenceInventions: Set<String> = [
+        "thank you",
+        "thank you very much",
+        "thanks for watching",
+        "thank you for watching",
+        "i m going to go to the next slide",
+        "i ll see you in the next video",
+        "see you in the next video",
+    ]
+
     public static func isDegenerate(_ text: String) -> Bool {
+        let whole = text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if silenceInventions.contains(whole) { return true }
         let sentences = normalizedSentences(in: text)
         // Three identical long sentences and nothing else is already a
         // loop — live floods arrived exactly one sentence under the

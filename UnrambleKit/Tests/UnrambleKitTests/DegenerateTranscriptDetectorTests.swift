@@ -65,6 +65,21 @@ struct DegenerateTranscriptDetectorTests {
         #expect(DegenerateTranscriptDetector.isDegenerate(loop))
     }
 
+    @Test("A lone silence invention is degenerate")
+    func loneSilenceInventionIsDegenerate() {
+        #expect(DegenerateTranscriptDetector.isDegenerate("Thank you."))
+        #expect(
+            DegenerateTranscriptDetector.isDegenerate(
+                "I'm going to go to the next slide."))
+    }
+
+    @Test("A silence invention inside real speech is left alone")
+    func inventionWithinSpeechIsNotDegenerate() {
+        #expect(
+            !DegenerateTranscriptDetector.isDegenerate(
+                "Thank you. Now run the full suite and paste the failures."))
+    }
+
     @Test("Three identical sentences and nothing else is a loop")
     func tripleIdenticalSentenceIsDegenerate() {
         let loop = Array(
