@@ -67,7 +67,8 @@ enum HUDVisualState: Equatable {
     case callListening
 
     /// A conversation call sent a turn and watches the agent session
-    /// for its response. Breathing pulse at minimized dimensions.
+    /// for its response. The waveform settles into a dim dotted idle
+    /// with a drifting ripple — visibly alive, visibly not listening.
     case callWaiting
 
     /// A conversation call speaks a response or interim message.

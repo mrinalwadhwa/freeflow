@@ -123,6 +123,11 @@ public actor ConversationCallCoordinator {
     private var continuations:
         [UUID: AsyncStream<ConversationCallState>.Continuation] = [:]
 
+    /// The agent session whose response the call is watching or
+    /// speaking, for presentation. Set when a turn arms the watch and
+    /// cleared when the call ends.
+    public private(set) var lastResolvedAgent: ResolvedAgentSession?
+
     public init(
         contextProvider: any AppContextProviding,
         sessionResolver: any AgentSessionResolving,
@@ -220,6 +225,7 @@ public actor ConversationCallCoordinator {
         stoppedCallTask = task
         callGeneration += 1
         bargeInRequested = false
+        lastResolvedAgent = nil
         task.cancel()
         synthesizer.stopSpeaking()
         let sessionID = captureSessionID
@@ -356,6 +362,12 @@ public actor ConversationCallCoordinator {
         abandonsOnEmptyPause: Bool
     ) async -> TurnOutcome {
         guard let sessionID = await pipeline.activate() else {
+            // The pipeline refused capture — e.g. a failed dictation
+            // session holds admission for an explicit retry. End the
+            // call audibly instead of vanishing mid-conversation.
+            if generation == callGeneration, !Task.isCancelled {
+                cuePlayer.playDoneCue()
+            }
             finishCall(generation: generation)
             return .ended
         }
@@ -428,6 +440,7 @@ public actor ConversationCallCoordinator {
                 return .listeningContinues
             }
             await submitter.submitTurn()
+            lastResolvedAgent = target
             let watchEvents = await watcher.arm(
                 session: target, anchor: injected)
             transitionIfCurrent(generation: generation, to: .waiting)
@@ -672,6 +685,7 @@ public actor ConversationCallCoordinator {
     ) {
         guard generation == callGeneration else { return }
         callTask = nil
+        lastResolvedAgent = nil
         transition(to: terminalState)
     }
 }

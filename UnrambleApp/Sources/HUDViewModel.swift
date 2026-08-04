@@ -35,6 +35,11 @@ final class HUDViewModel: ObservableObject {
     /// The active microphone name to show in the callout, or nil when hidden.
     @Published private(set) var micCalloutName: String?
 
+    /// Who the conversation call is watching or speaking, for the
+    /// speaking caption — e.g. "Claude — unramble". Nil outside calls
+    /// and before the first sent turn.
+    @Published private(set) var callAgentDescription: String?
+
     /// An in-app message to display above the pill, or nil when hidden.
     @Published private(set) var inAppMessage: InAppMessage?
 
@@ -65,6 +70,10 @@ final class HUDViewModel: ObservableObject {
     /// Called when the user hangs up the conversation call (button,
     /// Escape, or the call shortcut).
     var onHangUpCall: (() -> Void)?
+
+    /// Called when the user taps ■ to send the listening call turn
+    /// immediately instead of waiting out the pause.
+    var onSendCallTurn: (() -> Void)?
 
     /// Called when the no-agent guidance auto-dismisses or the user
     /// dismisses it.
@@ -197,9 +206,35 @@ final class HUDViewModel: ObservableObject {
         callObservationTask = Task { [weak self] in
             for await state in await coordinator.stateStream {
                 guard !Task.isCancelled else { break }
+                switch state {
+                case .waiting, .speaking:
+                    let agent = await coordinator.lastResolvedAgent
+                    self?.callAgentDescription = Self.describeCallAgent(agent)
+                case .idle, .noAgent:
+                    self?.callAgentDescription = nil
+                case .listening:
+                    break
+                }
                 self?.handleCallState(state)
             }
         }
+    }
+
+    /// A short caption naming who the call is engaged with: the agent
+    /// name and the working directory it runs in. Long directory
+    /// names are trimmed so the agent name always survives.
+    private static func describeCallAgent(
+        _ agent: ResolvedAgentSession?
+    ) -> String? {
+        guard let agent else { return nil }
+        let name =
+            agent.agentName.prefix(1).uppercased()
+            + agent.agentName.dropFirst()
+        var directory = (agent.workingDirectory as NSString).lastPathComponent
+        if directory.count > 20 {
+            directory = directory.prefix(19) + "…"
+        }
+        return directory.isEmpty ? name : "\(name) · \(directory)"
     }
 
     /// Stop observing and reset to minimized.

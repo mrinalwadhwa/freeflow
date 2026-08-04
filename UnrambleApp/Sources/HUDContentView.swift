@@ -53,9 +53,9 @@ struct HUDContentView: View {
         case .callListening:
             return 140
         case .callWaiting:
-            return 46
+            return 90
         case .callSpeaking:
-            return 170
+            return 210
         case .callNoAgent:
             return 300
         }
@@ -67,8 +67,9 @@ struct HUDContentView: View {
             return 8
         case .ready:
             return 10
-        case .processingCollapsing, .processingBreathing, .readingProcessing,
-            .callWaiting:
+        case .callWaiting:
+            return 16
+        case .processingCollapsing, .processingBreathing, .readingProcessing:
             return 8
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
@@ -80,8 +81,10 @@ struct HUDContentView: View {
 
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
+        case .callWaiting:
+            return 0.35
         case .minimized, .processingCollapsing, .processingBreathing,
-            .readingProcessing, .callWaiting:
+            .readingProcessing:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
@@ -93,8 +96,10 @@ struct HUDContentView: View {
 
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
+        case .callWaiting:
+            return 0.5
         case .minimized, .processingCollapsing, .processingBreathing,
-            .readingProcessing, .callWaiting:
+            .readingProcessing:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
@@ -128,12 +133,12 @@ struct HUDContentView: View {
     private var isActive: Bool {
         switch viewModel.visualState {
         case .minimized, .ready, .processingCollapsing, .processingBreathing,
-            .readingProcessing, .callWaiting:
+            .readingProcessing:
             return false
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
             .dictationFailed, .readingSpeaking, .readingNoContent,
-            .callListening, .callSpeaking, .callNoAgent:
+            .callListening, .callWaiting, .callSpeaking, .callNoAgent:
             return true
         }
     }
@@ -142,7 +147,6 @@ struct HUDContentView: View {
     private var isBreathing: Bool {
         viewModel.visualState == .processingBreathing
             || viewModel.visualState == .readingProcessing
-            || viewModel.visualState == .callWaiting
     }
 
     // MARK: - Body
@@ -248,8 +252,11 @@ struct HUDContentView: View {
     private var activeContent: some View {
         switch viewModel.visualState {
         case .minimized, .ready, .processingCollapsing, .processingBreathing,
-            .readingProcessing, .callWaiting:
+            .readingProcessing:
             EmptyView()
+        case .callWaiting:
+            callWaitingContent
+                .transition(.opacity)
         case .listeningHeld:
             listeningHeldContent
                 .transition(.opacity)
@@ -288,54 +295,80 @@ struct HUDContentView: View {
 
     // MARK: - Conversation call
 
-    /// A call is listening: waveform bars with a hang-up button. A
-    /// pause sends the turn; Escape hangs up.
+    /// The mic is open: the hands-free layout plus the blue
+    /// conversation dot — the one state whose bars are white, so the
+    /// dot is what says a pause will send. ✕ ends the conversation;
+    /// the checkmark sends immediately.
     private var callListeningContent: some View {
         HStack(spacing: 10) {
-            Image(systemName: "phone.fill")
-                .font(.system(size: 11))
-                .foregroundColor(.green.opacity(0.85))
+            endCallButton
+
+            conversationDot
 
             WaveformBarsView(audioLevel: viewModel.audioLevel)
                 .frame(maxWidth: .infinity)
 
-            Button(action: { viewModel.onHangUpCall?() }) {
-                Image(systemName: "phone.down.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(.red.opacity(0.85))
+            Button(action: { viewModel.onSendCallTurn?() }) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.green.opacity(0.85))
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Hang up")
+            .accessibilityLabel("Send now")
+            .help("Send now")
         }
         .padding(.horizontal, 12)
     }
 
-    /// A call speaks the agent's response, with a hang-up button.
+    /// The watch is armed and the agent is working: the waveform
+    /// settles into a dim dotted idle with a ripple drifting through
+    /// it — the same object as listening, at rest.
+    private var callWaitingContent: some View {
+        WaitingDotsView()
+    }
+
+    /// A response is being spoken: the same waveform in the reply
+    /// tint moves with the voice's cadence, and the caption names
+    /// who is being read.
     private var callSpeakingContent: some View {
         HStack(spacing: 8) {
-            Image(systemName: "speaker.wave.2.fill")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.85))
+            ReplyWaveformView()
 
-            Text("On a call")
+            Text(viewModel.callAgentDescription ?? "Speaking")
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.85))
                 .lineLimit(1)
+                .minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity)
 
-            Button(action: { viewModel.onHangUpCall?() }) {
-                Image(systemName: "phone.down.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(.red.opacity(0.85))
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(Color.white.opacity(0.15)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Hang up")
+            endCallButton
         }
         .padding(.horizontal, 12)
+    }
+
+    /// The steady blue mark that a conversation is live: blue is the
+    /// agent's side of the call, and blue present anywhere in the
+    /// pill means the mic feeds a conversation.
+    private var conversationDot: some View {
+        Circle()
+            .fill(ReplyWaveformView.tint.opacity(0.9))
+            .frame(width: 5, height: 5)
+    }
+
+    /// End the conversation, like Escape.
+    private var endCallButton: some View {
+        Button(action: { viewModel.onHangUpCall?() }) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white.opacity(0.9))
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(Color.white.opacity(0.15)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("End conversation")
+        .help("End conversation")
     }
 
     /// No coding-agent session was reachable when the call started.
@@ -396,7 +429,8 @@ struct HUDContentView: View {
 
     // MARK: - Listening (hands-free)
 
-    /// Toggle mode: cancel, waveform bars, stop.
+    /// Toggle mode: cancel, waveform bars, and a checkmark that
+    /// finishes the dictation and inserts the text.
     private var listeningHandsFreeContent: some View {
         HStack(spacing: 10) {
             Button(action: { viewModel.onCancel?() }) {
@@ -408,19 +442,21 @@ struct HUDContentView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel recording")
+            .help("Discard recording")
 
             WaveformBarsView(audioLevel: viewModel.audioLevel)
                 .frame(maxWidth: .infinity)
 
             Button(action: { viewModel.onStop?() }) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.red.opacity(0.85))
-                    .frame(width: 10, height: 10)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.green.opacity(0.85))
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Stop recording")
+            .accessibilityLabel("Finish and insert")
+            .help("Finish and insert")
         }
         .padding(.horizontal, 12)
     }
@@ -754,6 +790,118 @@ struct BreathingPillOverlay: View {
             )
             .onAppear { isAnimating = true }
             .onDisappear { isAnimating = false }
+    }
+}
+
+// MARK: - Conversation-call waveform states
+
+/// The waveform at rest while the agent works: five dim dots in the
+/// bar geometry, with a soft ripple drifting through them.
+///
+/// The same object as the listening waveform, settled — motion of
+/// its own reads as working; it visibly does not react to the room.
+/// With Reduce Motion the dots share one slow opacity pulse instead.
+struct WaitingDotsView: View {
+
+    private let dotCount = 5
+    private let dotWidth: CGFloat = 3
+    private let baseHeight: CGFloat = 3
+    private let rippleHeight: CGFloat = 4
+    private let period: TimeInterval = 2.2
+
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 3) {
+                ForEach(0..<dotCount, id: \.self) { index in
+                    let lift = rippleLift(at: time, index: index)
+                    RoundedRectangle(cornerRadius: dotWidth / 2)
+                        .fill(
+                            ReplyWaveformView.tint.opacity(
+                                0.5 + 0.4 * lift))
+                        .frame(
+                            width: dotWidth,
+                            height: baseHeight + rippleHeight * lift)
+                }
+            }
+        }
+    }
+
+    /// How strongly the traveling ripple lifts one dot right now,
+    /// from 0 (at rest) to 1 (crest). The crest sweeps left to right
+    /// once per period, with a pause before the next pass.
+    private func rippleLift(at time: TimeInterval, index: Int) -> CGFloat {
+        if reduceMotion {
+            let pulse = 0.5 + 0.5 * sin(time * 2 * .pi / 3.2)
+            return CGFloat(pulse) * 0.4
+        }
+        let phase = time.truncatingRemainder(dividingBy: period) / period
+        // The crest travels the dots in the first 60% of the period.
+        let crest = phase / 0.6 * Double(dotCount + 1) - 1
+        let distance = abs(crest - Double(index))
+        guard phase < 0.6, distance < 1.5 else { return 0 }
+        return CGFloat(max(0, 1 - distance / 1.5))
+    }
+}
+
+/// The waveform speaking a reply: the same bar geometry in the reply
+/// tint, moving with a synthesized speech cadence.
+///
+/// The rhythm layers a syllable-rate beat under a phrase-rate swell,
+/// with per-bar offsets, so it reads as phrasing rather than a
+/// metronome. Reduce Motion slows it to one gentle collective swell.
+struct ReplyWaveformView: View {
+
+    /// The reply tint: the machine's voice, distinct from the white
+    /// bars that follow the user's.
+    static let tint = Color(red: 0.42, green: 0.67, blue: 1.0)
+
+    private let barCount = 5
+    private let barWidth: CGFloat = 3
+    private let minHeight: CGFloat = 3
+    private let maxHeight: CGFloat = 16
+
+    /// Per-bar phase offsets so the bars move like a voice, not a
+    /// piston. Seeded, not random.
+    private let barPhase: [Double] = [0.0, 0.9, 0.35, 1.4, 0.6]
+
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 3) {
+                ForEach(0..<barCount, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: barWidth / 2)
+                        .fill(Self.tint.opacity(0.9))
+                        .frame(
+                            width: barWidth,
+                            height: barHeight(at: time, index: index))
+                }
+            }
+        }
+    }
+
+    private func barHeight(at time: TimeInterval, index: Int) -> CGFloat {
+        if reduceMotion {
+            let swell = 0.5 + 0.5 * sin(time * 2 * .pi / 3.2)
+            return minHeight + (maxHeight - minHeight) * 0.35 * CGFloat(swell)
+        }
+        let offset = barPhase[index]
+        let syllable = 0.5 + 0.5 * sin((time + offset) * 2 * .pi * 2.3)
+        let phrase = 0.5 + 0.5 * sin((time + offset) * 2 * .pi / 2.9)
+        // Center bars carry more of the envelope, like the live
+        // waveform's amplitude scale.
+        let center = Double(barCount - 1) / 2.0
+        let scale = 1.0 - abs(Double(index) - center) / center * 0.4
+        let level = (0.15 + 0.75 * syllable * phrase) * scale
+        return minHeight + (maxHeight - minHeight) * CGFloat(level)
     }
 }
 

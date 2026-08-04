@@ -467,6 +467,13 @@ final class HUDController {
         Task { await conversationCallCoordinator.hangUp() }
     }
 
+    /// Send the listening call turn immediately, like the dictation
+    /// key does, instead of waiting out the pause.
+    private func sendCallTurn() {
+        guard let conversationCallCoordinator else { return }
+        Task { await conversationCallCoordinator.sendNow() }
+    }
+
     /// Dismiss the no-agent guidance. Called from ✕, Escape, and the
     /// view model's auto-dismiss timer.
     private func dismissCallGuidance() {
@@ -519,6 +526,9 @@ final class HUDController {
         }
         viewModel.onHangUpCall = { [weak self] in
             self?.hangUpCall()
+        }
+        viewModel.onSendCallTurn = { [weak self] in
+            self?.sendCallTurn()
         }
         viewModel.onDismissCallGuidance = { [weak self] in
             self?.dismissCallGuidance()

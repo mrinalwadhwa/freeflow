@@ -283,7 +283,7 @@ struct ConversationCallCoordinatorTests {
         #expect(harness.pipeline.state == .idle)
     }
 
-    @Test("A failed pipeline activation ends the call in idle")
+    @Test("A failed pipeline activation ends the call audibly in idle")
     func failedActivationEndsCall() async {
         let harness = makeHarness(session: agentSession())
         harness.pipeline.nextActivateFails = true
@@ -293,6 +293,7 @@ struct ConversationCallCoordinatorTests {
 
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .idle)
+        #expect(harness.cues.doneCueCount == 1)
     }
 
     // MARK: - Turn loop
@@ -641,6 +642,24 @@ struct ConversationCallCoordinatorTests {
         #expect(
             harness.synthesizer.spokenTexts.first?.contains("The answer")
                 == true)
+    }
+
+    @Test("The watched agent is exposed for presentation until hangup")
+    func exposesResolvedAgentForWatchedTurn() async {
+        let harness = makeHarness(session: agentSession())
+
+        #expect(await harness.coordinator.lastResolvedAgent == nil)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        #expect(await harness.coordinator.lastResolvedAgent == agentSession())
+
+        await harness.coordinator.hangUp()
+        #expect(await harness.coordinator.lastResolvedAgent == nil)
     }
 
     @Test("The call waits as long as the watch stays silent")
