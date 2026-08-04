@@ -160,3 +160,40 @@ struct AgentTextSpeechShapingTests {
         #expect(script.contains("polling cadence."))
     }
 }
+
+@Suite("Fenced prose and filenames")
+struct FencedProseSpeechTests {
+
+    @Test("README speaks as its words")
+    func readmeSpeaksNaturally() {
+        let spoken = SpeechScriptBuilder.normalizeForSpeech(
+            "Update the README first.")
+        #expect(spoken.contains("read me"))
+        #expect(!spoken.contains("README"))
+    }
+
+    @Test("A prose-shaped fenced block is spoken, not skipped")
+    func proseFenceIsSpoken() {
+        let content = ReadableContent(segments: [
+            .init(
+                kind: .code,
+                text: "WHEN the dashboard opens,\nTHE SYSTEM SHALL show current work by default."
+            )
+        ])
+        let script = SpeechScriptBuilder().script(for: content)
+        #expect(script.contains("THE SYSTEM SHALL"))
+        #expect(!script.contains("skipped"))
+    }
+
+    @Test("Real code is still skipped")
+    func realCodeIsSkipped() {
+        let content = ReadableContent(segments: [
+            .init(
+                kind: .code,
+                text: "let x = compute(a: 1, b: 2)\nreturn x.map { $0 * 2 }"
+            )
+        ])
+        let script = SpeechScriptBuilder().script(for: content)
+        #expect(script.contains("skipped"))
+    }
+}

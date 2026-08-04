@@ -69,6 +69,7 @@ ci DictationPipelineTests
 ci EnsureTerminalPunctuationTests
 ci FaithfulnessVerifierTests
 ci FarEndPlaybackTests
+ci FencedProseSpeechTests
 ci GainEndToEndTests
 ci GainFactorTests
 ci HomophonesSurvivePipelineTests

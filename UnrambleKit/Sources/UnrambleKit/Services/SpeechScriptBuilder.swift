@@ -37,6 +37,13 @@ public struct SpeechScriptBuilder: Sendable {
             case .heading:
                 lines.append("\(Self.normalizeForSpeech(segment.text)).")
             case .code:
+                // Agents fence prose too — option lists and behavior
+                // clauses arrive as text blocks. A block that reads as
+                // prose is spoken; only real code is skipped.
+                if Self.readsAsProse(segment.text) {
+                    lines.append(Self.normalizeForSpeech(segment.text))
+                    break
+                }
                 // A one-line block is usually a command; the full formal
                 // announcement grates when several appear in a row.
                 let lineCount = segment.text
@@ -50,6 +57,18 @@ public struct SpeechScriptBuilder: Sendable {
         }
         return lines.joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether fenced text reads as prose: agents fence option
+    /// lists and behavior clauses as text blocks. Source code fails
+    /// on braces, operators, and call syntax; spoken-English blocks
+    /// carry almost none of those.
+    static func readsAsProse(_ text: String) -> Bool {
+        let symbols = text.filter { "{}()[]=<>$#;\\_|+*".contains($0) }
+            .count
+        let letters = text.filter(\.isLetter).count
+        guard letters > 0 else { return false }
+        return Double(symbols) / Double(letters) < 0.15
     }
 
     /// Spoken glyph replacements, applied to every spoken segment.
@@ -125,6 +144,8 @@ public struct SpeechScriptBuilder: Sendable {
                 .joined(separator: "-")
             return "\(name) dot \(spelled)"
         }
+        // Well-known all-caps filenames read as their words.
+        result = result.replacing(#/\bREADME\b/#) { _ in "read me" }
         for (glyph, spoken) in spokenGlyphs {
             result = result.replacingOccurrences(of: glyph, with: spoken)
         }
