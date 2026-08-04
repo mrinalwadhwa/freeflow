@@ -65,6 +65,23 @@ struct DegenerateTranscriptDetectorTests {
         #expect(DegenerateTranscriptDetector.isDegenerate(loop))
     }
 
+    @Test("Three identical sentences and nothing else is a loop")
+    func tripleIdenticalSentenceIsDegenerate() {
+        let loop = Array(
+            repeating: "I'm going to go to the next slide.", count: 3
+        ).joined(separator: " ")
+        #expect(DegenerateTranscriptDetector.isDegenerate(loop))
+    }
+
+    @Test("Three sentences with any variation are ordinary speech")
+    func threeVariedSentencesAreNotDegenerate() {
+        let turn = """
+            Run the whole suite again. Run the whole suite again. \
+            Then paste the summary here for me.
+            """
+        #expect(!DegenerateTranscriptDetector.isDegenerate(turn))
+    }
+
     @Test("Punctuation and case differences do not hide a loop")
     func normalizationSeesThroughPunctuation() {
         let loop = """

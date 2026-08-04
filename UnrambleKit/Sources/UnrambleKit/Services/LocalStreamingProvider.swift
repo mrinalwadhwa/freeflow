@@ -670,16 +670,32 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         seconds: TimeInterval,
         sessionID: DictationSessionID
     ) async -> Data? {
-        lock.withLock {
-            guard activeSessionID == sessionID else { return nil }
+        let (tail, probe) = lock.withLock {
+            () -> (Data?, String?) in
+            guard activeSessionID == sessionID else {
+                return (
+                    nil,
+                    "[LocalStreaming] tail refused: active="
+                        + "\(activeSessionID.map { "\($0)" } ?? "none") "
+                        + "requested=\(sessionID)"
+                )
+            }
             let bytesPerSecond = LocalUnitPolicy.sourceBytesPerSecond
             var tailBytes = Int(seconds * Double(bytesPerSecond))
             tailBytes -= tailBytes % MemoryLayout<Int16>.size
             let end = accumulatedAudio.count
             let start = max(0, end - tailBytes)
-            guard start < end else { return nil }
-            return accumulatedAudio.subdata(in: start..<end)
+            guard start < end else {
+                return (
+                    nil,
+                    "[LocalStreaming] tail empty: accumulated=\(end) "
+                        + "requestedBytes=\(tailBytes)"
+                )
+            }
+            return (accumulatedAudio.subdata(in: start..<end), nil)
         }
+        if let probe { Log.debug(probe) }
+        return tail
     }
 
     /// Carry previously captured PCM into this session as opening

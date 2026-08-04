@@ -26,6 +26,13 @@ public enum DegenerateTranscriptDetector {
 
     public static func isDegenerate(_ text: String) -> Bool {
         let sentences = normalizedSentences(in: text)
+        // Three identical long sentences and nothing else is already a
+        // loop — live floods arrived exactly one sentence under the
+        // pattern minimum. A person repeating one long sentence three
+        // times verbatim with zero variation is not how speech works.
+        if sentences.count == 3, Set(sentences).count == 1 {
+            return true
+        }
         guard sentences.count >= minimumSentenceCount else { return false }
         let unique = Set(sentences).count
         let repeated = 1.0 - Double(unique) / Double(sentences.count)

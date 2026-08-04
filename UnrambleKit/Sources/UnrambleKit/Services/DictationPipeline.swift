@@ -993,7 +993,13 @@ public actor DictationPipeline: PipelineProviding {
         sessionID: DictationSessionID,
         seconds: TimeInterval
     ) async -> Data? {
-        guard activeSession?.id == sessionID else { return nil }
+        guard activeSession?.id == sessionID else {
+            Log.debug(
+                "[Pipeline] capture tail refused: active="
+                    + "\(activeSession.map { "\($0.id)" } ?? "none") "
+                    + "requested=\(sessionID)")
+            return nil
+        }
         return await backend.streamingProvider.capturedAudioTail(
             seconds: seconds, sessionID: sessionID)
     }
