@@ -648,6 +648,29 @@ struct SettingsTests {
         settings.dictationMode = .cloud
     }
 
+    // MARK: - Voice-Processed Capture
+
+    @Test("Voice-processed capture defaults to enabled")
+    func voiceProcessedCaptureDefault() {
+        UserDefaults.standard.removeObject(
+            forKey: "voiceProcessedCaptureEnabled")
+        #expect(Settings.shared.voiceProcessedCaptureEnabled == true)
+    }
+
+    @Test("Voice-processed capture can be disabled and persists")
+    func voiceProcessedCaptureDisable() {
+        let settings = Settings.shared
+        settings.voiceProcessedCaptureEnabled = false
+        #expect(settings.voiceProcessedCaptureEnabled == false)
+        #expect(
+            UserDefaults.standard.object(
+                forKey: "voiceProcessedCaptureEnabled") as? Bool == false)
+
+        // Restore default.
+        UserDefaults.standard.removeObject(
+            forKey: "voiceProcessedCaptureEnabled")
+    }
+
     // MARK: - Settings is singleton
 
     @Test("Settings.shared always returns the same instance")

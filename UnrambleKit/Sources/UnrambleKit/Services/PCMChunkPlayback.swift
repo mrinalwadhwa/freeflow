@@ -9,7 +9,7 @@ import Foundation
 /// or the playback was stopped.
 final class PCMChunkPlayback: @unchecked Sendable {
 
-    private let player: any PCMChunkPlaying
+    let player: any PCMChunkPlaying
 
     private let lock = NSLock()
     private var pendingBuffers = 0
@@ -18,8 +18,22 @@ final class PCMChunkPlayback: @unchecked Sendable {
     private var drainContinuation: CheckedContinuation<Void, Never>?
     private var started = false
 
-    init(sampleRate: Double) {
-        player = AVAudioPCMChunkPlayer(sampleRate: sampleRate)
+    /// Route through the far-end channel when one is active — the
+    /// voice-processed capture is running, and audio played there is
+    /// cancelled from the microphone as the unit's own reference —
+    /// otherwise play through a dedicated engine.
+    init(sampleRate: Double, farEndHub: FarEndPlaybackHub? = nil) {
+        if let channel = farEndHub?.activeChannel, channel.isActive {
+            Log.debug("[FarEnd] playback routed through the reference bus")
+            player = FarEndPCMChunkPlayer(
+                inputSampleRate: sampleRate,
+                channel: channel)
+        } else {
+            if farEndHub != nil {
+                Log.debug("[FarEnd] playback routed through the engine")
+            }
+            player = AVAudioPCMChunkPlayer(sampleRate: sampleRate)
+        }
     }
 
     init(player: any PCMChunkPlaying) {

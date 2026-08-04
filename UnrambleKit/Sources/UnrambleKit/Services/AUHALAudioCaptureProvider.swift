@@ -63,12 +63,67 @@ import Foundation
         private var stopEntries: [AudioCaptureOwner: StopEntry] = [:]
         private var isShutdown = false
 
-        public init() {
-            makeTransport = { try AUHALDirectInputTransport(deviceID: $0) }
+        public init(farEndHub: FarEndPlaybackHub? = nil) {
+            let cache = CaptureTransportCache()
+            makeTransport = { deviceID in
+                try cache.transport(
+                    deviceID: deviceID,
+                    voiceProcessing: Settings.shared
+                        .voiceProcessedCaptureEnabled
+                ) { deviceID, voiceProcessing in
+                    try Self.selectTransport(
+                        deviceID: deviceID,
+                        voiceProcessing: voiceProcessing,
+                        makeVoiceProcessed: {
+                            try VoiceProcessedInputTransport(
+                                deviceID: $0,
+                                farEndHub: farEndHub)
+                        },
+                        makeDirect: {
+                            try AUHALDirectInputTransport(deviceID: $0)
+                        })
+                }
+            }
+        }
+
+        /// Build and cache the capture transport ahead of the first
+        /// recording so the start pays no construction cost.
+        public func prepareTransport() async {
+            let provider = lock.withLock { audioDeviceProvider }
+            try? await provider?.waitUntilInputDeviceSettled()
+            guard let deviceID = provider?.captureDeviceID else { return }
+            try? await transitions.run { [self] in
+                guard lock.withLock({ physical == nil && !isShutdown })
+                else { return }
+                _ = try makeTransport(deviceID)
+            }
         }
 
         init(makeTransport: @escaping TransportFactory) {
             self.makeTransport = makeTransport
+        }
+
+        /// Choose the voice-processed transport when enabled, falling
+        /// back to the direct transport when the voice processing unit
+        /// cannot be built on this system.
+        static func selectTransport(
+            deviceID: AudioObjectID,
+            voiceProcessing: Bool,
+            makeVoiceProcessed: (AudioObjectID) throws ->
+                any AUHALInputTransporting,
+            makeDirect: (AudioObjectID) throws -> any AUHALInputTransporting
+        ) throws -> any AUHALInputTransporting {
+            if voiceProcessing {
+                do {
+                    return try makeVoiceProcessed(deviceID)
+                } catch {
+                    Log.debug(
+                        "[VoiceProcessedCapture] unavailable "
+                            + "(\(error.localizedDescription)); "
+                            + "using direct transport")
+                }
+            }
+            return try makeDirect(deviceID)
         }
 
         deinit {

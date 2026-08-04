@@ -63,13 +63,17 @@ public struct LiveTurnPauseDetector: Sendable {
         guard !chunk.isEmpty else { return [] }
 
         let rms = AudioLevelAnalyzer.rmsLevel(pcm16: chunk)
-        // Decay the floor toward quieter ambience gradually — one
-        // anomalous dip must not redefine the room and reclassify
-        // steady ambient noise as speech — and drift it up slowly so
-        // brief speech cannot become the new floor.
+        // The floor approximates recent typical ambience, not its
+        // minimum: it decays a few percent per chunk and rises about
+        // as slowly. Sub-second dips therefore cannot drag it down —
+        // one anomalous dip must not redefine the room, and a
+        // fluctuating residual (echo-cancelled playback leaves a hash
+        // whose swells run several times its own dips) must not have
+        // its swells reclassified as speech — while brief speech
+        // cannot become the new floor on the way up.
         if let floor = noiseFloor {
             noiseFloor = rms < floor
-                ? max(floor * 0.7, rms, 0.0001)
+                ? max(floor * 0.98, rms, 0.0001)
                 : min(floor * 1.01, 0.05)
         } else {
             // Cap the initial floor: a session that opens mid-speech

@@ -25,6 +25,7 @@ public final class KokoroSpeechSynthesizer: SpeechSynthesizing,
     private let g2pResourcesDirectory: URL
     private let voice: String
     private let speed: Float
+    private let farEndHub: FarEndPlaybackHub?
 
     private let lock = NSLock()
     private var loadTask: Task<KokoroModel, Error>?
@@ -35,12 +36,14 @@ public final class KokoroSpeechSynthesizer: SpeechSynthesizing,
         modelDirectory: URL,
         g2pResourcesDirectory: URL,
         voice: String = "af_heart",
-        speed: Float = 1.2
+        speed: Float = 1.2,
+        farEndHub: FarEndPlaybackHub? = nil
     ) {
         self.modelDirectory = modelDirectory
         self.g2pResourcesDirectory = g2pResourcesDirectory
         self.voice = voice
         self.speed = speed
+        self.farEndHub = farEndHub
     }
 
     public func speak(_ text: String) async {
@@ -81,7 +84,8 @@ public final class KokoroSpeechSynthesizer: SpeechSynthesizing,
             let model = try await loadedModel()
             try Task.checkCancellation()
 
-            let playback = PCMChunkPlayback(sampleRate: 24_000)
+            let playback = PCMChunkPlayback(
+                sampleRate: 24_000, farEndHub: farEndHub)
             lock.withLock { activePlayback = playback }
             defer {
                 lock.withLock {

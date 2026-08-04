@@ -25,6 +25,8 @@ ci BrowserURLReaderTests
 ci BufferedPasteOwnershipTests
 ci BuildUserPromptTests
 ci CallCommandGateTests
+ci CaptureTransportCacheTests
+ci CaptureTransportSelectionTests
 ci CarbonHotkeyProviderTests
 ci ClaudeCodeTranscriptLocatorTests
 ci CloudDictationLiveHarnessTests
@@ -61,6 +63,7 @@ ci DictationPipelineIntegrationTests
 ci DictationPipelineTests
 ci EnsureTerminalPunctuationTests
 ci FaithfulnessVerifierTests
+ci FarEndPlaybackTests
 ci GainEndToEndTests
 ci GainFactorTests
 ci HomophonesSurvivePipelineTests
@@ -191,3 +194,4 @@ os LibprocProcessTableTests
 os MainThreadDelayTests
 os SoundFeedbackPathTests
 os SystemSpeechSynthesizerTests
+os VoiceProcessedInputTransportTests

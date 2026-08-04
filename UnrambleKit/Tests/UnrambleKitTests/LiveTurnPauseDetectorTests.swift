@@ -172,6 +172,31 @@ struct LiveTurnPauseDetectorTests {
                 == [.audibleSpeech])
     }
 
+    @Test("A fluctuating residual stays ambience and still pauses")
+    func fluctuatingResidualStaysAmbient() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.5, sustainSeconds: 0.04)
+
+        // Echo-cancelled playback leaves a hash whose swells run
+        // several times its own dips. A floor that chased the dips
+        // would classify every swell as speech; the turn would never
+        // pause and the recognizer would hallucinate from the hash.
+        var signals: [TurnSignal] = []
+        for _ in 0..<10 {
+            for amplitude in [Int16(655), 66, 262] {
+                signals += detector.observe(
+                    chunk: tone(1280, amplitude: amplitude),
+                    threshold: threshold)
+            }
+        }
+        #expect(signals == [.pause])
+
+        // Real speech still crosses immediately.
+        #expect(
+            detector.observe(chunk: speech(1280), threshold: threshold)
+                == [.audibleSpeech])
+    }
+
     @Test("A configured final pause re-fires once after the hold window")
     func finalPauseRefiresOnce() {
         var detector = LiveTurnPauseDetector(

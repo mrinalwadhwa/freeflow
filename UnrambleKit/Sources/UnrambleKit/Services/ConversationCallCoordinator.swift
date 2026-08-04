@@ -17,9 +17,11 @@ import Foundation
 /// send — and the dictation key sends immediately. The conversation
 /// is pinned to the session resolved at call start: every sent turn
 /// is delivered to it — refocusing its application first when the
-/// user has wandered — then submitted and watched. Whenever a narration finishes, the mic reopens over the
-/// still-armed watch so the user can speak the moment the voice stops;
-/// an empty pause returns the call to waiting. A turn whose whole
+/// user has wandered — then submitted and watched. Narrations play
+/// over an open, echo-cancelled microphone: sustained speech stops
+/// the voice mid-sentence and is already part of the turn, and when
+/// the voice finishes on its own the same turn keeps listening; an
+/// empty pause returns the call to waiting. A turn whose whole
 /// utterance is a spoken meta-command — "hang up" — executes against
 /// the call itself and is never sent.
 public actor ConversationCallCoordinator {
@@ -68,6 +70,17 @@ public actor ConversationCallCoordinator {
         case signal(TurnSignal)
         case force
         case idleTimeout
+
+        /// The turn's narration finished playing, by running out or
+        /// by being stopped.
+        case narrationEnded
+
+        /// The post-narration opening closed with nobody using it.
+        case openingExpired
+
+        /// The narration onset guard expired; speech-shaped signals
+        /// are the user from here on.
+        case bargeArmed
     }
 
     /// The subscription backing one turn's endpoint wait. Created
@@ -91,6 +104,7 @@ public actor ConversationCallCoordinator {
     private let cuePlayer: any CallCuePlaying
     private let scriptBuilder: SpeechScriptBuilder
     private let synthesizer: any SpeechSynthesizing
+    private let farEndHub: FarEndPlaybackHub?
     private let isDictationActive: @Sendable () async -> Bool
     private let stopReadSession: @Sendable () async -> Void
 
@@ -130,6 +144,26 @@ public actor ConversationCallCoordinator {
     /// the pending barge-in.
     private var bargeInRequested = false
 
+    /// Set while a turn narrates over its open microphone. A barge-in
+    /// then only needs to stop the voice — the mic is already
+    /// listening — so the watch-level trigger stays untouched.
+    private var narrationTurnActive = false
+
+    /// How long an unused post-narration opening stays open. The
+    /// detector's pause latched while the narration played, so it
+    /// cannot re-fire without new speech; this deadline closes the
+    /// opening instead.
+    private let unusedOpeningSeconds: TimeInterval
+
+    /// How long after a narration starts before speech-shaped
+    /// signals count as the user. The echo canceller converges on
+    /// new playback over its first second or so, and until then the
+    /// synthesized voice leaks into the microphone as convincing
+    /// speech — enough to barge its own narration and to hand the
+    /// recognizer audio it renders as words. During the guard the
+    /// buttons still barge.
+    private let narrationOnsetGuardSeconds: TimeInterval
+
     private var state: ConversationCallState = .idle
     private var continuations:
         [UUID: AsyncStream<ConversationCallState>.Continuation] = [:]
@@ -168,9 +202,12 @@ public actor ConversationCallCoordinator {
         cuePlayer: any CallCuePlaying,
         scriptBuilder: SpeechScriptBuilder = SpeechScriptBuilder(),
         synthesizer: any SpeechSynthesizing,
+        farEndHub: FarEndPlaybackHub? = nil,
         isDictationActive: @escaping @Sendable () async -> Bool,
         stopReadSession: @escaping @Sendable () async -> Void = {},
-        idleTimeout: TimeInterval = 180
+        idleTimeout: TimeInterval = 180,
+        unusedOpeningSeconds: TimeInterval = 2.5,
+        narrationOnsetGuardSeconds: TimeInterval = 2.0
     ) {
         self.contextProvider = contextProvider
         self.sessionResolver = sessionResolver
@@ -183,9 +220,12 @@ public actor ConversationCallCoordinator {
         self.cuePlayer = cuePlayer
         self.scriptBuilder = scriptBuilder
         self.synthesizer = synthesizer
+        self.farEndHub = farEndHub
         self.isDictationActive = isDictationActive
         self.stopReadSession = stopReadSession
         self.idleTimeout = idleTimeout
+        self.unusedOpeningSeconds = unusedOpeningSeconds
+        self.narrationOnsetGuardSeconds = narrationOnsetGuardSeconds
     }
 
     /// Whether a call is active in any phase. The app ignores the
@@ -293,14 +333,16 @@ public actor ConversationCallCoordinator {
         }
     }
 
-    /// Stop call speech and open the mic for a barge-in turn. Speech
-    /// stops here, before capture begins, so the mic never hears the
-    /// synthesized voice. The request flag is raised only when a watch
-    /// wait exists to consume it; a press in the gap between watches
-    /// stops speech and nothing more.
+    /// Stop call speech and open the mic for a barge-in turn. During
+    /// a narration turn the microphone is already open with the
+    /// synthesized voice cancelled out of it, so stopping the voice
+    /// is the entire barge. Otherwise the request flag is raised only
+    /// when a watch wait exists to consume it; a press in the gap
+    /// between watches stops speech and nothing more.
     public func bargeIn() {
         guard callTask != nil else { return }
         synthesizer.stopSpeaking()
+        guard !narrationTurnActive else { return }
         guard let trigger = bargeInTrigger else { return }
         bargeInRequested = true
         trigger()
@@ -394,10 +436,15 @@ public actor ConversationCallCoordinator {
         }
     }
 
-    /// One capture turn: listen, endpoint, and deliver.
+    /// One capture turn: listen, endpoint, and deliver. A narration
+    /// plays over the turn's open microphone; the voice yields to
+    /// sustained speech, and the words that stopped it are already
+    /// part of the turn because the mic was live before the voice
+    /// began.
     private func performTurn(
         generation: Int,
-        abandonsOnEmptyPause: Bool
+        abandonsOnEmptyPause: Bool,
+        narration: String? = nil
     ) async -> TurnOutcome {
         guard let sessionID = await pipeline.activate(playsCaptureCues: false)
         else {
@@ -419,17 +466,45 @@ public actor ConversationCallCoordinator {
             idleTimeout: abandonsOnEmptyPause ? nil : idleTimeout)
 
         // A hangup that raced activation must not leak the capture.
-        guard adoptCapture(generation: generation, sessionID: sessionID)
+        guard
+            adoptCapture(
+                generation: generation,
+                sessionID: sessionID,
+                into: narration == nil ? .listening : .speaking)
         else {
             endTurnWait(turnWait)
             await pipeline.cancel(sessionID: sessionID)
             return .ended
         }
 
-        guard
-            let turnEnd = await awaitTurnEnd(
-                turnWait,
-                abandonsOnEmptyPause: abandonsOnEmptyPause),
+        if let narration {
+            narrationTurnActive = true
+            let continuation = turnWait.continuation
+            let hub = farEndHub
+            Task { [weak self] in
+                // Capture activation can resolve before the transport
+                // renders; narrating ahead of the far-end channel
+                // would fall back to an engine the canceller only
+                // hears as other audio.
+                if let hub,
+                    await hub.waitForActiveChannel(timeoutSeconds: 1.0)
+                        == nil
+                {
+                    Log.debug(
+                        "[Call] narrating without a far-end channel")
+                }
+                await self?.speak(narration)
+                continuation.yield(.narrationEnded)
+            }
+        }
+
+        let resolvedEnd = await awaitTurnEnd(
+            turnWait,
+            abandonsOnEmptyPause: abandonsOnEmptyPause,
+            narrationActive: narration != nil,
+            generation: generation)
+        narrationTurnActive = false
+        guard let turnEnd = resolvedEnd,
             generation == callGeneration, !Task.isCancelled
         else { return .ended }
         Log.debug("[Call] turn end: \(turnEnd)")
@@ -501,12 +576,12 @@ public actor ConversationCallCoordinator {
     }
 
     /// Consume the armed watch — narrating interim messages, speaking
-    /// the response, and hosting open-mic turns: barge-ins, and the
-    /// mic reopening whenever a narration finishes. Interim messages
-    /// that arrived while a mic was open are dropped as stale
-    /// progress — the transcript stays the source of truth — but a
-    /// completion always resolves the watch: it is the answer, and
-    /// only a send that redirects the agent supersedes it.
+    /// the response, and hosting open-mic turns: barge-ins, and every
+    /// narration playing over an already-open microphone. Interim
+    /// messages that arrived while a mic was open are dropped as
+    /// stale progress — the transcript stays the source of truth —
+    /// but a completion always resolves the watch: it is the answer,
+    /// and only a send that redirects the agent supersedes it.
     private func waitOutWatch(
         _ events: AsyncStream<ResponseWatchEvent>,
         generation: Int
@@ -539,16 +614,12 @@ public actor ConversationCallCoordinator {
                 { continue }
                 switch watchEvent {
                 case .interimMessage(let markdown):
-                    narratedThisWatch.insert(markdown)
-                    transitionIfCurrent(generation: generation, to: .speaking)
-                    cuePlayer.playReplyCue()
-                    await speak(markdown)
-                    guard generation == callGeneration, !Task.isCancelled
-                    else { return .ended }
                     guard !bargeInRequested else { continue }
-                    // The end of a narration is a natural opening;
-                    // reopen the mic while the turn keeps running.
-                    switch await hostOpenMicTurn(generation: generation) {
+                    narratedThisWatch.insert(markdown)
+                    cuePlayer.playReplyCue()
+                    switch await hostOpenMicTurn(
+                        generation: generation, narration: markdown)
+                    {
                     case .resolved(let outcome):
                         return outcome
                     case .resumeWaiting:
@@ -557,27 +628,33 @@ public actor ConversationCallCoordinator {
                             generation: generation, to: .waiting)
                     }
                 case .response(let markdown):
-                    transitionIfCurrent(generation: generation, to: .speaking)
-                    cuePlayer.playReplyCue()
-                    await speak(markdown)
-                    guard generation == callGeneration, !Task.isCancelled
-                    else { return .ended }
                     guard !bargeInRequested else { continue }
-                    return .relisten
+                    cuePlayer.playReplyCue()
+                    switch await hostOpenMicTurn(
+                        generation: generation, narration: markdown)
+                    {
+                    case .resolved(let outcome):
+                        return outcome
+                    case .resumeWaiting:
+                        return .relisten
+                    }
                 case .completed(let markdown):
                     guard !bargeInRequested else { continue }
                     // The watcher saw its text narrated, but a barge-in
                     // drop may have swallowed that narration here;
                     // speak anything this watch never actually played.
-                    if !narratedThisWatch.contains(markdown) {
-                        transitionIfCurrent(
-                            generation: generation, to: .speaking)
-                        cuePlayer.playReplyCue()
-                        await speak(markdown)
-                        guard generation == callGeneration, !Task.isCancelled
-                        else { return .ended }
+                    if narratedThisWatch.contains(markdown) {
+                        return .relisten
                     }
-                    return .relisten
+                    cuePlayer.playReplyCue()
+                    switch await hostOpenMicTurn(
+                        generation: generation, narration: markdown)
+                    {
+                    case .resolved(let outcome):
+                        return outcome
+                    case .resumeWaiting:
+                        return .relisten
+                    }
                 case .toolOnly:
                     guard !bargeInRequested else { continue }
                     // No cue: with tool-heavy agents the window
@@ -605,15 +682,20 @@ public actor ConversationCallCoordinator {
         return .relisten
     }
 
-    /// Host one open-mic turn over the armed watch: a barge-in, or
-    /// the mic reopening after a narration. A send that reaches the
-    /// agent supersedes the watch; an empty pause — a "never mind" or
-    /// an unused opening — and a turn that stayed plain dictation
-    /// both close the mic and resume waiting on the watch.
-    private func hostOpenMicTurn(generation: Int) async -> OpenMicOutcome {
+    /// Host one open-mic turn over the armed watch: a barge-in, or a
+    /// narration playing over the open microphone. A send that
+    /// reaches the agent supersedes the watch; an empty pause — a
+    /// "never mind" or an unused opening — and a turn that stayed
+    /// plain dictation both close the mic and resume waiting on the
+    /// watch.
+    private func hostOpenMicTurn(
+        generation: Int,
+        narration: String? = nil
+    ) async -> OpenMicOutcome {
         let outcome = await performTurn(
             generation: generation,
-            abandonsOnEmptyPause: true)
+            abandonsOnEmptyPause: true,
+            narration: narration)
         switch outcome {
         case .ended:
             return .resolved(.ended)
@@ -678,35 +760,108 @@ public actor ConversationCallCoordinator {
     /// resumed first, which re-arms the endpoint. A barge-in turn
     /// abandons on a pause that heard nothing at all — silence means
     /// "never mind", while audible speech waits for its transcript.
-    /// Returns nil when the call was hung up mid-listen.
+    /// While a narration plays, sustained speech stops the voice and
+    /// the turn continues; the cancelled voice's silence cannot
+    /// abandon the turn, and an opening nobody used closes on its
+    /// own deadline once the voice finishes. Speech-shaped signals
+    /// inside the narration onset guard are echo-canceller leak and
+    /// are swallowed entirely — they neither barge nor count as the
+    /// user. Returns nil when the call was hung up mid-listen.
     private func awaitTurnEnd(
         _ wait: TurnWait,
-        abandonsOnEmptyPause: Bool
+        abandonsOnEmptyPause: Bool,
+        narrationActive: Bool,
+        generation: Int
     ) async -> TurnEnd? {
         defer { endTurnWait(wait) }
 
         var sawTranscribedSpeech = false
         var sawAudibleSpeech = false
         var pendingPause = false
+        var narrationRunning = narrationActive
+        var bargeArmed = !narrationActive || narrationOnsetGuardSeconds <= 0
+        var armTask: Task<Void, Never>?
+        var openingGrace: Task<Void, Never>?
+        if narrationActive, !bargeArmed {
+            let continuation = wait.continuation
+            let guardSeconds = narrationOnsetGuardSeconds
+            armTask = Task {
+                try? await Task.sleep(
+                    nanoseconds: UInt64(guardSeconds * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                continuation.yield(.bargeArmed)
+            }
+        }
+        defer {
+            armTask?.cancel()
+            openingGrace?.cancel()
+            // A force-send or hangup can end the turn mid-narration;
+            // the voice must not keep talking past its turn.
+            if narrationRunning { synthesizer.stopSpeaking() }
+        }
         for await event in wait.events {
             guard !Task.isCancelled else { return nil }
             switch event {
             case .signal(.transcribedSpeech):
+                if narrationRunning, !bargeArmed {
+                    Log.debug(
+                        "[Call] onset guard swallowed transcribed speech")
+                    continue
+                }
                 sawTranscribedSpeech = true
                 if pendingPause {
                     return .send(sawTranscribedSpeech: true)
                 }
             case .signal(.audibleSpeech):
+                if narrationRunning, !bargeArmed {
+                    Log.debug(
+                        "[Call] onset guard swallowed audible speech")
+                    continue
+                }
                 sawAudibleSpeech = true
                 pendingPause = false
+                if narrationRunning {
+                    Log.debug("[Call] voice barge-in over narration")
+                    synthesizer.stopSpeaking()
+                    transitionIfCurrent(
+                        generation: generation, to: .listening)
+                }
+            case .bargeArmed:
+                bargeArmed = true
             case .signal(.pause):
                 if sawTranscribedSpeech {
                     return .send(sawTranscribedSpeech: true)
                 }
-                if abandonsOnEmptyPause, !sawAudibleSpeech {
+                // Silence accumulated through a narration's tail can
+                // deliver a pause moments after the voice stops; the
+                // post-narration opening closes only on its own
+                // deadline, so the user gets the full window.
+                if abandonsOnEmptyPause, !sawAudibleSpeech,
+                    !narrationRunning, openingGrace == nil
+                {
                     return .abandoned
                 }
                 pendingPause = true
+            case .narrationEnded:
+                narrationRunning = false
+                bargeArmed = true
+                armTask?.cancel()
+                transitionIfCurrent(generation: generation, to: .listening)
+                if abandonsOnEmptyPause, !sawAudibleSpeech {
+                    let continuation = wait.continuation
+                    let opening = unusedOpeningSeconds
+                    openingGrace = Task {
+                        try? await Task.sleep(
+                            nanoseconds: UInt64(
+                                opening * 1_000_000_000))
+                        guard !Task.isCancelled else { return }
+                        continuation.yield(.openingExpired)
+                    }
+                }
+            case .openingExpired:
+                if !sawAudibleSpeech {
+                    return .abandoned
+                }
             case .force:
                 return .send(sawTranscribedSpeech: sawTranscribedSpeech)
             case .idleTimeout:
@@ -721,15 +876,17 @@ public actor ConversationCallCoordinator {
         return nil
     }
 
-    /// Bind the accepted capture session to the still-current call and
-    /// enter listening.
+    /// Bind the accepted capture session to the still-current call
+    /// and enter listening — or speaking, for a turn that narrates
+    /// over its open microphone.
     private func adoptCapture(
         generation: Int,
-        sessionID: DictationSessionID
+        sessionID: DictationSessionID,
+        into initialState: ConversationCallState = .listening
     ) -> Bool {
         guard generation == callGeneration else { return false }
         captureSessionID = sessionID
-        transition(to: .listening)
+        transition(to: initialState)
         return true
     }
 

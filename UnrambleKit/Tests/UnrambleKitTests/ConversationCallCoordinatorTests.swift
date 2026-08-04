@@ -62,6 +62,8 @@ struct ConversationCallCoordinatorTests {
         injectedText: String? = "Fix the failing resampler test.",
         dictationActive: Bool = false,
         idleTimeout: TimeInterval = 180,
+        unusedOpeningSeconds: TimeInterval = 2.5,
+        narrationOnsetGuardSeconds: TimeInterval = 0,
         readSessionStops: ReadSessionStopCounter = ReadSessionStopCounter()
     ) -> Harness {
         let resolver = StubAgentSessionResolver(session: session)
@@ -87,7 +89,9 @@ struct ConversationCallCoordinatorTests {
             synthesizer: synthesizer,
             isDictationActive: { dictationActive },
             stopReadSession: { readSessionStops.increment() },
-            idleTimeout: idleTimeout)
+            idleTimeout: idleTimeout,
+            unusedOpeningSeconds: unusedOpeningSeconds,
+            narrationOnsetGuardSeconds: narrationOnsetGuardSeconds)
         return Harness(
             coordinator: coordinator,
             resolver: resolver,
@@ -763,8 +767,8 @@ struct ConversationCallCoordinatorTests {
 
     // MARK: - Speaking and barge-in
 
-    @Test("The microphone stays closed while call speech plays")
-    func keepsMicClosedWhileSpeaking() async {
+    @Test("The microphone is open while call speech plays")
+    func keepsMicOpenWhileSpeaking() async {
         let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
 
@@ -775,17 +779,158 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
-        // The reply is playing and no capture session is open.
-        #expect(harness.pipeline.state == .idle)
+        // The reply is playing over an already-open capture session.
+        #expect(harness.pipeline.state == .recording)
 
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
         #expect(harness.pipeline.state == .recording)
     }
 
-    @Test("The dictation key stops speech before the barge-in mic opens")
+    @Test("Sustained speech during narration stops the voice and sends")
+    func voiceBargeInDuringNarration() async {
+        let harness = makeHarness(session: agentSession())
+        harness.synthesizer.blocksUntilStopped = true
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
+        await harness.synthesizer.waitUntilSpeaking()
+
+        // The user talks over the voice; the voice yields and the
+        // words are already part of the running turn.
+        harness.publish(.audibleSpeech)
+        await waitForState(harness.coordinator, .listening)
+        #expect(harness.synthesizer.stopCount == 1)
+        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+        await eventually { harness.submitter.submitCount == 2 }
+        #expect(harness.watcher.armed.count == 2)
+    }
+
+    @Test("An empty pause during narration does not abandon the turn")
+    func emptyPauseDuringNarrationHolds() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            unusedOpeningSeconds: 0.15)
+        harness.synthesizer.blocksUntilStopped = true
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
+        await harness.synthesizer.waitUntilSpeaking()
+
+        // The cancelled voice leaves silence; its pause must not
+        // close the mic while the voice still plays.
+        harness.publish(.pause)
+        await settle()
+        let speaking = await harness.coordinator.stateStream.first { _ in
+            true
+        }
+        #expect(speaking == .speaking)
+        #expect(harness.pipeline.state == .recording)
+
+        // The voice finishes; the unused opening closes on its own
+        // deadline and the response's turn resolves to relistening.
+        harness.synthesizer.stopSpeaking()
+        await waitForState(harness.coordinator, .listening)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
+    }
+
+    @Test("A pause cannot cut the post-narration opening short")
+    func pauseDoesNotShortenOpening() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            unusedOpeningSeconds: 0.5)
+        harness.synthesizer.blocksUntilStopped = true
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
+        await harness.synthesizer.waitUntilSpeaking()
+
+        // The voice finishes; stillness spanning its tail delivers a
+        // pause almost immediately. The opening must survive it.
+        harness.synthesizer.stopSpeaking()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.pause)
+        await settle()
+        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        let state = await harness.coordinator.stateStream.first { _ in true }
+        #expect(state == .listening)
+
+        // The opening's own deadline still closes it.
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
+    }
+
+    @Test("Onset-guard leak neither barges nor becomes a sendable turn")
+    func onsetGuardSwallowsLeak() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            unusedOpeningSeconds: 0.15,
+            narrationOnsetGuardSeconds: 60)
+        harness.synthesizer.blocksUntilStopped = true
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
+        await harness.synthesizer.waitUntilSpeaking()
+
+        // The canceller leaks the voice's own onset as speech-shaped
+        // audio; inside the guard it must not stop the voice, and it
+        // must not count as the user having spoken.
+        harness.publish(.audibleSpeech)
+        harness.publish(.transcribedSpeech)
+        await settle()
+        #expect(harness.synthesizer.stopCount == 0)
+        let speaking = await harness.coordinator.stateStream.first { _ in
+            true
+        }
+        #expect(speaking == .speaking)
+
+        // The voice finishes; the leaked signals left no trace, so
+        // the unused opening closes and the call relistens without
+        // ever sending a leak-built turn.
+        harness.synthesizer.stopSpeaking()
+        await waitForState(harness.coordinator, .listening)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
+        #expect(harness.submitter.submitCount == 1)
+        #expect(harness.watcher.armed.count == 1)
+    }
+
+    @Test("The dictation key during narration only stops the voice")
     func bargeInStopsSpeechBeforeCapture() async {
         let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
@@ -797,14 +942,16 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
         await harness.coordinator.dictationKeyPressed()
 
+        // The mic was already open; stopping the voice is the whole
+        // barge, so no extra capture session appears.
         #expect(harness.synthesizer.stopCount == 1)
-        await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
-        }
+        await waitForState(harness.coordinator, .listening)
+        #expect(harness.pipeline.activatedSessionIDs.count == 2)
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .listening)
     }

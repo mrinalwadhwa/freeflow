@@ -37,6 +37,7 @@ public final class Settings: @unchecked Sendable {
         case conversationCallShortcutBinding = "conversationCallShortcutBinding"
         case interimNarrationEnabled = "interimNarrationEnabled"
         case hasShownConversationIntro = "hasShownConversationIntro"
+        case voiceProcessedCaptureEnabled = "voiceProcessedCaptureEnabled"
     }
 
     // MARK: - Init
@@ -344,6 +345,21 @@ public final class Settings: @unchecked Sendable {
         set {
             defaults.set(
                 newValue, forKey: Key.interimNarrationEnabled.rawValue)
+        }
+    }
+
+    /// Whether microphone capture runs through the system voice
+    /// processing unit, which cancels device playback from the
+    /// captured signal. On by default; capture falls back to the
+    /// direct transport when the unit cannot be built.
+    public var voiceProcessedCaptureEnabled: Bool {
+        get {
+            defaults.object(forKey: Key.voiceProcessedCaptureEnabled.rawValue)
+                as? Bool ?? true
+        }
+        set {
+            defaults.set(
+                newValue, forKey: Key.voiceProcessedCaptureEnabled.rawValue)
         }
     }
 

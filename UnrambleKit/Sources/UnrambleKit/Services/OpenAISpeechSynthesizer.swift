@@ -32,6 +32,7 @@ public final class OpenAISpeechSynthesizer: SpeechSynthesizing,
     private let endpoint: URL
     private let session: URLSession
     private let fallback: (any SpeechSynthesizing)?
+    private let farEndHub: FarEndPlaybackHub?
 
     private let lock = NSLock()
     private var speechTask: Task<Void, Never>?
@@ -44,7 +45,8 @@ public final class OpenAISpeechSynthesizer: SpeechSynthesizing,
         instructions: String = OpenAISpeechSynthesizer.defaultInstructions,
         endpoint: URL = URL(string: "https://api.openai.com/v1/audio/speech")!,
         session: URLSession? = nil,
-        fallback: (any SpeechSynthesizing)? = nil
+        fallback: (any SpeechSynthesizing)? = nil,
+        farEndHub: FarEndPlaybackHub? = nil
     ) {
         self.apiKeyProvider = apiKey
         self.model = model
@@ -61,6 +63,7 @@ public final class OpenAISpeechSynthesizer: SpeechSynthesizing,
             self.session = URLSession(configuration: configuration)
         }
         self.fallback = fallback
+        self.farEndHub = farEndHub
     }
 
     public func speak(_ text: String) async {
@@ -96,7 +99,8 @@ public final class OpenAISpeechSynthesizer: SpeechSynthesizing,
     // MARK: - Session
 
     private func run(text: String) async {
-        let playback = PCMChunkPlayback(sampleRate: 24_000)
+        let playback = PCMChunkPlayback(
+            sampleRate: 24_000, farEndHub: farEndHub)
         lock.withLock { activePlayback = playback }
         defer {
             lock.withLock {

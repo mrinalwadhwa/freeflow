@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }),
             cuePlayer: DictationSoundCallCues(feedback: soundFeedbackProvider),
             synthesizer: ensureSpeechSynthesizer(),
+            farEndHub: farEndPlaybackHub,
             isDictationActive: {
                 await recordingCoordinator.state != .idle
             },
@@ -135,7 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the voice on the machine. The mode is read per utterance.
         let cloudVoice = OpenAISpeechSynthesizer(
             apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
-            fallback: SystemSpeechSynthesizer())
+            fallback: SystemSpeechSynthesizer(),
+            farEndHub: farEndPlaybackHub)
         let localVoice = makeLocalVoice()
         return DictationModeSpeechSynthesizer(
             localVoice: localVoice,
@@ -161,7 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.debug("[AppDelegate] Read-aloud local voice: Kokoro")
                 return KokoroSpeechSynthesizer(
                     modelDirectory: kokoro,
-                    g2pResourcesDirectory: g2p)
+                    g2pResourcesDirectory: g2p,
+                    farEndHub: farEndPlaybackHub)
             }
         }
         #endif
@@ -245,6 +248,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupSettings()
         setupMenuBarState()
         determineLaunchFlow()
+
+        // Building the capture transport takes seconds when voice
+        // processing is enabled; prepare it now so the first recording
+        // starts without that delay.
+        let captureProvider = audioProvider
+        Task.detached(priority: .utility) {
+            await captureProvider.prepareTransport()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -542,7 +553,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Pipeline
 
-    private let audioProvider = AUHALAudioCaptureProvider()
+    /// Meeting point between voice-processed capture and speech
+    /// playback: while the mic captures through the voice processing
+    /// unit, narration renders through its output bus so the echo
+    /// canceller subtracts it from the microphone as its own
+    /// reference.
+    private let farEndPlaybackHub = FarEndPlaybackHub()
+
+    private lazy var audioProvider = AUHALAudioCaptureProvider(
+        farEndHub: farEndPlaybackHub)
     private lazy var microphoneCaptureCoordinator =
         MicrophoneCaptureCoordinator(
             audioProvider: audioProvider,
