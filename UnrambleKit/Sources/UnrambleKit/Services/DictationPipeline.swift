@@ -1074,6 +1074,10 @@ public actor DictationPipeline: PipelineProviding {
             startedAt: Date(),
             releaseBoundary: releaseBoundary,
             playsCaptureCues: playsCaptureCues)
+        if !playsCaptureCues {
+            if callSessionIDs.count > 16 { callSessionIDs.removeAll() }
+            callSessionIDs.insert(session.id)
+        }
         activationReservation = session
         defer {
             if ownsActivationReservation(session.id) {
@@ -1579,7 +1583,7 @@ public actor DictationPipeline: PipelineProviding {
         isStreamingSession = false
         audioSetupFailed = false
         recordingStartedAt = nil
-        _ = await coordinator.failDictation(sessionID: sessionID)
+        await resolveDictationFailure(sessionID: sessionID)
     }
 
     public func complete() async {
@@ -2000,7 +2004,7 @@ public actor DictationPipeline: PipelineProviding {
             if isAccidentalTapBeforeCapture {
                 await resetOwnedSession(session.id)
             } else {
-                _ = await coordinator.failDictation(sessionID: session.id)
+                await resolveDictationFailure(sessionID: session.id)
             }
             return
         }
@@ -2092,7 +2096,7 @@ public actor DictationPipeline: PipelineProviding {
                 }
                 guard ownsSession(session.id) else { return }
                 if missedCaptureBoundary {
-                    _ = await coordinator.failDictation(sessionID: session.id)
+                    await resolveDictationFailure(sessionID: session.id)
                 } else {
                     await resetOwnedSession(session.id)
                 }
@@ -2228,7 +2232,7 @@ public actor DictationPipeline: PipelineProviding {
                         audio: audioBuffer.data,
                         context: context,
                         language: session.language)
-                    _ = await coordinator.failDictation(sessionID: session.id)
+                    await resolveDictationFailure(sessionID: session.id)
                     resolvedDictation = nil
                 }
 
@@ -2325,7 +2329,7 @@ public actor DictationPipeline: PipelineProviding {
             switch stateAfterCancellation {
             case .processing:
                 if recovery?.sessionID == session.id {
-                    _ = await coordinator.failDictation(sessionID: session.id)
+                    await resolveDictationFailure(sessionID: session.id)
                 } else {
                     await resetOwnedSession(session.id)
                 }
@@ -2902,7 +2906,7 @@ public actor DictationPipeline: PipelineProviding {
                 audio: audioBuffer.data,
                 context: context,
                 language: language)
-            _ = await coordinator.failDictation(sessionID: sessionID)
+            await resolveDictationFailure(sessionID: sessionID)
             return nil
         }
 
@@ -2938,7 +2942,7 @@ public actor DictationPipeline: PipelineProviding {
                 context: context,
                 language: language)
             guard ownsSession(sessionID) else { return nil }
-            _ = await coordinator.failDictation(sessionID: sessionID)
+            await resolveDictationFailure(sessionID: sessionID)
             return nil
         }
     }
@@ -3271,7 +3275,7 @@ public actor DictationPipeline: PipelineProviding {
                 context: context,
                 language: language)
             guard ownsSession(sessionID) else { return nil }
-            _ = await coordinator.failDictation(sessionID: sessionID)
+            await resolveDictationFailure(sessionID: sessionID)
             return nil
         }
     }
@@ -3304,6 +3308,29 @@ public actor DictationPipeline: PipelineProviding {
         #endif
     }
 
+    /// Sessions activated without capture cues — conversation call
+    /// turns. Their failures resolve in the call's own language:
+    /// no retained retry, no failure HUD, no admission hold; the
+    /// coordinator reopens a fresh session and the call continues.
+    /// Session IDs are never reused, so stale entries are inert.
+    private var callSessionIDs: Set<DictationSessionID> = []
+
+    /// Resolve a failed turn in the session's own language: dictation
+    /// raises the failure HUD and holds admission for an explicit
+    /// retry; a call session quietly resets to idle so the next
+    /// activation opens a fresh capture immediately.
+    private func resolveDictationFailure(
+        sessionID: DictationSessionID
+    ) async {
+        if callSessionIDs.contains(sessionID) {
+            Log.debug(
+                "[Pipeline] call turn failed; resetting for a fresh session")
+            await resetOwnedSession(sessionID)
+        } else {
+            _ = await coordinator.failDictation(sessionID: sessionID)
+        }
+    }
+
     private func retainRecovery(
         sessionID: DictationSessionID,
         audio: Data,
@@ -3311,6 +3338,13 @@ public actor DictationPipeline: PipelineProviding {
         language: String?
     ) {
         guard ownsSession(sessionID) else { return }
+        // A call session's capture is never worth an admission-holding
+        // retry: the conversation moves on and a stale retained turn
+        // would only block the next call.
+        guard !callSessionIDs.contains(sessionID) else {
+            Log.debug("[Pipeline] call session capture not retained")
+            return
+        }
         let owner = audioOwner(sessionID)
         recovery = RecoveryRecord(
             sessionID: sessionID,
@@ -3438,7 +3472,7 @@ public actor DictationPipeline: PipelineProviding {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 Log.debug("[Pipeline] Retry returned no text; keeping recovery audio")
-                _ = await coordinator.failDictation(sessionID: session.id)
+                await resolveDictationFailure(sessionID: session.id)
                 return
             }
 
@@ -3481,7 +3515,7 @@ public actor DictationPipeline: PipelineProviding {
             }
             guard ownsSession(session.id) else { return }
             Log.debug("[Pipeline] Retry dictation failed: \(error)")
-            _ = await coordinator.failDictation(sessionID: session.id)
+            await resolveDictationFailure(sessionID: session.id)
         }
     }
 
