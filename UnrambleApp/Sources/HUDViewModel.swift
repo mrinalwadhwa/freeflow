@@ -353,7 +353,10 @@ final class HUDViewModel: ObservableObject {
             // the previous hands-free session's visual state while its
             // ownership hint is still in flight.
             isHandsFree = false
-            visualState = .minimized
+            // A call rotates pipeline sessions constantly; a direct
+            // collapse here flashes the pill minimized between every
+            // call turn. Deriving keeps the call presence on screen.
+            recalculate()
 
         case .recording:
             if previous == .idle {
@@ -377,9 +380,11 @@ final class HUDViewModel: ObservableObject {
             // Collapse the pill now rather than waiting for the clipboard
             // restore delay (~200ms) and the idle transition. This makes
             // the pill disappear in sync with the text appearing instead
-            // of lingering in the processing state.
+            // of lingering in the processing state. Deriving instead
+            // of assigning keeps a call's presence pill on screen
+            // through its sends.
             stopAudioLevelObservation()
-            visualState = .minimized
+            recalculate()
             showInAppMessageIfNeeded()
 
         case .injectionFailed:
@@ -575,7 +580,12 @@ final class HUDViewModel: ObservableObject {
             }
             return .listeningHeld
 
-        case .processing, .injecting:
+        case .injecting:
+            // Injection commits the text; outside a call the pill
+            // collapses in sync with it appearing.
+            return .minimized
+
+        case .processing:
             if processingCollapsing {
                 return .processingCollapsing
             }
