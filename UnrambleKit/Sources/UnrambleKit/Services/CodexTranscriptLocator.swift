@@ -105,13 +105,15 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
 
     /// Whether the rollout's edge is a finished assistant turn.
     ///
-    /// Codex trails every assistant message with bookkeeping records —
-    /// `token_count`, then an explicit `task_complete` — so the file
-    /// almost never literally ends with the message. Walk backward
-    /// past the bookkeeping: `task_complete` is the authoritative end
-    /// of a turn, an assistant message at the effective edge counts,
-    /// and anything that shows the agent mid-turn — reasoning, tool
-    /// calls, a user message — means the turn is still open.
+    /// Only Codex's explicit `task_complete` record ends a turn.
+    /// Codex prints mid-turn progress messages — an assistant message
+    /// plus `token_count`, then more reasoning — so a message at the
+    /// edge proves nothing; a watch that trusted it resolved while
+    /// Codex was mid-flow and its real final went unheard. The
+    /// `task_complete` lands milliseconds after the true final
+    /// message, so believing only it costs nothing and cannot lie.
+    /// Bookkeeping after it is walked over; anything else at the edge
+    /// means the turn is still open.
     static func turnEndsWithAssistantText(
         inRolloutLines lines: [String]
     ) -> Bool {
@@ -127,23 +129,11 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
                 switch payloadType {
                 case "task_complete":
                     return true
-                case "agent_message":
-                    let phase = payload?["phase"] as? String
-                    return phase == nil || phase == "final_answer"
                 case "token_count":
                     continue
                 default:
                     return false
                 }
-            case "response_item":
-                if payloadType == "message",
-                    payload?["role"] as? String == "assistant",
-                    let payload,
-                    assistantText(of: payload) != nil
-                {
-                    return true
-                }
-                return false
             case "world_state", "turn_context", "session_meta":
                 continue
             default:

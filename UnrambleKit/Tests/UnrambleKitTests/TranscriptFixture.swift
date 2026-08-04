@@ -121,6 +121,20 @@ struct TranscriptFixture {
         codexAssistant(parts: [text], timestamp: timestamp)
     }
 
+    static func codexTaskComplete(
+        timestamp: String? = "2026-08-01T10:00:00.100Z"
+    ) -> [String: Any] {
+        var record: [String: Any] = [
+            "type": "event_msg",
+            "payload": [
+                "type": "task_complete",
+                "turn_id": "turn-1",
+            ] as [String: Any],
+        ]
+        if let timestamp { record["timestamp"] = timestamp }
+        return record
+    }
+
     static func codexAssistant(
         parts: [String],
         timestamp: String? = "2026-08-01T10:00:00.000Z"

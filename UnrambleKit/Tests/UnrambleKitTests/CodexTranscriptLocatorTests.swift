@@ -248,6 +248,7 @@ struct CodexTranscriptLocatorTests {
             records: [
                 TranscriptFixture.codexSessionMeta(cwd: workingDirectory),
                 TranscriptFixture.codexAssistant(text: "They pass."),
+                TranscriptFixture.codexTaskComplete(),
             ])
 
         let locator = CodexTranscriptLocator(sessionsDirectory: fixture.root)
@@ -306,13 +307,13 @@ struct CodexTurnEdgeTests {
             inRolloutLines: lines))
     }
 
-    @Test("Bookkeeping after the message does not hide the turn end")
-    func tokenCountIsSkipped() {
+    @Test("A message without task_complete is mid-turn progress")
+    func messageWithoutTaskCompleteIsOpen() {
         let lines = [
             assistantMessage,
             record("event_msg", payload: #"{"type":"token_count","info":{}}"#),
         ]
-        #expect(CodexTranscriptLocator.turnEndsWithAssistantText(
+        #expect(!CodexTranscriptLocator.turnEndsWithAssistantText(
             inRolloutLines: lines))
     }
 
@@ -340,15 +341,15 @@ struct CodexTurnEdgeTests {
             inRolloutLines: lines))
     }
 
-    @Test("A final-answer agent message ends the turn")
-    func finalAnswerEndsTurn() {
+    @Test("An agent message alone does not end the turn")
+    func agentMessageAloneIsOpen() {
         let lines = [
             record(
                 "event_msg",
                 payload: #"{"type":"agent_message","message":"Done.","phase":"final_answer"}"#
             )
         ]
-        #expect(CodexTranscriptLocator.turnEndsWithAssistantText(
+        #expect(!CodexTranscriptLocator.turnEndsWithAssistantText(
             inRolloutLines: lines))
     }
 }
