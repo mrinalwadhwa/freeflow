@@ -345,6 +345,9 @@ import Foundation
             if let farEndHub, let farEndChannel {
                 farEndHub.deactivate(farEndChannel)
             }
+            if let summary = renderState.drainProbeSummary() {
+                Log.debug(summary)
+            }
             stateLock.withLock {
                 guard isStarted else {
                     callbackState.setHandler(nil)

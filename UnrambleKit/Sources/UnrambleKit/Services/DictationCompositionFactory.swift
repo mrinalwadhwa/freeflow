@@ -38,7 +38,8 @@ public enum DictationCompositionFactory {
         modelManager: LocalModelManager,
         bundledModelsRoot: URL?,
         cycleInterval: TimeInterval,
-        turnSignals: TurnSignalHub? = nil
+        turnSignals: TurnSignalHub? = nil,
+        captureGain: @escaping @Sendable () -> Float = { 1 }
     ) -> DictationComposition {
         guard let qwenModelPath = modelManager.resolveModelDirectory(
             modelID: "qwen3-0.6b-4bit", file: "model.safetensors",
@@ -87,7 +88,8 @@ public enum DictationCompositionFactory {
                 unitPolicy: localUnitPolicy,
                 polishBatchTokenLimit: 256,
                 loadSTT: { try await runtime.loadSTT() },
-                turnSignals: turnSignals))
+                turnSignals: turnSignals,
+                captureGain: captureGain))
         return DictationComposition(
             backend: backend,
             onSessionExpired: nil,

@@ -26,6 +26,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     private let unitPolicy: LocalUnitPolicy
     private let polishBatchTokenLimit: Int?
     private var silenceThreshold: Float
+    private let captureGain: @Sendable () -> Float
     private let turnSignals: TurnSignalHub?
     private let turnPauseSeconds: TimeInterval
 
@@ -129,7 +130,8 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         silenceThreshold: Float? = nil,
         loadSTT: (@Sendable () async throws -> Void)? = nil,
         turnSignals: TurnSignalHub? = nil,
-        turnPauseSeconds: TimeInterval = 2.0
+        turnPauseSeconds: TimeInterval = 2.0,
+        captureGain: @escaping @Sendable () -> Float = { 1 }
     ) {
         self.sttEngine = sttEngine
         self.loadSTT = loadSTT ?? { try await sttEngine.load() }
@@ -143,6 +145,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             ?? AudioLevelAnalyzer.minimumAcceptedSpeechRMS
         self.turnSignals = turnSignals
         self.turnPauseSeconds = turnPauseSeconds
+        self.captureGain = captureGain
         // The final pause backs the mid-clause hold: a reflective
         // pause gets 1.5 extra seconds before the turn closes.
         self.turnPauseDetector = LiveTurnPauseDetector(
@@ -195,6 +198,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         _ pcmData: Data,
         sessionID: DictationSessionID
     ) async throws {
+        let gain = captureGain()
         let (accepted, signals, probe) = lock.withLock {
             () -> (Bool, [TurnSignal], String?) in
             guard activeSessionID == sessionID,
@@ -208,12 +212,15 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             var probe: String?
             if turnAudioChunkCount % 40 == 0 {
                 let rms = AudioLevelAnalyzer.rmsLevel(pcm16: pcmData)
-                probe = "[TurnAudio] rms=\(rms) threshold=\(silenceThreshold)"
+                probe = "[TurnAudio] rms=\(rms) raw=\(rms / max(gain, 1)) "
+                    + "threshold=\(silenceThreshold)"
             }
             return (
                 true,
                 turnPauseDetector.observe(
-                    chunk: pcmData, threshold: silenceThreshold),
+                    chunk: pcmData,
+                    threshold: silenceThreshold,
+                    gain: gain),
                 probe
             )
         }
@@ -243,15 +250,14 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                         continue
                     }
                 }
+                // Strong speech is the audio-level evidence of a
+                // voice; it travels raw. The per-cycle transcript
+                // signal stays content-only — a recognizer captions
+                // residual and noise, so text alone can never stand
+                // in for a voice.
                 turnSignals.publish(signal, for: sessionID)
-                // The on-device recognizer yields its text at finish,
-                // not per cycle, so audible speech doubles as the
-                // content gate here as it does for cloud: a noise-only
-                // send completes to an empty transcript and injects
-                // nothing.
-                if signal == .audibleSpeech {
+                if signal == .audibleSpeech || signal == .strongSpeech {
                     lock.withLock { pauseHeldForClause = false }
-                    turnSignals.publish(.transcribedSpeech, for: sessionID)
                 }
             }
         }

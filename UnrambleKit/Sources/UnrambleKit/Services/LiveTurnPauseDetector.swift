@@ -23,14 +23,35 @@ public struct LiveTurnPauseDetector: Sendable {
     /// noise stays within it.
     private static let floorMargin: Float = 2.5
 
+    /// A run is strong once its peak clears this multiple of the
+    /// floor. Audible marks any sustained sound; strong marks the
+    /// level contour of a voice, and only strong runs may become
+    /// sendable content.
+    private static let strongFloorMultiple: Float = 5
+
+    /// A strong run's peak must also clear this absolute level in
+    /// the raw microphone scale, so a near-silent room cannot make
+    /// whispers of its own noise. Measured live: echo-cancelled
+    /// narration residual peaks at or below 0.019 raw while actual
+    /// speech at the same microphone peaks 0.04 and above.
+    private static let minimumStrongRMS: Float = 0.03
+
+    /// The floor's ceiling in the raw scale: long loud speech drifts
+    /// the floor upward one percent per chunk, and this cap keeps
+    /// the drift from ever reclassifying speech as ambience.
+    private static let maximumFloor: Float = 0.01
+
     private let pauseByteCount: Int
     private let finalPauseByteCount: Int
     private let sustainByteCount: Int
     private var trailingSilenceBytes = 0
     private var runAudibleBytes = 0
+    private var runPeak: Float = 0
+    private var runStrongBytes = 0
     private var pauseFired = false
     private var finalPauseFired = false
     private var speechSignaled = false
+    private var strongSignaled = false
     private var noiseFloor: Float?
 
     public init(
@@ -56,13 +77,22 @@ public struct LiveTurnPauseDetector: Sendable {
     /// additionally tracks the session's ambient noise floor, because
     /// a real microphone idles well above the dictation stack's
     /// dead-silence threshold and would otherwise never pause.
+    ///
+    /// `gain` is the software gain baked into the chunk's samples;
+    /// the detector divides it out so every level, floor, and
+    /// threshold lives in the raw microphone scale. Capture applies
+    /// up to sixteen-fold gain for far-field microphones, and
+    /// thresholds in the amplified scale do not mean what their
+    /// names imply.
     public mutating func observe(
         chunk: Data,
-        threshold: Float
+        threshold: Float,
+        gain: Float = 1
     ) -> [TurnSignal] {
         guard !chunk.isEmpty else { return [] }
 
-        let rms = AudioLevelAnalyzer.rmsLevel(pcm16: chunk)
+        let measured = AudioLevelAnalyzer.rmsLevel(pcm16: chunk)
+        let rms = gain > 0 ? measured / gain : measured
         // The floor approximates recent typical ambience, not its
         // minimum: it decays a few percent per chunk and rises about
         // as slowly. Sub-second dips therefore cannot drag it down —
@@ -74,27 +104,58 @@ public struct LiveTurnPauseDetector: Sendable {
         if let floor = noiseFloor {
             noiseFloor = rms < floor
                 ? max(floor * 0.98, rms, 0.0001)
-                : min(floor * 1.01, 0.05)
+                : min(floor * 1.01, Self.maximumFloor)
         } else {
             // Cap the initial floor: a session that opens mid-speech
             // must not adopt speech loudness as its ambience.
-            noiseFloor = min(max(rms, 0.0001), 0.05)
+            noiseFloor = min(max(rms, 0.0001), Self.maximumFloor)
         }
         let silenceCeiling = max(threshold, (noiseFloor ?? 0) * Self.floorMargin)
 
         var signals: [TurnSignal] = []
+        let strongCeiling = max(
+            (noiseFloor ?? 0) * Self.strongFloorMultiple,
+            Self.minimumStrongRMS)
         if rms < silenceCeiling {
+            if runAudibleBytes > 0 {
+                Log.debug(
+                    "[TurnRun] end bytes=\(runAudibleBytes) "
+                        + "peak=\(runPeak) "
+                        + "aboveStrongBytes=\(runStrongBytes)")
+            }
             trailingSilenceBytes += chunk.count
             runAudibleBytes = 0
+            runPeak = 0
+            runStrongBytes = 0
             speechSignaled = false
+            strongSignaled = false
         } else {
+            if runAudibleBytes == 0 {
+                Log.debug(
+                    "[TurnRun] start rms=\(rms) "
+                        + "floor=\(noiseFloor ?? 0) "
+                        + "ceiling=\(silenceCeiling) "
+                        + "strong=\(strongCeiling)")
+            }
             trailingSilenceBytes = 0
             pauseFired = false
             finalPauseFired = false
             runAudibleBytes += chunk.count
+            runPeak = max(runPeak, rms)
+            if rms >= strongCeiling {
+                runStrongBytes += chunk.count
+            }
             if !speechSignaled, runAudibleBytes >= sustainByteCount {
                 speechSignaled = true
                 signals.append(.audibleSpeech)
+            }
+            if speechSignaled, !strongSignaled, runPeak >= strongCeiling {
+                strongSignaled = true
+                Log.debug(
+                    "[TurnRun] strong bytes=\(runAudibleBytes) "
+                        + "peak=\(runPeak) "
+                        + "aboveStrongBytes=\(runStrongBytes)")
+                signals.append(.strongSpeech)
             }
         }
         if trailingSilenceBytes >= pauseByteCount, !pauseFired {
@@ -114,9 +175,12 @@ public struct LiveTurnPauseDetector: Sendable {
     public mutating func reset() {
         trailingSilenceBytes = 0
         runAudibleBytes = 0
+        runPeak = 0
+        runStrongBytes = 0
         pauseFired = false
         finalPauseFired = false
         speechSignaled = false
+        strongSignaled = false
         noiseFloor = nil
     }
 }

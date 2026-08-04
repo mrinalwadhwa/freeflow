@@ -161,6 +161,12 @@ public final class FarEndPlaybackHub: @unchecked Sendable {
 final class FarEndRenderState: @unchecked Sendable {
 
     private let ring: FarEndAudioRing?
+    private let countersLock = NSLock()
+    private var renders = 0
+    private var emptyRenders = 0
+    private var partialRenders = 0
+    private var framesRequested = 0
+    private var framesProduced = 0
 
     init(ring: FarEndAudioRing?) {
         self.ring = ring
@@ -171,6 +177,7 @@ final class FarEndRenderState: @unchecked Sendable {
         actionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>
     ) -> OSStatus {
         var produced = 0
+        var requested = 0
         if let ioData {
             var first = true
             for buffer in UnsafeMutableAudioBufferListPointer(ioData) {
@@ -179,6 +186,7 @@ final class FarEndRenderState: @unchecked Sendable {
                 if first, let ring {
                     first = false
                     let frames = byteCount / MemoryLayout<Float>.size
+                    requested = frames
                     let floats = data.assumingMemoryBound(to: Float.self)
                     produced = ring.read(into: floats, count: frames)
                     if produced < frames {
@@ -190,10 +198,40 @@ final class FarEndRenderState: @unchecked Sendable {
                 }
             }
         }
+        countersLock.withLock {
+            renders += 1
+            framesRequested += requested
+            framesProduced += produced
+            if produced == 0 {
+                emptyRenders += 1
+            } else if produced < requested {
+                partialRenders += 1
+            }
+        }
         if produced == 0 {
             actionFlags.pointee.insert(.unitRenderAction_OutputIsSilence)
         }
         return noErr
+    }
+
+    /// Summarize and reset the render counters; nil when nothing was
+    /// requested since the last summary. Partial renders mid-playback
+    /// mean the ring underran and the reference briefly went silent
+    /// while the ear heard a gap.
+    func drainProbeSummary() -> String? {
+        countersLock.withLock {
+            defer {
+                renders = 0
+                emptyRenders = 0
+                partialRenders = 0
+                framesRequested = 0
+                framesProduced = 0
+            }
+            guard framesRequested > 0 else { return nil }
+            return "[FarEndProbe] renders=\(renders) "
+                + "empty=\(emptyRenders) partial=\(partialRenders) "
+                + "requested=\(framesRequested) produced=\(framesProduced)"
+        }
     }
 }
 
@@ -225,6 +263,7 @@ final class FarEndPCMChunkPlayer: PCMChunkPlaying, @unchecked Sendable {
     private var inFlight: [InFlightChunk] = []
     private var pumpRunning = false
     private var stopped = false
+    private var scheduledChunkCount = 0
 
     init(inputSampleRate: Double, channel: FarEndPlaybackChannel) {
         self.channel = channel
@@ -252,6 +291,17 @@ final class FarEndPCMChunkPlayer: PCMChunkPlaying, @unchecked Sendable {
         completion: @escaping @Sendable () -> Void
     ) {
         let samples = resample(buffer)
+        let chunkIndex = lock.withLock { () -> Int in
+            scheduledChunkCount += 1
+            return scheduledChunkCount
+        }
+        var sumOfSquares: Float = 0
+        for sample in samples { sumOfSquares += sample * sample }
+        let rms = samples.isEmpty
+            ? 0 : (sumOfSquares / Float(samples.count)).squareRoot()
+        Log.debug(
+            "[FarEndChunk] i=\(chunkIndex) frames=\(samples.count) "
+                + "rms=\(rms)")
         enum Disposition {
             case queued(startsPump: Bool)
             case rejected

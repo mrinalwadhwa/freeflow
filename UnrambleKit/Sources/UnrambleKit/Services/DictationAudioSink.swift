@@ -46,13 +46,25 @@ import Foundation
         private var ambientSumOfSquares: Double = 0
         private var ambientCalibrated = false
         private var gainFactor: Float = 1
+        private var probeChunkCount = 0
         private var droppedFrameCount = 0
         private var isOpen = true
+
+        /// A previous session's ambient measurement and gain, carried
+        /// into a session that starts under sound the calibration
+        /// must not learn from — a call session opening while the
+        /// app's own voice plays would otherwise measure the voice as
+        /// the room and choose its gain from it.
+        struct InheritedCalibration: Sendable {
+            let ambientRMS: Float
+            let gainFactor: Float
+        }
 
         init(
             inputFormat: AVAudioFormat,
             micProximity: MicProximity,
             deviceName: String,
+            inheritedCalibration: InheritedCalibration? = nil,
             makeConverter: ConverterFactory = { inputFormat, outputFormat in
                 PCMConverterLifecycle(
                     inputFormat: inputFormat,
@@ -78,6 +90,15 @@ import Foundation
                 Int(inputFormat.sampleRate * 0.5),
                 1)
             self.converter = makeConverter(inputFormat, targetFormat)
+            if let inheritedCalibration {
+                ambientRMS = inheritedCalibration.ambientRMS
+                gainFactor = inheritedCalibration.gainFactor
+                ambientCalibrated = true
+                Log.debug(
+                    "[GainProbe] inherited "
+                        + "ambient=\(inheritedCalibration.ambientRMS) "
+                        + "gain=\(inheritedCalibration.gainFactor)")
+            }
 
             let pcmPair = AsyncStream<Data>.makeStream()
             self.pcmStreamValue = pcmPair.stream
@@ -113,6 +134,8 @@ import Foundation
         func consume(_ buffer: AVAudioPCMBuffer) {
             let measurement = Self.measureLevel(in: buffer)
 
+            var calibrationProbe: String?
+            var chunkProbe: String?
             let gain: Float? = lock.withLock {
                 guard isOpen else { return nil }
                 if let measurement {
@@ -131,13 +154,26 @@ import Foundation
                             gainFactor = AudioCaptureProvider.computeGainFactor(
                                 ambientRMS: ambientRMS,
                                 micProximity: micProximity)
+                            calibrationProbe =
+                                "[GainProbe] calibrated ambient=\(ambientRMS) "
+                                + "gain=\(gainFactor) "
+                                + "proximity=\(micProximity)"
                         }
+                    }
+                    probeChunkCount += 1
+                    if probeChunkCount % 40 == 0 {
+                        chunkProbe =
+                            "[GainProbe] preGain=\(rms) "
+                            + "postGain=\(rms * gainFactor) "
+                            + "gain=\(gainFactor)"
                     }
                     let displayRMS = rms * gainFactor
                     levelContinuation.yield(min(sqrtf(displayRMS * 25), 1))
                 }
                 return gainFactor
             }
+            if let calibrationProbe { Log.debug(calibrationProbe) }
+            if let chunkProbe { Log.debug(chunkProbe) }
             guard let gain else { return }
 
             let rawData: Data

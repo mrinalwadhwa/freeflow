@@ -607,12 +607,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let modelManager = LocalModelManager()
             let bundledModelsRoot = Bundle.main.resourceURL?
                 .appendingPathComponent("models")
+            let captureProvider = audioProvider
             composition = DictationCompositionFactory.makeLocal(
                 modelManager: modelManager,
                 bundledModelsRoot: bundledModelsRoot,
                 cycleInterval: DictationCompositionFactory.cycleInterval(
                     from: ProcessInfo.processInfo.environment),
-                turnSignals: turnSignalHub)
+                turnSignals: turnSignalHub,
+                captureGain: { [weak captureProvider] in
+                    captureProvider?.gainFactor ?? 1
+                })
             localModelRuntime = composition.localRuntime
             if let runtime = composition.localRuntime {
                 startModelPreload(runtime)

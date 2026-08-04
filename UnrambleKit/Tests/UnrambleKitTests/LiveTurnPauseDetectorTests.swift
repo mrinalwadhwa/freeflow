@@ -50,7 +50,7 @@ struct LiveTurnPauseDetectorTests {
         #expect(detector.observe(chunk: silence(3200), threshold: threshold)
             == [.pause])
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
         #expect(detector.observe(chunk: silence(3200), threshold: threshold)
             == [.pause])
     }
@@ -61,13 +61,13 @@ struct LiveTurnPauseDetectorTests {
             pauseSeconds: 0.1, sustainSeconds: 0)
 
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
             .isEmpty)
         #expect(detector.observe(chunk: silence(1600), threshold: threshold)
             .isEmpty)
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
     }
 
     @Test("A chunk containing speech resets the pause window")
@@ -81,7 +81,7 @@ struct LiveTurnPauseDetectorTests {
         var mixed = speech(640)
         mixed.append(silence(640))
         #expect(detector.observe(chunk: mixed, threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
 
         // The pause needs its full stretch of silence again.
         #expect(detector.observe(chunk: silence(1920), threshold: threshold)
@@ -117,7 +117,7 @@ struct LiveTurnPauseDetectorTests {
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
             .isEmpty)
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
             .isEmpty)
     }
@@ -136,7 +136,7 @@ struct LiveTurnPauseDetectorTests {
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
             .isEmpty)
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
     }
 
     @Test("An ambient dip does not reclassify room tone as speech")
@@ -169,7 +169,67 @@ struct LiveTurnPauseDetectorTests {
         // Real speech still crosses immediately.
         #expect(
             detector.observe(chunk: speech(1280), threshold: threshold)
+                == [.audibleSpeech, .strongSpeech])
+    }
+
+    @Test("A loud speech run signals strong once alongside audible")
+    func loudRunSignalsStrongOnce() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 10, sustainSeconds: 0)
+
+        #expect(
+            detector.observe(chunk: speech(640), threshold: threshold)
+                == [.audibleSpeech, .strongSpeech])
+        #expect(
+            detector.observe(chunk: speech(640), threshold: threshold)
+                .isEmpty)
+
+        // Silence resets the run; the next loud run signals again.
+        _ = detector.observe(chunk: silence(3200), threshold: threshold)
+        #expect(
+            detector.observe(chunk: speech(640), threshold: threshold)
+                == [.audibleSpeech, .strongSpeech])
+    }
+
+    @Test("Gain divides out so amplified residual is never strong")
+    func gainDividesOut() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 10, sustainSeconds: 0)
+
+        _ = detector.observe(
+            chunk: silence(3200), threshold: threshold, gain: 32)
+        // Post-gain this chunk reads 0.5 — obviously "strong" — but
+        // its raw level is 0.016, under the raw strong minimum.
+        #expect(
+            detector.observe(
+                chunk: speech(640), threshold: threshold, gain: 32)
                 == [.audibleSpeech])
+    }
+
+    @Test("A sustained noise swell is audible but never strong")
+    func noiseSwellNeverSignalsStrong() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 10, sustainSeconds: 0.04)
+
+        // Quiet room tone becomes the floor (rms about 0.004).
+        for _ in 0..<5 {
+            #expect(
+                detector.observe(
+                    chunk: tone(1280, amplitude: 131),
+                    threshold: threshold
+                ).isEmpty)
+        }
+        // A swell at three times the floor sustains: audible, but its
+        // peak (about 0.012) stays under both the strong multiple and
+        // the absolute strong minimum, so it can never become
+        // sendable content.
+        var signals: [TurnSignal] = []
+        for _ in 0..<4 {
+            signals += detector.observe(
+                chunk: tone(1280, amplitude: 393),
+                threshold: threshold)
+        }
+        #expect(signals == [.audibleSpeech])
     }
 
     @Test("A fluctuating residual stays ambience and still pauses")
@@ -194,7 +254,7 @@ struct LiveTurnPauseDetectorTests {
         // Real speech still crosses immediately.
         #expect(
             detector.observe(chunk: speech(1280), threshold: threshold)
-                == [.audibleSpeech])
+                == [.audibleSpeech, .strongSpeech])
     }
 
     @Test("A configured final pause re-fires once after the hold window")
@@ -211,7 +271,7 @@ struct LiveTurnPauseDetectorTests {
 
         // Speech re-arms both crossings.
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
-            == [.audibleSpeech])
+            == [.audibleSpeech, .strongSpeech])
         #expect(detector.observe(chunk: silence(3200), threshold: threshold)
             == [.pause, .pause])
     }

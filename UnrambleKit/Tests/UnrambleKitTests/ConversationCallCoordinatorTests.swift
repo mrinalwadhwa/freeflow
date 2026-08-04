@@ -62,7 +62,6 @@ struct ConversationCallCoordinatorTests {
         injectedText: String? = "Fix the failing resampler test.",
         dictationActive: Bool = false,
         idleTimeout: TimeInterval = 180,
-        unusedOpeningSeconds: TimeInterval = 2.5,
         narrationOnsetGuardSeconds: TimeInterval = 0,
         readSessionStops: ReadSessionStopCounter = ReadSessionStopCounter()
     ) -> Harness {
@@ -90,7 +89,6 @@ struct ConversationCallCoordinatorTests {
             isDictationActive: { dictationActive },
             stopReadSession: { readSessionStops.increment() },
             idleTimeout: idleTimeout,
-            unusedOpeningSeconds: unusedOpeningSeconds,
             narrationOnsetGuardSeconds: narrationOnsetGuardSeconds)
         return Harness(
             coordinator: coordinator,
@@ -106,13 +104,24 @@ struct ConversationCallCoordinatorTests {
             synthesizer: synthesizer)
     }
 
-    /// Wait until the coordinator publishes the target state.
+    /// Wait until the coordinator publishes the target state, or five
+    /// seconds pass — a bounded wait turns a wedged flow into a
+    /// failing expectation instead of a hung suite.
     private func waitForState(
         _ coordinator: ConversationCallCoordinator,
         _ target: ConversationCallState
     ) async {
-        let stream = await coordinator.stateStream
-        for await state in stream where state == target { return }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                let stream = await coordinator.stateStream
+                for await state in stream where state == target { return }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+            await group.next()
+            group.cancelAll()
+        }
     }
 
     /// Poll until the condition holds; return the final evaluation.
@@ -211,7 +220,7 @@ struct ConversationCallCoordinatorTests {
         await harness.coordinator.toggle()
         #expect(await iterator.next() == .listening)
 
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         #expect(await iterator.next() == .waiting)
 
@@ -338,7 +347,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
 
         // Let the deadline pass with speech already heard, then
         // endpoint normally: the turn still sends.
@@ -371,7 +380,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -386,7 +395,7 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .listening)
         let captureSession = harness.pipeline.activatedSessionIDs.first
 
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -400,7 +409,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -436,7 +445,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -451,7 +460,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -466,7 +475,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
 
         await eventually {
@@ -500,7 +509,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         await harness.coordinator.sendNow()
         await waitForState(harness.coordinator, .waiting)
 
@@ -515,7 +524,7 @@ struct ConversationCallCoordinatorTests {
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
         harness.publish(.pause)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         await waitForState(harness.coordinator, .waiting)
 
         #expect(harness.pipeline.completedSessionIDs.count == 1)
@@ -529,7 +538,7 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .listening)
         harness.publish(.pause)
         harness.publish(.audibleSpeech)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         await settle()
 
         #expect(harness.pipeline.completedSessionIDs.isEmpty)
@@ -547,7 +556,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -559,7 +568,10 @@ struct ConversationCallCoordinatorTests {
         #expect(
             harness.synthesizer.spokenTexts.first?.contains("All tests pass")
                 == true)
-        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        // The narration's watch-only session plus the fresh opening.
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
     }
 
     @Test("A tool-only turn relistens quietly")
@@ -568,7 +580,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -586,7 +598,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -595,7 +607,9 @@ struct ConversationCallCoordinatorTests {
         await eventually { harness.synthesizer.spokenTexts.count == 1 }
         await waitForState(harness.coordinator, .listening)
 
-        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
         #expect(harness.watcher.armed.count == 1)
     }
 
@@ -605,20 +619,22 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.interimMessage(markdown: "Working on it."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
+            harness.pipeline.activatedSessionIDs.count == 3
         }
         let openMicSession = harness.pipeline.activatedSessionIDs.last
 
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
-        #expect(harness.pipeline.cancelledSessionIDs == [openMicSession])
+        // The discarded narration session and the unused opening.
+        #expect(harness.pipeline.cancelledSessionIDs.count == 2)
+        #expect(harness.pipeline.cancelledSessionIDs.last == openMicSession)
         #expect(harness.pipeline.completedSessionIDs.count == 1)
         #expect(harness.watcher.armed.count == 1)
     }
@@ -629,16 +645,16 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.interimMessage(markdown: "Working on it."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
+            harness.pipeline.activatedSessionIDs.count == 3
         }
 
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await eventually { harness.watcher.armed.count == 2 }
 
@@ -652,13 +668,13 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.interimMessage(markdown: "First update."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
+            harness.pipeline.activatedSessionIDs.count == 3
         }
 
         // Stale progress arrives while the mic is open; the empty
@@ -679,13 +695,13 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.interimMessage(markdown: "The answer."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
+            harness.pipeline.activatedSessionIDs.count == 3
         }
 
         // The turn completes while the reopened mic hears nothing.
@@ -695,7 +711,7 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.pause)
 
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
         #expect(harness.synthesizer.spokenTexts.count == 1)
         #expect(harness.cues.doneCueCount == 0)
@@ -708,7 +724,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -739,7 +755,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -755,7 +771,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
         await settle()
@@ -774,7 +790,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -787,17 +803,23 @@ struct ConversationCallCoordinatorTests {
 
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
-        #expect(harness.pipeline.state == .recording)
+        // The narration's capture is discarded; a fresh clean turn
+        // opens in its place.
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+                && harness.pipeline.state == .recording
+        }
+        #expect(harness.pipeline.cancelledSessionIDs.count == 1)
     }
 
-    @Test("Sustained speech during narration stops the voice and sends")
+    @Test("Strong speech during narration stops the voice and sends")
     func voiceBargeInDuringNarration() async {
         let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -805,30 +827,30 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
-        // The user talks over the voice; the voice yields and the
-        // words are already part of the running turn.
-        harness.publish(.audibleSpeech)
+        // The user talks over the voice; the voice yields and a
+        // fresh clean turn opens for their words.
+        harness.publish(.strongSpeech)
         await waitForState(harness.coordinator, .listening)
         #expect(harness.synthesizer.stopCount == 1)
-        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
 
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
         await eventually { harness.submitter.submitCount == 2 }
         #expect(harness.watcher.armed.count == 2)
     }
 
-    @Test("An empty pause during narration does not abandon the turn")
-    func emptyPauseDuringNarrationHolds() async {
-        let harness = makeHarness(
-            session: agentSession(),
-            unusedOpeningSeconds: 0.15)
+    @Test("Audible residual during narration does not stop the voice")
+    func audibleResidualKeepsNarration() async {
+        let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -836,35 +858,27 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
-        // The cancelled voice leaves silence; its pause must not
-        // close the mic while the voice still plays.
+        // Reverberant residual is audible but never voice-strong; it
+        // must not take the floor from the narration.
+        harness.publish(.audibleSpeech)
         harness.publish(.pause)
         await settle()
-        let speaking = await harness.coordinator.stateStream.first { _ in
-            true
-        }
-        #expect(speaking == .speaking)
-        #expect(harness.pipeline.state == .recording)
+        #expect(harness.synthesizer.stopCount == 0)
+        let state = await harness.coordinator.stateStream.first { _ in true }
+        #expect(state == .speaking)
 
-        // The voice finishes; the unused opening closes on its own
-        // deadline and the response's turn resolves to relistening.
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
-        await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
-        }
     }
 
-    @Test("A pause cannot cut the post-narration opening short")
-    func pauseDoesNotShortenOpening() async {
-        let harness = makeHarness(
-            session: agentSession(),
-            unusedOpeningSeconds: 0.5)
+    @Test("Nothing heard under a narration can send")
+    func narrationCaptureIsDiscarded() async {
+        let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -872,33 +886,37 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
-        // The voice finishes; stillness spanning its tail delivers a
-        // pause almost immediately. The opening must survive it.
+        // The recognizer transcribes residual under the voice; the
+        // narration's whole capture session dies with the voice, so
+        // none of it can ever send.
+        harness.publish(.audibleSpeech)
+        harness.publish(.pause)
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.pause)
-        await settle()
-        #expect(harness.pipeline.activatedSessionIDs.count == 2)
-        let state = await harness.coordinator.stateStream.first { _ in true }
-        #expect(state == .listening)
-
-        // The opening's own deadline still closes it.
         await eventually {
             harness.pipeline.activatedSessionIDs.count == 3
         }
+
+        // The fresh opening hears nothing: the response's turn
+        // resolves to relistening, never to a send.
+        harness.publish(.pause)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 4
+        }
+        #expect(harness.submitter.submitCount == 1)
+        #expect(harness.watcher.armed.count == 1)
     }
 
     @Test("Onset-guard leak neither barges nor becomes a sendable turn")
     func onsetGuardSwallowsLeak() async {
         let harness = makeHarness(
             session: agentSession(),
-            unusedOpeningSeconds: 0.15,
             narrationOnsetGuardSeconds: 60)
         harness.synthesizer.blocksUntilStopped = true
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -907,10 +925,10 @@ struct ConversationCallCoordinatorTests {
         await harness.synthesizer.waitUntilSpeaking()
 
         // The canceller leaks the voice's own onset as speech-shaped
-        // audio; inside the guard it must not stop the voice, and it
-        // must not count as the user having spoken.
-        harness.publish(.audibleSpeech)
-        harness.publish(.transcribedSpeech)
+        // audio; inside the guard even strong signals must not stop
+        // the voice.
+        harness.publish(.strongSpeech)
+        harness.publish(.strongSpeech)
         await settle()
         #expect(harness.synthesizer.stopCount == 0)
         let speaking = await harness.coordinator.stateStream.first { _ in
@@ -919,8 +937,7 @@ struct ConversationCallCoordinatorTests {
         #expect(speaking == .speaking)
 
         // The voice finishes; the leaked signals left no trace, so
-        // the unused opening closes and the call relistens without
-        // ever sending a leak-built turn.
+        // a fresh opening replaces the discarded narration capture.
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
         await eventually {
@@ -937,7 +954,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -947,11 +964,13 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.dictationKeyPressed()
 
-        // The mic was already open; stopping the voice is the whole
-        // barge, so no extra capture session appears.
+        // Stopping the voice is the whole barge; the discarded
+        // narration capture is replaced by a fresh open turn.
         #expect(harness.synthesizer.stopCount == 1)
         await waitForState(harness.coordinator, .listening)
-        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .listening)
     }
@@ -962,7 +981,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -983,7 +1002,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -1013,7 +1032,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -1040,7 +1059,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -1064,7 +1083,7 @@ struct ConversationCallCoordinatorTests {
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
@@ -1073,7 +1092,7 @@ struct ConversationCallCoordinatorTests {
             harness.pipeline.activatedSessionIDs.count == 2
         }
 
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await eventually { harness.watcher.armed.count == 2 }
 
@@ -1094,7 +1113,7 @@ struct ConversationCallCoordinatorTests {
         // was recorded, and the command is pending after completion.
         harness.commandGate.pendingCommand = .hangUp
         harness.observer.stubbedText = nil
-        harness.publish(.transcribedSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await harness.coordinator.waitForCall()
 

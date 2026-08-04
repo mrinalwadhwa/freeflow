@@ -59,7 +59,26 @@ import Foundation
         private var preview: PreviewCapture?
         private var legacyOwner: AudioCaptureOwner?
         private var retainedMetrics: AudioCaptureMetrics?
+        private var retainedMetricsAt: Date?
         private var metricsOwner: AudioCaptureOwner?
+
+        /// Carry a fresh previous calibration into the next session.
+        /// Sessions churn every few seconds during a call, and a
+        /// session that opens under the app's own narration must not
+        /// measure that narration as the room's ambience.
+        private static let calibrationCarrySeconds: TimeInterval = 15
+
+        private func inheritedCalibrationLocked()
+            -> DictationAudioSink.InheritedCalibration?
+        {
+            guard let metrics = retainedMetrics,
+                let at = retainedMetricsAt,
+                Date().timeIntervalSince(at) < Self.calibrationCarrySeconds
+            else { return nil }
+            return DictationAudioSink.InheritedCalibration(
+                ambientRMS: metrics.ambientRMS,
+                gainFactor: metrics.gainFactor)
+        }
         private var stopEntries: [AudioCaptureOwner: StopEntry] = [:]
         private var isShutdown = false
 
@@ -327,10 +346,14 @@ import Foundation
             var newDictation: DictationCapture?
             var newPreview: PreviewCapture?
             if configuration.retainsPCM {
+                let inherited = lock.withLock {
+                    inheritedCalibrationLocked()
+                }
                 let sink = try DictationAudioSink(
                     inputFormat: transport.format,
                     micProximity: metadata.0,
-                    deviceName: metadata.1)
+                    deviceName: metadata.1,
+                    inheritedCalibration: inherited)
                 let sinkToken = sinkPublication.publish(sink)
                 do {
                     router.markContinuousCaptureStarted(
@@ -439,7 +462,8 @@ import Foundation
                     let sink = try DictationAudioSink(
                         inputFormat: physical.transport.format,
                         micProximity: metadata.0,
-                        deviceName: metadata.1)
+                        deviceName: metadata.1,
+                        inheritedCalibration: inheritedCalibrationLocked())
                     let sinkToken = sinkPublication.publish(sink)
                     do {
                         let route = try physical.router.promote(
@@ -653,6 +677,7 @@ import Foundation
                     else { return nil as (any AUHALInputTransporting)? }
                     dictation = nil
                     retainedMetrics = finalization.metrics
+                    retainedMetricsAt = Date()
                     metricsOwner = owner
                     pcmStreamSnapshot.clear()
                     _ = sinkPublication.clear(claim.capture.sinkToken)
