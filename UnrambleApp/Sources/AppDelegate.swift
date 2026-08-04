@@ -60,12 +60,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
         conversationCallCoordinator = created
         hudController?.attachConversationCall(created)
-        callObservationTask = Task { [callActivity] in
+        callObservationTask = Task { [weak self, callActivity] in
             for await state in await created.stateStream {
                 guard !Task.isCancelled else { break }
-                callActivity.setActive(
+                let active =
                     state == .listening || state == .waiting
-                        || state == .speaking)
+                    || state == .speaking
+                callActivity.setActive(active)
+                await MainActor.run {
+                    self?.menuBarController?.setConversationActive(active)
+                }
             }
         }
         return created
@@ -699,6 +703,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let readAloud = self.ensureReadAloudCoordinator()
             Task { await readAloud.toggle() }
+        }
+
+        controller.onStartConversation = { [weak self] in
+            guard let self else { return }
+            let call = self.ensureConversationCallCoordinator()
+            Task { await call.toggle() }
         }
 
         updateModePresentation()

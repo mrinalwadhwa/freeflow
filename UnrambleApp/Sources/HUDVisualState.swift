@@ -67,8 +67,9 @@ enum HUDVisualState: Equatable {
     case callListening
 
     /// A conversation call sent a turn and watches the agent session
-    /// for its response. The waveform settles into a dim dotted idle
-    /// with a drifting ripple — visibly alive, visibly not listening.
+    /// for its response. The duet shows the agent's blue side alive
+    /// (a drifting ripple) while the user's white side idles; ✕ can
+    /// end the conversation at any time.
     case callWaiting
 
     /// A conversation call speaks a response or interim message.
@@ -97,10 +98,11 @@ enum HUDVisualState: Equatable {
         switch self {
         case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired, .dictationFailed, .readingSpeaking,
-            .readingNoContent, .callListening, .callSpeaking, .callNoAgent:
+            .readingNoContent, .callListening, .callWaiting, .callSpeaking,
+            .callNoAgent:
             return true
         case .listeningHeld, .processingCollapsing, .processingBreathing,
-            .readingProcessing, .callWaiting:
+            .readingProcessing:
             return false
         }
     }

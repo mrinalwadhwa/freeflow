@@ -50,9 +50,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private var pasteItem: NSMenuItem?
     private var readAloudItem: NSMenuItem?
+    private var conversationItem: NSMenuItem?
 
     /// Called when the user picks Read Aloud from the menu.
     var onReadAloud: (() -> Void)?
+
+    /// Called when the user picks Start Conversation from the menu.
+    var onStartConversation: (() -> Void)?
     private var incognitoModeItem: NSMenuItem?
     private var incognitoModeStatusItem: NSMenuItem?
     private var micSubmenuItem: NSMenuItem?
@@ -248,6 +252,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(readAloud)
         readAloudItem = readAloud
 
+        let conversation = NSMenuItem(
+            title: "Start Conversation",
+            action: #selector(conversationAction),
+            keyEquivalent: ""
+        )
+        applyKeyEquivalent(
+            Settings.shared.conversationCallShortcutBinding, to: conversation)
+        conversation.target = self
+        conversation.isEnabled = false
+        conversation.image = NSImage(
+            systemSymbolName: "waveform", accessibilityDescription: nil)
+        menu.addItem(conversation)
+        conversationItem = conversation
+
         menu.addItem(.separator())
 
         // --- Input ---
@@ -362,6 +380,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshModeShortcutItem()
         refreshPasteItem()
         readAloudItem?.isEnabled = onReadAloud != nil
+        conversationItem?.isEnabled = onStartConversation != nil
         refreshMicSubmenu()
         refreshLanguageSubmenu()
         refreshCheckForUpdatesItem()
@@ -602,6 +621,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Reflect the read-aloud session in the menu item title.
     func setReadAloudSpeaking(_ speaking: Bool) {
         readAloudItem?.title = speaking ? "Stop Reading" : "Read Aloud"
+    }
+
+    /// Retitle the conversation item while a call is active, so the
+    /// menu reads as the toggle it is.
+    func setConversationActive(_ active: Bool) {
+        conversationItem?.title =
+            active ? "End Conversation" : "Start Conversation"
+    }
+
+    @objc private func conversationAction() {
+        onStartConversation?()
     }
 
     @objc private func readAloudAction() {

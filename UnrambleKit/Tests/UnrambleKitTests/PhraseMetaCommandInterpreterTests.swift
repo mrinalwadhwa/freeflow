@@ -17,6 +17,11 @@ struct PhraseMetaCommandInterpreterTests {
             "hang  up",
             "Hang up the call.",
             "End the call",
+            "End the conversation.",
+            "end conversation",
+            "End this conversation.",
+            "Let's end this conversation.",
+            "Let's end the conversation!",
         ])
     func matchesHangUpPhrases(utterance: String) async {
         #expect(await interpreter.interpret(utterance) == .hangUp)

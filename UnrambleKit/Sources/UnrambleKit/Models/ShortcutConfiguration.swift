@@ -74,8 +74,8 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     /// The instructional hint shown when a call finds no coding-agent
     /// session to talk to.
     ///
-    /// Example: "Focus a coding agent, then ⌃⇧C to call"
+    /// Example: "Focus a coding agent, then ⌃⇧C to talk"
     public var noAgentSessionHint: String {
-        "Focus a coding agent, then \(conversationCallShortcutName) to call"
+        "Focus a coding agent, then \(conversationCallShortcutName) to talk"
     }
 }

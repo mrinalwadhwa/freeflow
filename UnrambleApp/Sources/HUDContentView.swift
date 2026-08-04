@@ -31,9 +31,9 @@ struct HUDContentView: View {
         case .ready:
             return 80
         case .listeningHeld:
-            return 80
+            return 130
         case .listeningHandsFree:
-            return 140
+            return 130
         case .processingCollapsing, .processingBreathing:
             return 46
         case .processingSlow:
@@ -47,15 +47,11 @@ struct HUDContentView: View {
         case .readingProcessing:
             return 46
         case .readingSpeaking:
-            return 170
+            return 130
         case .readingNoContent:
             return 290
-        case .callListening:
-            return 140
-        case .callWaiting:
-            return 90
-        case .callSpeaking:
-            return 210
+        case .callListening, .callWaiting, .callSpeaking:
+            return 165
         case .callNoAgent:
             return 300
         }
@@ -68,7 +64,7 @@ struct HUDContentView: View {
         case .ready:
             return 10
         case .callWaiting:
-            return 16
+            return 32
         case .processingCollapsing, .processingBreathing, .readingProcessing:
             return 8
         case .listeningHeld, .listeningHandsFree,
@@ -82,7 +78,7 @@ struct HUDContentView: View {
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
         case .callWaiting:
-            return 0.35
+            return 0.5
         case .minimized, .processingCollapsing, .processingBreathing,
             .readingProcessing:
             return 0.3
@@ -97,7 +93,7 @@ struct HUDContentView: View {
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
         case .callWaiting:
-            return 0.5
+            return 0.7
         case .minimized, .processingCollapsing, .processingBreathing,
             .readingProcessing:
             return 0.45
@@ -167,6 +163,11 @@ struct HUDContentView: View {
                         readyHintTooltip
                             .transition(.opacity)
                     }
+
+                    if viewModel.showsCallIntro {
+                        callIntroTooltip
+                            .transition(.opacity)
+                    }
                 }
                 .fixedSize()
                 // The overlay's bottom is aligned with the outer frame's
@@ -190,6 +191,7 @@ struct HUDContentView: View {
             )
             .animation(.easeInOut(duration: 0.25), value: viewModel.micCalloutName)
             .animation(.easeInOut(duration: 0.25), value: viewModel.inAppMessage)
+            .animation(.easeInOut(duration: 0.25), value: viewModel.showsCallIntro)
     }
 
     // MARK: - Morphing pill
@@ -200,15 +202,12 @@ struct HUDContentView: View {
     private var morphingPill: some View {
         ZStack {
             // Background fill — purple-tinted in incognito mode.
+            // Inset fully inside the stroke: the border is
+            // translucent, so any fill under it shows through and
+            // reads as bleeding past the edge.
             Capsule()
                 .fill(pillFillColor.opacity(pillFillOpacity))
-
-            // Border — green in incognito mode.
-            Capsule()
-                .strokeBorder(
-                    pillBorderColor.opacity(pillBorderOpacity),
-                    lineWidth: pillBorderWidth
-                )
+                .padding(pillBorderWidth)
 
             // Breathing pulse overlay while processing or acquiring a read.
             if isBreathing {
@@ -224,6 +223,16 @@ struct HUDContentView: View {
         }
         .frame(width: pillWidth, height: pillHeight)
         .clipShape(Capsule())
+        // The border draws after the clip: clipping to the same
+        // capsule shaves the stroke's outer pixels, which starves
+        // the curved sections into the fill color.
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    pillBorderColor.opacity(pillBorderOpacity),
+                    lineWidth: pillBorderWidth
+                )
+        )
         .scaleEffect(
             x: breathingExpanded ? 1.15 : 1.0,
             y: 1.0,
@@ -295,66 +304,89 @@ struct HUDContentView: View {
 
     // MARK: - Conversation call
 
-    /// The mic is open: the hands-free layout plus the blue
-    /// conversation dot — the one state whose bars are white, so the
-    /// dot is what says a pause will send. ✕ ends the conversation;
-    /// the checkmark sends immediately.
+    /// The mic is open: the duet with the user's side alive — white
+    /// bars move with the voice while the agent's side idles in blue.
+    /// ✕ ends the conversation; the checkmark sends immediately.
     private var callListeningContent: some View {
         HStack(spacing: 10) {
             endCallButton
 
-            conversationDot
+            Spacer(minLength: 0)
 
-            WaveformBarsView(audioLevel: viewModel.audioLevel)
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                IdleWaveDots(color: ReplyWaveformView.tint)
+                WaveformBarsView(audioLevel: viewModel.audioLevel)
+            }
+
+            Spacer(minLength: 0)
 
             Button(action: { viewModel.onSendCallTurn?() }) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.green.opacity(0.85))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Send now")
             .help("Send now")
         }
-        .padding(.horizontal, 12)
+        // Concentric with the caps: a 20-point circle in a 32-point
+        // pill sits 6 points from each end.
+        .padding(.horizontal, 6)
     }
 
-    /// The watch is armed and the agent is working: the waveform
-    /// settles into a dim dotted idle with a ripple drifting through
-    /// it — the same object as listening, at rest.
+    /// The agent is working: the duet with the agent's side alive —
+    /// the blue ripple drifts while the user's side idles in white.
+    /// The trailing slot stays as an empty placeholder so all three
+    /// call states share one geometry and transitions do not morph.
     private var callWaitingContent: some View {
-        WaitingDotsView()
-    }
-
-    /// A response is being spoken: the same waveform in the reply
-    /// tint moves with the voice's cadence, and the caption names
-    /// who is being read.
-    private var callSpeakingContent: some View {
-        HStack(spacing: 8) {
-            ReplyWaveformView()
-
-            Text(viewModel.callAgentDescription ?? "Speaking")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.85))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
-
+        HStack(spacing: 10) {
             endCallButton
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 6) {
+                WaitingDotsView()
+                IdleWaveDots(color: .white)
+            }
+
+            Spacer(minLength: 0)
+
+            Color.clear
+                .frame(width: 20, height: 20)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 6)
     }
 
-    /// The steady blue mark that a conversation is live: blue is the
-    /// agent's side of the call, and blue present anywhere in the
-    /// pill means the mic feeds a conversation.
-    private var conversationDot: some View {
-        Circle()
-            .fill(ReplyWaveformView.tint.opacity(0.9))
-            .frame(width: 5, height: 5)
+    /// A response is being spoken: the agent's side moves in blue
+    /// cadence while the user's side idles. ■ stops the narration
+    /// and opens the mic, like Right Option.
+    private var callSpeakingContent: some View {
+        HStack(spacing: 10) {
+            endCallButton
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 6) {
+                ReplyWaveformView()
+                IdleWaveDots(color: .white)
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: { viewModel.onInterruptCallSpeech?() }) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.red.opacity(0.85))
+                    .frame(width: 8, height: 8)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop speech")
+            .help("Stop and talk")
+        }
+        .padding(.horizontal, 6)
     }
 
     /// End the conversation, like Escape.
@@ -363,7 +395,7 @@ struct HUDContentView: View {
             Image(systemName: "xmark")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.white.opacity(0.9))
-                .frame(width: 22, height: 22)
+                .frame(width: 20, height: 20)
                 .background(Circle().fill(Color.white.opacity(0.15)))
         }
         .buttonStyle(.plain)
@@ -384,13 +416,14 @@ struct HUDContentView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 7)
     }
 
     // MARK: - Ready hint tooltip
@@ -407,6 +440,24 @@ struct HUDContentView: View {
                 .foregroundColor(.white.opacity(0.8))
         }
         .font(.system(size: 13, weight: .medium, design: .rounded))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.5))
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.7), lineWidth: 2)
+        )
+    }
+
+    /// The one-time first-call lesson: the two rules a caller cannot
+    /// guess.
+    private var callIntroTooltip: some View {
+        Text("Pause to send, say \u{201C}end the conversation\u{201D} to finish")
+            .foregroundColor(.white.opacity(0.8))
+            .font(.system(size: 13, weight: .medium, design: .rounded))
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(
@@ -437,7 +488,7 @@ struct HUDContentView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
@@ -451,14 +502,14 @@ struct HUDContentView: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.green.opacity(0.85))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Finish and insert")
             .help("Finish and insert")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 6)
     }
 
     // MARK: - Processing (slow path)
@@ -470,7 +521,7 @@ struct HUDContentView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
@@ -484,7 +535,9 @@ struct HUDContentView: View {
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.7))
         }
-        .padding(.horizontal, 12)
+        // An 18-point circle nests concentrically at 7 points.
+        .padding(.leading, 7)
+        .padding(.trailing, 12)
     }
 
     // MARK: - No Target
@@ -502,13 +555,14 @@ struct HUDContentView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 7)
     }
 
     // MARK: - Session Expired
@@ -558,41 +612,45 @@ struct HUDContentView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 7)
     }
 
     // MARK: - Reading aloud
 
-    /// A read session is speaking. Speaker icon, label, and stop.
+    /// A read session is speaking: the machine's voice in blue, with
+    /// stop. No conversation chrome — the mic is closed and the only
+    /// action is to stop the voice.
     private var readingSpeakingContent: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "speaker.wave.2.fill")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.85))
+        HStack(spacing: 10) {
+            // An empty leading slot mirrors the stop button, so the
+            // bars center and both edges read like the call pill's.
+            Color.clear
+                .frame(width: 20, height: 20)
 
-            Text("Reading aloud")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.85))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
+            Spacer(minLength: 0)
+
+            ReplyWaveformView()
+
+            Spacer(minLength: 0)
 
             Button(action: { viewModel.onStopReading?() }) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Color.red.opacity(0.85))
-                    .frame(width: 10, height: 10)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 8, height: 8)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Stop reading")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 6)
     }
 
     /// No source yielded content. Names the read shortcut and how to select
@@ -609,13 +667,14 @@ struct HUDContentView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.white.opacity(0.15)))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 7)
     }
 
     // MARK: - In-app message tooltip
@@ -794,6 +853,26 @@ struct BreathingPillOverlay: View {
 }
 
 // MARK: - Conversation-call waveform states
+
+/// One side of the duet at rest: five small dots in the bar
+/// geometry, present but still — this voice is not moving right now.
+struct IdleWaveDots: View {
+
+    var color: Color
+
+    private let dotCount = 5
+    private let dotWidth: CGFloat = 3
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(0..<dotCount, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: dotWidth / 2)
+                    .fill(color.opacity(0.4))
+                    .frame(width: dotWidth, height: 3)
+            }
+        }
+    }
+}
 
 /// The waveform at rest while the agent works: five dim dots in the
 /// bar geometry, with a soft ripple drifting through them.

@@ -40,6 +40,10 @@ final class HUDViewModel: ObservableObject {
     /// and before the first sent turn.
     @Published private(set) var callAgentDescription: String?
 
+    /// Whether the one-time first-call callout is showing above the
+    /// pill: pause to send, say "end the call" to finish.
+    @Published private(set) var showsCallIntro: Bool = false
+
     /// An in-app message to display above the pill, or nil when hidden.
     @Published private(set) var inAppMessage: InAppMessage?
 
@@ -74,6 +78,10 @@ final class HUDViewModel: ObservableObject {
     /// Called when the user taps ■ to send the listening call turn
     /// immediately instead of waiting out the pause.
     var onSendCallTurn: (() -> Void)?
+
+    /// Called when the user taps ■ while a reply is being spoken:
+    /// stop the narration and open the mic, like Right Option.
+    var onInterruptCallSpeech: (() -> Void)?
 
     /// Called when the no-agent guidance auto-dismisses or the user
     /// dismisses it.
@@ -129,6 +137,7 @@ final class HUDViewModel: ObservableObject {
     private var callState: ConversationCallState = .idle
     private var callObservationTask: Task<Void, Never>?
     private var callGuidanceTask: Task<Void, Never>?
+    private var callIntroTask: Task<Void, Never>?
 
     // MARK: - Audio level
 
@@ -390,6 +399,22 @@ final class HUDViewModel: ObservableObject {
 
     private func handleCallState(_ state: ConversationCallState) {
         callState = state
+        // The first call ever teaches its two non-obvious rules once.
+        if state == .listening, !Settings.shared.hasShownConversationIntro {
+            Settings.shared.hasShownConversationIntro = true
+            showsCallIntro = true
+            callIntroTask?.cancel()
+            callIntroTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.showsCallIntro = false
+            }
+        }
+        if state == .idle || state == .noAgent {
+            showsCallIntro = false
+            callIntroTask?.cancel()
+            callIntroTask = nil
+        }
         if state != .noAgent {
             callGuidanceTask?.cancel()
             callGuidanceTask = nil
@@ -498,7 +523,11 @@ final class HUDViewModel: ObservableObject {
 
     /// Recompute `visualState` from all inputs.
     private func recalculate() {
-        visualState = deriveVisualState()
+        let derived = deriveVisualState()
+        if derived != visualState {
+            Log.debug("[HUD] visual: \(visualState) → \(derived)")
+        }
+        visualState = derived
     }
 
     private func deriveVisualState() -> HUDVisualState {

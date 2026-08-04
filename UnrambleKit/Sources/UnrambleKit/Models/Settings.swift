@@ -36,6 +36,7 @@ public final class Settings: @unchecked Sendable {
         case readAloudShortcutBinding = "readAloudShortcutBinding"
         case conversationCallShortcutBinding = "conversationCallShortcutBinding"
         case interimNarrationEnabled = "interimNarrationEnabled"
+        case hasShownConversationIntro = "hasShownConversationIntro"
     }
 
     // MARK: - Init
@@ -343,6 +344,18 @@ public final class Settings: @unchecked Sendable {
         set {
             defaults.set(
                 newValue, forKey: Key.interimNarrationEnabled.rawValue)
+        }
+    }
+
+    /// Whether the one-time first-call callout — pause to send, say
+    /// "end the call" to finish — has already been shown.
+    public var hasShownConversationIntro: Bool {
+        get {
+            defaults.bool(forKey: Key.hasShownConversationIntro.rawValue)
+        }
+        set {
+            defaults.set(
+                newValue, forKey: Key.hasShownConversationIntro.rawValue)
         }
     }
 

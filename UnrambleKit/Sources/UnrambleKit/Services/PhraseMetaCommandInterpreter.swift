@@ -9,10 +9,20 @@ import Foundation
 /// because transcription and polish add all three.
 public struct PhraseMetaCommandInterpreter: MetaCommandInterpreting {
 
+    /// "End the conversation" is the promoted phrase — it matches the
+    /// visual language. Natural variants ("this", "let's …") and the
+    /// call-metaphor forms stay as unadvertised aliases so
+    /// recognition is forgiving. The normalizer strips punctuation,
+    /// so "let's" matches as "lets".
     private static let phrases: [String: CallMetaCommand] = [
+        "end the conversation": .hangUp,
+        "end this conversation": .hangUp,
+        "end conversation": .hangUp,
+        "lets end the conversation": .hangUp,
+        "lets end this conversation": .hangUp,
+        "end the call": .hangUp,
         "hang up": .hangUp,
         "hang up the call": .hangUp,
-        "end the call": .hangUp,
     ]
 
     public init() {}

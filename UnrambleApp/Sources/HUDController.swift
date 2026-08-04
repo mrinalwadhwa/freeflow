@@ -474,6 +474,13 @@ final class HUDController {
         Task { await conversationCallCoordinator.sendNow() }
     }
 
+    /// Stop the spoken reply and open the mic — the mouse twin of
+    /// the Right Option barge-in.
+    private func interruptCallSpeech() {
+        guard let conversationCallCoordinator else { return }
+        Task { await conversationCallCoordinator.bargeIn() }
+    }
+
     /// Dismiss the no-agent guidance. Called from ✕, Escape, and the
     /// view model's auto-dismiss timer.
     private func dismissCallGuidance() {
@@ -529,6 +536,9 @@ final class HUDController {
         }
         viewModel.onSendCallTurn = { [weak self] in
             self?.sendCallTurn()
+        }
+        viewModel.onInterruptCallSpeech = { [weak self] in
+            self?.interruptCallSpeech()
         }
         viewModel.onDismissCallGuidance = { [weak self] in
             self?.dismissCallGuidance()
