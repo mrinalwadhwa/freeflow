@@ -797,6 +797,7 @@ private final class ScriptedRecognizer: LocalStreamingRecognizer,
     private var _sessionCreationCount = 0
     private var _fedSampleCounts: [Int] = []
     private var _fedSamples: [[Float]] = []
+    private var _transcriptCallCount = 0
 
     init(
         transcription: String = "hello world",
@@ -832,6 +833,7 @@ private final class ScriptedRecognizer: LocalStreamingRecognizer,
     var sessionCreationCount: Int { lock.withLock { _sessionCreationCount } }
     var fedSampleCounts: [Int] { lock.withLock { _fedSampleCounts } }
     var fedSamples: [[Float]] { lock.withLock { _fedSamples } }
+    var transcriptCallCount: Int { lock.withLock { _transcriptCallCount } }
 
     func load() async throws {
         lock.withLock {
@@ -860,7 +862,10 @@ private final class ScriptedRecognizer: LocalStreamingRecognizer,
     }
 
     fileprivate func currentTranscript(successfulFeeds: Int) -> String {
-        lock.withLock { transcriptLocked(successfulFeeds: successfulFeeds) }
+        lock.withLock {
+            _transcriptCallCount += 1
+            return transcriptLocked(successfulFeeds: successfulFeeds)
+        }
     }
 
     fileprivate func finish(successfulFeeds: Int) throws -> String {
@@ -1068,4 +1073,143 @@ struct LocalStreamingPreprocessingTests {
             "All fillers should be stripped but got: \(result)")
     }
 
+}
+
+// MARK: - Silence gating and evidence survival
+
+/// Records turn signals from a hub subscription for polling assertions.
+private final class TurnSignalCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signals: [TurnSignal] = []
+
+    func record(_ signal: TurnSignal) {
+        lock.withLock { signals.append(signal) }
+    }
+
+    func contains(_ signal: TurnSignal) -> Bool {
+        lock.withLock { signals.contains(signal) }
+    }
+}
+
+@Suite("LocalStreamingProvider – silence gating")
+struct LocalStreamingSilenceGatingTests {
+
+    private func makePCM(bytes: Int) -> Data {
+        Data(repeating: 0x42, count: bytes)
+    }
+
+    private func makeSilence(bytes: Int) -> Data {
+        Data(repeating: 0, count: bytes)
+    }
+
+    private func startSession(
+        _ provider: LocalStreamingProvider
+    ) async throws -> DictationSessionID {
+        let sessionID = DictationSessionID()
+        try await provider.startStreaming(
+            sessionID: sessionID,
+            context: .empty,
+            language: nil,
+            micProximity: .farField)
+        return sessionID
+    }
+
+    private func poll(
+        deadline: TimeInterval = 5,
+        until condition: () -> Bool
+    ) async throws {
+        let start = Date()
+        while !condition() {
+            try #require(
+                Date().timeIntervalSince(start) < deadline,
+                "condition not met before deadline")
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    @Test("Sustained silence is never fed to the recognizer")
+    func silenceIsNeverFed() async throws {
+        let engine = ScriptedRecognizer()
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            cycleInterval: 0.05)
+        let sessionID = try await startSession(provider)
+
+        // One second of silent 16 kHz Int16 audio in ten chunks.
+        for _ in 0..<10 {
+            try await provider.sendAudio(
+                makeSilence(bytes: 3_200), sessionID: sessionID)
+        }
+        // Two full cycles observe the pending silence without feeding it.
+        let observed = engine.transcriptCallCount
+        try await poll { engine.transcriptCallCount >= observed + 2 }
+        #expect(engine.feedCallCount == 0)
+
+        // Speech resumes: the next cycle feeds only the audible slice.
+        // The skipped silence stays skipped.
+        try await provider.sendAudio(
+            makePCM(bytes: 3_200), sessionID: sessionID)
+        try await poll { engine.feedCallCount >= 1 }
+        #expect(engine.fedSampleCounts.first == 1_600)
+
+        await provider.cancelStreaming(sessionID: sessionID)
+    }
+
+    @Test("Turn signals survive an incremental feed failure")
+    func signalsSurviveFeedFailure() async throws {
+        let engine = ScriptedRecognizer(
+            feedError: LocalModelError.transcriptionFailed("feed failed"))
+        let hub = TurnSignalHub()
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            cycleInterval: 0.05,
+            turnSignals: hub)
+        let sessionID = try await startSession(provider)
+
+        let collector = TurnSignalCollector()
+        let stream = hub.signals(for: sessionID)
+        let pump = Task {
+            for await signal in stream {
+                collector.record(signal)
+            }
+        }
+        defer { pump.cancel() }
+
+        // Half a second of speech provokes the failing feed.
+        try await provider.sendAudio(
+            makePCM(bytes: 16_000), sessionID: sessionID)
+        try await poll { engine.feedCallCount >= 1 }
+
+        // Recognition is dead, yet the detector must still close the
+        // turn: three seconds of silence produce a pause signal.
+        for _ in 0..<30 {
+            try await provider.sendAudio(
+                makeSilence(bytes: 3_200), sessionID: sessionID)
+        }
+        try await poll { collector.contains(.pause) }
+        #expect(engine.feedCallCount == 1)
+
+        await provider.cancelStreaming(sessionID: sessionID)
+    }
+
+    @Test("Finish after a feed failure surfaces the error")
+    func finishSurfacesFeedFailure() async throws {
+        let engine = ScriptedRecognizer(
+            feedError: LocalModelError.transcriptionFailed("feed failed"))
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            cycleInterval: 0.05)
+        let sessionID = try await startSession(provider)
+
+        try await provider.sendAudio(
+            makePCM(bytes: 16_000), sessionID: sessionID)
+        try await poll { engine.feedCallCount >= 1 }
+
+        await #expect(throws: LocalModelError.self) {
+            _ = try await provider.finishStreaming(sessionID: sessionID)
+        }
+    }
 }

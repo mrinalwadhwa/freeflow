@@ -85,6 +85,7 @@ ci LocalModelRuntimeTests
 ci LocalStreamingPreprocessingTests
 ci LocalStreamingProviderTests
 ci LocalStreamingSeamTests
+ci LocalStreamingSilenceGatingTests
 ci LocalUnitPolicyTests
 ci LocalUnitStreamingTests
 ci MLXLLMEngineTests

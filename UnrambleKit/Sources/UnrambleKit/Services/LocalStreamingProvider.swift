@@ -56,7 +56,10 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     private var recognitionSession: (any LocalRecognitionSession)?
 
     /// The first incremental feed failure. A feed can partially mutate model
-    /// state, so it is terminal and must never be retried on the same session.
+    /// state, so it is terminal for recognition and must never be retried on
+    /// the same session. Audio intake and the turn-pause detector keep
+    /// running: a conversation call still needs level evidence from this
+    /// session even after its content is lost.
     private var recognitionError: (any Error)?
 
     /// Identifies the current recognition session across async cycle work.
@@ -65,6 +68,12 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
 
     /// Bytes of accumulated audio already fed to the streaming session.
     private var fedBytes = 0
+
+    /// End offset of the newest accumulated chunk that rose above half the
+    /// silence threshold. A pending slice wholly past this offset is silence;
+    /// the cycle advances over it without feeding the recognizer, because a
+    /// recognizer fed sustained silence drifts into degenerate decodes.
+    private var lastAudibleByte = 0
 
     /// Detects turn-ending pauses in live audio for a conversation
     /// call observing this session.
@@ -207,11 +216,14 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 return (false, [], nil)
             }
             accumulatedAudio.append(pcmData)
+            let rms = AudioLevelAnalyzer.rmsLevel(pcm16: pcmData)
+            if rms >= silenceThreshold / 2 {
+                lastAudibleByte = accumulatedAudio.count
+            }
             guard turnSignals != nil else { return (true, [], nil) }
             turnAudioChunkCount += 1
             var probe: String?
             if turnAudioChunkCount % 40 == 0 {
-                let rms = AudioLevelAnalyzer.rmsLevel(pcm16: pcmData)
                 probe = "[TurnAudio] rms=\(rms) raw=\(rms / max(gain, 1)) "
                     + "threshold=\(silenceThreshold)"
             }
@@ -701,6 +713,9 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                             return false
                         }
                         accumulatedAudio.append(slice)
+                        // A replayed capture is deliberate content; every
+                        // slice feeds regardless of level.
+                        lastAudibleByte = accumulatedAudio.count
                         return true
                     }
                     guard appended else { throw CancellationError() }
@@ -754,6 +769,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         trailingSilenceBytes = 0
         recognitionError = nil
         fedBytes = 0
+        lastAudibleByte = 0
         turnPauseDetector.reset()
         lastSignaledTranscript = ""
         pauseHeldForClause = false
@@ -793,25 +809,37 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         guard let session, priorError == nil, isCurrent else { return }
 
         // Feed only audio that arrived since the last successful cycle.
-        let (newAudio, fedEnd) = lock.withLock { () -> (Data, Int) in
+        let (newAudio, fedEnd, hasAudibleAudio) = lock.withLock {
+            () -> (Data, Int, Bool) in
             let end = accumulatedAudio.count
             let start = min(fedBytes, end)
-            return (accumulatedAudio.subdata(in: start..<end), end)
+            return (
+                accumulatedAudio.subdata(in: start..<end),
+                end,
+                lastAudibleByte > start)
         }
         if !newAudio.isEmpty {
-            do {
-                try session.feed(Self.pcmToFloat(newAudio))
+            if hasAudibleAudio {
+                do {
+                    try session.feed(Self.pcmToFloat(newAudio))
+                    lock.withLock {
+                        if sessionGeneration == generation { fedBytes = fedEnd }
+                    }
+                } catch {
+                    lock.withLock {
+                        guard sessionGeneration == generation else { return }
+                        if recognitionError == nil { recognitionError = error }
+                    }
+                    Log.debug(
+                        "[LocalStreaming] Incremental feed failed: \(error)")
+                    return
+                }
+            } else {
+                // The slice is silence end to end. Advance past it unfed;
+                // the pause and unit accounting below still observes it.
                 lock.withLock {
                     if sessionGeneration == generation { fedBytes = fedEnd }
                 }
-            } catch {
-                lock.withLock {
-                    guard sessionGeneration == generation else { return }
-                    if recognitionError == nil { recognitionError = error }
-                    finishing = true
-                }
-                Log.debug("[LocalStreaming] Incremental feed failed: \(error)")
-                return
             }
         }
         let trimmed = session.transcript()
@@ -962,6 +990,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 let end = accumulatedAudio.count
                 accumulatedAudio = fedBytes < end
                     ? accumulatedAudio.subdata(in: fedBytes..<end) : Data()
+                lastAudibleByte = max(0, lastAudibleByte - fedBytes)
                 fedBytes = 0
                 unitStartByte = 0
                 committedTranscript = ""
