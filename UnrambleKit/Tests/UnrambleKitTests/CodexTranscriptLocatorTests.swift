@@ -278,3 +278,77 @@ struct CodexTranscriptLocatorTests {
         #expect(edge.latestResponse?.markdown == "Checking.")
     }
 }
+
+@Suite("Codex turn edge")
+struct CodexTurnEdgeTests {
+
+    private func record(_ type: String, payload: String) -> String {
+        #"{"type":"\#(type)","payload":\#(payload)}"#
+    }
+
+    private var assistantMessage: String {
+        record(
+            "response_item",
+            payload: #"{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Here is the plan."}]}"#
+        )
+    }
+
+    @Test("A task_complete edge is a finished turn")
+    func taskCompleteEndsTurn() {
+        let lines = [
+            assistantMessage,
+            record("event_msg", payload: #"{"type":"token_count","info":{}}"#),
+            record(
+                "event_msg",
+                payload: #"{"type":"task_complete","turn_id":"t1"}"#),
+        ]
+        #expect(CodexTranscriptLocator.turnEndsWithAssistantText(
+            inRolloutLines: lines))
+    }
+
+    @Test("Bookkeeping after the message does not hide the turn end")
+    func tokenCountIsSkipped() {
+        let lines = [
+            assistantMessage,
+            record("event_msg", payload: #"{"type":"token_count","info":{}}"#),
+        ]
+        #expect(CodexTranscriptLocator.turnEndsWithAssistantText(
+            inRolloutLines: lines))
+    }
+
+    @Test("A reasoning edge is a turn still in flight")
+    func reasoningEdgeIsOpen() {
+        let lines = [
+            assistantMessage,
+            record(
+                "response_item",
+                payload: #"{"type":"reasoning","summary":[]}"#),
+        ]
+        #expect(!CodexTranscriptLocator.turnEndsWithAssistantText(
+            inRolloutLines: lines))
+    }
+
+    @Test("A user message edge is a turn still in flight")
+    func userMessageEdgeIsOpen() {
+        let lines = [
+            assistantMessage,
+            record(
+                "event_msg",
+                payload: #"{"type":"user_message","message":"go on"}"#),
+        ]
+        #expect(!CodexTranscriptLocator.turnEndsWithAssistantText(
+            inRolloutLines: lines))
+    }
+
+    @Test("A final-answer agent message ends the turn")
+    func finalAnswerEndsTurn() {
+        let lines = [
+            record(
+                "event_msg",
+                payload: #"{"type":"agent_message","message":"Done.","phase":"final_answer"}"#
+            )
+        ]
+        #expect(CodexTranscriptLocator.turnEndsWithAssistantText(
+            inRolloutLines: lines))
+    }
+}

@@ -33,6 +33,7 @@ ci ClaudeCodeTranscriptLocatorTests
 ci CloudDictationLiveHarnessTests
 ci CloudReplay
 ci CodexTranscriptLocatorTests
+ci CodexTurnEdgeTests
 ci CodingAgentTranscriptSourceTests
 ci CohereRollingRecognitionSessionTests
 ci CohereTranscriptAssemblerTests

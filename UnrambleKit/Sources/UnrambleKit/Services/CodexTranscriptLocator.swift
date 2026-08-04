@@ -94,23 +94,63 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
         forProcessWorkingDirectory processWorkingDirectory: String
     ) throws -> AgentTranscriptEdge {
         let lines = TranscriptFiles.tailLines(of: file)
-        let newestRecord = lines.reversed().lazy
-            .compactMap(TranscriptFiles.jsonObject(from:))
-            .first { _ in true }
-        let endsWithAssistantText = newestRecord.map { record in
-            guard record["type"] as? String == "response_item",
-                let payload = record["payload"] as? [String: Any],
-                payload["type"] as? String == "message",
-                payload["role"] as? String == "assistant"
-            else { return false }
-            return assistantText(of: payload) != nil
-        }
         return AgentTranscriptEdge(
-            endsWithAssistantText: endsWithAssistantText ?? false,
+            endsWithAssistantText: Self.turnEndsWithAssistantText(
+                inRolloutLines: lines),
             latestResponse: latestResponse(
                 inRolloutLines: lines,
                 processWorkingDirectory: processWorkingDirectory,
                 fallbackTimestamp: TranscriptFiles.modificationDate(of: file)))
+    }
+
+    /// Whether the rollout's edge is a finished assistant turn.
+    ///
+    /// Codex trails every assistant message with bookkeeping records —
+    /// `token_count`, then an explicit `task_complete` — so the file
+    /// almost never literally ends with the message. Walk backward
+    /// past the bookkeeping: `task_complete` is the authoritative end
+    /// of a turn, an assistant message at the effective edge counts,
+    /// and anything that shows the agent mid-turn — reasoning, tool
+    /// calls, a user message — means the turn is still open.
+    static func turnEndsWithAssistantText(
+        inRolloutLines lines: [String]
+    ) -> Bool {
+        for line in lines.reversed() {
+            guard let record = TranscriptFiles.jsonObject(from: line) else {
+                continue
+            }
+            let recordType = record["type"] as? String
+            let payload = record["payload"] as? [String: Any]
+            let payloadType = payload?["type"] as? String
+            switch recordType {
+            case "event_msg":
+                switch payloadType {
+                case "task_complete":
+                    return true
+                case "agent_message":
+                    let phase = payload?["phase"] as? String
+                    return phase == nil || phase == "final_answer"
+                case "token_count":
+                    continue
+                default:
+                    return false
+                }
+            case "response_item":
+                if payloadType == "message",
+                    payload?["role"] as? String == "assistant",
+                    let payload,
+                    assistantText(of: payload) != nil
+                {
+                    return true
+                }
+                return false
+            case "world_state", "turn_context", "session_meta":
+                continue
+            default:
+                return false
+            }
+        }
+        return false
     }
 
     private func latestResponse(
@@ -124,7 +164,7 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
                 let payload = record["payload"] as? [String: Any],
                 payload["type"] as? String == "message",
                 payload["role"] as? String == "assistant",
-                let text = assistantText(of: payload),
+                let text = Self.assistantText(of: payload),
                 !text.isEmpty
             else { continue }
 
@@ -140,7 +180,7 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
         return nil
     }
 
-    private func assistantText(of payload: [String: Any]) -> String? {
+    private static func assistantText(of payload: [String: Any]) -> String? {
         guard let content = payload["content"] as? [[String: Any]] else {
             return nil
         }
