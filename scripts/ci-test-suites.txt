@@ -1,6 +1,7 @@
 ci AUHALAudioCaptureProviderTests
 ci AgentProcessFinderTests
 ci AgentSessionResolverTests
+ci AgentTextSpeechShapingTests
 ci ApplySoftwareGainTests
 ci AsyncSerialOperationQueueTests
 ci AsyncSingleFlightTests
@@ -32,6 +33,7 @@ ci CarbonHotkeyProviderTests
 ci ClaudeCodeTranscriptLocatorTests
 ci CloudDictationLiveHarnessTests
 ci CloudReplay
+ci CodexAnchoredLookupTests
 ci CodexTranscriptLocatorTests
 ci CodexTurnEdgeTests
 ci CodingAgentTranscriptSourceTests

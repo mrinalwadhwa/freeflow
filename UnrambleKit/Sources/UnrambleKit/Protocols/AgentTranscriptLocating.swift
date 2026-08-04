@@ -27,9 +27,32 @@ public protocol AgentTranscriptLocating: Sendable {
         forProcessWorkingDirectory processWorkingDirectory: String
     ) throws -> URL?
 
+    /// Return the session transcript file that contains the anchor
+    /// text — the turn the call just injected. Several sessions can
+    /// share one working directory; only the conversation that
+    /// received the turn is the one to watch. Nil until the anchor
+    /// has landed in a transcript.
+    func sessionFile(
+        forProcessWorkingDirectory processWorkingDirectory: String,
+        containing anchor: String
+    ) throws -> URL?
+
     /// Parse the live edge of one session transcript file.
     func transcriptEdge(
         of file: URL,
         forProcessWorkingDirectory processWorkingDirectory: String
     ) throws -> AgentTranscriptEdge
+}
+
+extension AgentTranscriptLocating {
+
+    /// Locators without anchored lookup fall back to the newest
+    /// matching session.
+    public func sessionFile(
+        forProcessWorkingDirectory processWorkingDirectory: String,
+        containing anchor: String
+    ) throws -> URL? {
+        try sessionFile(
+            forProcessWorkingDirectory: processWorkingDirectory)
+    }
 }

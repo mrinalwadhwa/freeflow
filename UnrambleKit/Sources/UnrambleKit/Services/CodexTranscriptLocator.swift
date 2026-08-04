@@ -89,6 +89,46 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
         }
     }
 
+    public func sessionFile(
+        forProcessWorkingDirectory processWorkingDirectory: String,
+        containing anchor: String
+    ) throws -> URL? {
+        let candidates = TranscriptFiles.jsonlFilesByNewestFirst(
+            underTree: sessionsDirectory,
+            limit: candidateLimit)
+        // The anchor appears JSON-escaped inside the rollout's
+        // user_message record; search for an escaped fragment long
+        // enough to be unambiguous.
+        let fragment = Self.escapedAnchorFragment(of: anchor)
+        guard !fragment.isEmpty else {
+            return try sessionFile(
+                forProcessWorkingDirectory: processWorkingDirectory)
+        }
+        for file in candidates {
+            guard !Task.isCancelled else { return nil }
+            guard
+                sessionMatches(
+                    file: file,
+                    processWorkingDirectory: processWorkingDirectory)
+            else { continue }
+            let tail = TranscriptFiles.tailLines(of: file)
+            if tail.contains(where: { $0.contains(fragment) }) {
+                return file
+            }
+        }
+        return nil
+    }
+
+    /// The anchor as it appears inside a JSONL record: JSON-escaped,
+    /// truncated to a distinctive prefix.
+    static func escapedAnchorFragment(of anchor: String) -> String {
+        let escaped = anchor
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return String(escaped.prefix(60))
+    }
+
     public func transcriptEdge(
         of file: URL,
         forProcessWorkingDirectory processWorkingDirectory: String

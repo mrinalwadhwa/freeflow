@@ -92,6 +92,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
             defer { continuation.finish() }
             await Self.runWatch(
                 session: session,
+                anchor: anchor,
                 locator: locator,
                 quiescenceWindow: quiescenceWindow,
                 extendedWindow: extendedWindow,
@@ -120,6 +121,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
 
     private static func runWatch(
         session: ResolvedAgentSession,
+        anchor: String,
         locator: any AgentTranscriptLocating,
         quiescenceWindow: TimeInterval,
         extendedWindow: TimeInterval,
@@ -141,9 +143,14 @@ public actor TranscriptResponseWatcher: ResponseWatching {
 
         while !Task.isCancelled {
             if sessionFile == nil {
+                // Only the conversation that received the injected
+                // turn is the one to watch: several sessions can
+                // share a working directory, and the newest is often
+                // a different, busier thread.
                 sessionFile =
                     (try? locator.sessionFile(
-                        forProcessWorkingDirectory: session.workingDirectory))
+                        forProcessWorkingDirectory: session.workingDirectory,
+                        containing: anchor))
                     ?? nil
                 if let found = sessionFile {
                     Log.debug(

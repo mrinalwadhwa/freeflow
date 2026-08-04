@@ -353,3 +353,67 @@ struct CodexTurnEdgeTests {
             inRolloutLines: lines))
     }
 }
+
+@Suite("Codex anchored session lookup")
+struct CodexAnchoredLookupTests {
+
+    private let workingDirectory = "/Users/dev/project"
+
+    @Test("The anchored lookup picks the thread that received the turn")
+    func anchoredLookupPicksReceivingThread() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        let anchor = "Tell me more about the \"flow\" visualization."
+        let receiving = try fixture.writeJSONL(
+            at: "2026/08/04/rollout-older.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: workingDirectory),
+                [
+                    "type": "event_msg",
+                    "payload": [
+                        "type": "user_message",
+                        "message": anchor,
+                    ] as [String: Any],
+                ],
+            ],
+            modifiedAt: Date(timeIntervalSinceNow: -300))
+        _ = try fixture.writeJSONL(
+            at: "2026/08/04/rollout-busier.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: workingDirectory),
+                TranscriptFixture.codexAssistant(text: "Unrelated work."),
+            ])
+
+        let locator = CodexTranscriptLocator(sessionsDirectory: fixture.root)
+        let resolved = try locator.sessionFile(
+            forProcessWorkingDirectory: workingDirectory,
+            containing: anchor)
+        #expect(
+            resolved?.resolvingSymlinksInPath()
+                == receiving.resolvingSymlinksInPath())
+    }
+
+    @Test("No thread contains the anchor yet")
+    func anchorNotLandedYieldsNil() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        _ = try fixture.writeJSONL(
+            at: "2026/08/04/rollout-a.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: workingDirectory)
+            ])
+
+        let locator = CodexTranscriptLocator(sessionsDirectory: fixture.root)
+        let resolved = try locator.sessionFile(
+            forProcessWorkingDirectory: workingDirectory,
+            containing: "This turn has not landed anywhere.")
+        #expect(resolved == nil)
+    }
+
+    @Test("The escaped fragment matches JSONL encoding")
+    func escapedFragmentMatchesJSONL() {
+        let fragment = CodexTranscriptLocator.escapedAnchorFragment(
+            of: #"Say "hi" now"#)
+        #expect(fragment == #"Say \"hi\" now"#)
+    }
+}
