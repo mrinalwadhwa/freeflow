@@ -87,6 +87,25 @@ final class CurrentPipelineProxy: PipelineProviding, @unchecked Sendable {
     var currentSessionID: DictationSessionID? {
         get async { await current()?.currentSessionID }
     }
+
+    // Requirements with protocol defaults still need explicit
+    // forwarding: an unforwarded call lands in the silent default and
+    // the capability quietly vanishes behind the proxy.
+
+    func recentCapturedAudio(
+        sessionID: DictationSessionID,
+        seconds: TimeInterval
+    ) async -> Data? {
+        await current()?.recentCapturedAudio(
+            sessionID: sessionID, seconds: seconds)
+    }
+
+    func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async {
+        await current()?.seedCapturedAudio(pcmData, sessionID: sessionID)
+    }
 }
 
 /// The call's cues reuse the short dictation sounds; longer sounds
