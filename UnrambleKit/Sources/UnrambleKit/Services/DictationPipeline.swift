@@ -1009,9 +1009,17 @@ public actor DictationPipeline: PipelineProviding {
         sessionID: DictationSessionID
     ) async {
         guard activeSession?.id == sessionID else { return }
+        seededTranscriptSessionID = sessionID
         await backend.streamingProvider.seedTranscript(
             text, sessionID: sessionID)
     }
+
+    /// The one session holding a seeded transcript prefix. Its
+    /// completion must reach the provider even when the live audio
+    /// stayed silent: the early-silence short-circuit would discard
+    /// the carried words with the empty capture. Session IDs are
+    /// never reused, so a stale value is inert.
+    private var seededTranscriptSessionID: DictationSessionID?
 
     @discardableResult
     public func activate() async -> DictationSessionID? {
@@ -1783,7 +1791,8 @@ public actor DictationPipeline: PipelineProviding {
         // so rapid hotkey taps don't silently discard speech.
         if let earlyMetrics = audioProvider.metrics(owner: captureOwner),
             earlyMetrics.peakRMS > 0,
-            earlyMetrics.peakRMS <= earlyThreshold
+            earlyMetrics.peakRMS <= earlyThreshold,
+            seededTranscriptSessionID != session.id
         {
             let setupTask = audioSetupTask
             setupTask?.cancel()
