@@ -47,6 +47,30 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
     }
     private var _cancelledSessionIDs: [DictationSessionID] = []
 
+    /// What `recentCapturedAudio` returns; nil simulates a backend
+    /// that retains no capture.
+    public var recentCapturedAudioStub: Data? {
+        get { lock.withLock { _recentCapturedAudioStub } }
+        set { lock.withLock { _recentCapturedAudioStub = newValue } }
+    }
+    private var _recentCapturedAudioStub: Data?
+
+    /// Each `recentCapturedAudio` request, in order.
+    public var recentCapturedAudioRequests:
+        [(sessionID: DictationSessionID, seconds: TimeInterval)]
+    {
+        lock.withLock { _recentCapturedAudioRequests }
+    }
+    private var _recentCapturedAudioRequests:
+        [(sessionID: DictationSessionID, seconds: TimeInterval)] = []
+
+    /// Each `seedCapturedAudio` call, in order.
+    public var seededAudio: [(pcmData: Data, sessionID: DictationSessionID)] {
+        lock.withLock { _seededAudio }
+    }
+    private var _seededAudio: [(pcmData: Data, sessionID: DictationSessionID)] =
+        []
+
     private var _state: RecordingState = .idle
     private var _currentSessionID: DictationSessionID?
 
@@ -118,6 +142,25 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
                 _state = .idle
                 _currentSessionID = nil
             }
+        }
+    }
+
+    public func recentCapturedAudio(
+        sessionID: DictationSessionID,
+        seconds: TimeInterval
+    ) async -> Data? {
+        lock.withLock {
+            _recentCapturedAudioRequests.append((sessionID, seconds))
+            return _recentCapturedAudioStub
+        }
+    }
+
+    public func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async {
+        lock.withLock {
+            _seededAudio.append((pcmData, sessionID))
         }
     }
 }

@@ -989,6 +989,24 @@ public actor DictationPipeline: PipelineProviding {
         activeSession?.id
     }
 
+    public func recentCapturedAudio(
+        sessionID: DictationSessionID,
+        seconds: TimeInterval
+    ) async -> Data? {
+        guard activeSession?.id == sessionID else { return nil }
+        return await backend.streamingProvider.capturedAudioTail(
+            seconds: seconds, sessionID: sessionID)
+    }
+
+    public func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async {
+        guard activeSession?.id == sessionID else { return }
+        await backend.streamingProvider.seedCapturedAudio(
+            pcmData, sessionID: sessionID)
+    }
+
     @discardableResult
     public func activate() async -> DictationSessionID? {
         await activateOwned(releaseBoundary: nil, playsCaptureCues: true)

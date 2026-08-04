@@ -57,6 +57,23 @@ public protocol PipelineProviding: Sendable {
 
     /// Session that currently owns capture, processing, and publication.
     var currentSessionID: DictationSessionID? { get async }
+
+    /// Snapshot the newest seconds of a live session's captured audio.
+    /// A conversation call slices a barging sentence out of a doomed
+    /// watch session with this. Nil when the session is gone or the
+    /// backend does not retain capture.
+    func recentCapturedAudio(
+        sessionID: DictationSessionID,
+        seconds: TimeInterval
+    ) async -> Data?
+
+    /// Carry previously captured audio into a live session as its
+    /// opening content. Backends that cannot accept carried capture
+    /// ignore it.
+    func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async
 }
 
 extension PipelineProviding {
@@ -79,4 +96,16 @@ extension PipelineProviding {
     ) async {
         await complete(sessionID: sessionID)
     }
+
+    public func recentCapturedAudio(
+        sessionID: DictationSessionID,
+        seconds: TimeInterval
+    ) async -> Data? {
+        nil
+    }
+
+    public func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async {}
 }

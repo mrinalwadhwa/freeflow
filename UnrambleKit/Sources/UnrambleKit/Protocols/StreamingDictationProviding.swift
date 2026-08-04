@@ -80,6 +80,23 @@ public protocol StreamingDictationProviding: Sendable {
     /// Abort the identified session without affecting a newer active session.
     /// Stale IDs are rejected as no-ops.
     func cancelStreaming(sessionID: DictationSessionID) async
+
+    /// Snapshot the newest seconds of the session's captured audio without
+    /// disturbing the session. A conversation call slices a barging
+    /// sentence out of a doomed watch session with this. Providers that do
+    /// not retain capture return nil.
+    func capturedAudioTail(
+        seconds: TimeInterval,
+        sessionID: DictationSessionID
+    ) async -> Data?
+
+    /// Carry previously captured PCM into a just-started session as its
+    /// opening content, ahead of live audio. Providers that cannot accept
+    /// carried capture ignore it.
+    func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async
 }
 
 /// Reprocess an exact retained local capture through the same bounded unit
@@ -109,4 +126,16 @@ extension StreamingDictationProviding {
     public var maximumFinishStreamingWatchdog: TimeInterval {
         finishStreamingWatchdog
     }
+
+    public func capturedAudioTail(
+        seconds: TimeInterval,
+        sessionID: DictationSessionID
+    ) async -> Data? {
+        nil
+    }
+
+    public func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async {}
 }

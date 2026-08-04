@@ -664,6 +664,41 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
 
     /// Replay a retained production capture through the same cycle and unit
     /// machinery as live local dictation, without a wall-clock timer.
+    /// Snapshot the newest seconds of the session's accumulated capture.
+    /// The slice is a copy; the session keeps accumulating untouched.
+    public func capturedAudioTail(
+        seconds: TimeInterval,
+        sessionID: DictationSessionID
+    ) async -> Data? {
+        lock.withLock {
+            guard activeSessionID == sessionID else { return nil }
+            let bytesPerSecond = LocalUnitPolicy.sourceBytesPerSecond
+            var tailBytes = Int(seconds * Double(bytesPerSecond))
+            tailBytes -= tailBytes % MemoryLayout<Int16>.size
+            let end = accumulatedAudio.count
+            let start = max(0, end - tailBytes)
+            guard start < end else { return nil }
+            return accumulatedAudio.subdata(in: start..<end)
+        }
+    }
+
+    /// Carry previously captured PCM into this session as opening
+    /// content. The seed counts as audible so the next cycle feeds it;
+    /// the turn-pause detector never sees it — live audio alone drives
+    /// the endpoint.
+    public func seedCapturedAudio(
+        _ pcmData: Data,
+        sessionID: DictationSessionID
+    ) async {
+        guard !pcmData.isEmpty else { return }
+        lock.withLock {
+            guard activeSessionID == sessionID, !finishing, !cancelling
+            else { return }
+            accumulatedAudio.append(pcmData)
+            lastAudibleByte = accumulatedAudio.count
+        }
+    }
+
     public func replayCapturedAudio(
         _ pcmData: Data,
         sessionID: DictationSessionID,

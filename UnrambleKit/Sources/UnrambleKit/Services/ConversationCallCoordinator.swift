@@ -78,9 +78,11 @@ public actor ConversationCallCoordinator {
     private enum NarrationOutcome {
         /// The voice ran out, was stopped by a button, or was barged
         /// by the user's voice — whose whole sentence was absorbed
-        /// into the discarded session, so the user is silent when
-        /// this resolves.
-        case finished
+        /// through its pause, so the user is silent when this
+        /// resolves. A voice barge carries the absorbed sentence's
+        /// audio here so it can open the next session instead of
+        /// dying with the watch.
+        case finished(bargedAudio: Data?)
 
         /// The call ended mid-narration.
         case ended
@@ -177,6 +179,22 @@ public actor ConversationCallCoordinator {
     /// speech — enough to barge its own narration. During the guard
     /// the buttons still barge.
     private let narrationOnsetGuardSeconds: TimeInterval
+
+    /// A barging sentence's audio, sliced from the discarded watch
+    /// session and waiting to open the next capture session. The
+    /// slice starts just before the barge's onset, where the user's
+    /// voice dominates any narration residual, so the carried audio
+    /// re-transcribes as their words on speakers as well as in-ear.
+    private var pendingBargeSeed: Data?
+
+    /// Pre-roll carried ahead of the barge's emphatic signal, which
+    /// fires a sustained run after the voice's true onset. Too little
+    /// clips the sentence opening — the original absorb-only design
+    /// existed because a clipped opening transcribes as garbage.
+    private let bargeCarryPreRollSeconds: TimeInterval = 1.5
+
+    /// Upper bound on carried barge audio.
+    private let bargeCarryMaximumSeconds: TimeInterval = 30
 
     private var state: ConversationCallState = .idle
     private var continuations:
@@ -309,6 +327,7 @@ public actor ConversationCallCoordinator {
         lastResolvedAgent = nil
         pinnedApplication = nil
         pinnedBundleID = nil
+        pendingBargeSeed = nil
         task.cancel()
         synthesizer.stopSpeaking()
         let sessionID = captureSessionID
@@ -364,6 +383,7 @@ public actor ConversationCallCoordinator {
 
     private func startCall() {
         callGeneration += 1
+        pendingBargeSeed = nil
         let generation = callGeneration
         callTask = Task { [weak self] in
             guard let self else { return }
@@ -457,6 +477,15 @@ public actor ConversationCallCoordinator {
             return .ended
         }
 
+        // A barge that resolved into relistening carries its sentence
+        // into this fresh session before capture adoption.
+        var seededStrong = false
+        if let seed = takePendingBargeSeed() {
+            await pipeline.seedCapturedAudio(seed, sessionID: sessionID)
+            Log.debug("[Call] barge audio seeded (\(seed.count) bytes)")
+            seededStrong = true
+        }
+
         // Subscribe to the session's signals before listening becomes
         // visible, so no early signal is dropped.
         let turnWait = beginTurnWait(
@@ -472,7 +501,8 @@ public actor ConversationCallCoordinator {
         }
 
         guard
-            let turnEnd = await awaitTurnEnd(turnWait),
+            let turnEnd = await awaitTurnEnd(
+                turnWait, seededStrong: seededStrong),
             generation == callGeneration, !Task.isCancelled
         else { return .ended }
         Log.debug("[Call] turn end: \(turnEnd)")
@@ -602,12 +632,18 @@ public actor ConversationCallCoordinator {
         var lastWatchEventAt = Date()
 
         /// Play one narration; the waiting session is already
-        /// discarded when this runs.
+        /// discarded when this runs. A voice barge's carried sentence
+        /// is stashed for whichever session opens next.
         func narrate(_ markdown: String) async -> NarrationOutcome {
             playedThisWatch.insert(markdown)
             cuePlayer.playReplyCue()
             let outcome = await narrateOverWatch(
                 generation: generation, markdown: markdown)
+            if case .finished(let bargedAudio) = outcome,
+                let bargedAudio
+            {
+                pendingBargeSeed = bargedAudio
+            }
             dropInterimsBefore = Date()
             return outcome
         }
@@ -623,23 +659,29 @@ public actor ConversationCallCoordinator {
             }
         }
 
+        let initialSeed = takePendingBargeSeed()
         guard
             var session = await openWaitingSession(
-                generation: generation, into: mergedContinuation)
+                generation: generation, into: mergedContinuation,
+                seeding: initialSeed)
         else { return .ended }
 
-        var sawStrongSpeech = false
+        // A carried barge sentence is voice-level evidence already
+        // heard: the user's next pause sends it without new speech.
+        var sawStrongSpeech = initialSeed != nil
         var pendingPause = false
 
         /// Reopen the microphone after a narration and reset the
         /// endpoint state for the fresh session.
         func reopen() async -> Bool {
+            let seed = takePendingBargeSeed()
             guard
                 let fresh = await openWaitingSession(
-                    generation: generation, into: mergedContinuation)
+                    generation: generation, into: mergedContinuation,
+                    seeding: seed)
             else { return false }
             session = fresh
-            sawStrongSpeech = false
+            sawStrongSpeech = seed != nil
             pendingPause = false
             return true
         }
@@ -853,7 +895,8 @@ public actor ConversationCallCoordinator {
     /// audibly here, or a hangup raced the activation.
     private func openWaitingSession(
         generation: Int,
-        into merged: AsyncStream<WatchPhaseEvent>.Continuation
+        into merged: AsyncStream<WatchPhaseEvent>.Continuation,
+        seeding seed: Data? = nil
     ) async -> WaitingSession? {
         guard let sessionID = await pipeline.activate(playsCaptureCues: false)
         else {
@@ -862,6 +905,12 @@ public actor ConversationCallCoordinator {
             }
             finishCall(generation: generation)
             return nil
+        }
+        // Seed before capture adoption so the carried sentence sits
+        // ahead of the first live audio.
+        if let seed {
+            await pipeline.seedCapturedAudio(seed, sessionID: sessionID)
+            Log.debug("[Call] barge audio seeded (\(seed.count) bytes)")
         }
         let signals = signalHub.signals(for: sessionID)
         let forwarder = Task {
@@ -900,6 +949,13 @@ public actor ConversationCallCoordinator {
             guard !Task.isCancelled else { return }
             merged.yield(.turn(.idleTimeout, session: sessionID))
         }
+    }
+
+    /// Take the carried barge sentence, if any, leaving none behind.
+    private func takePendingBargeSeed() -> Data? {
+        let seed = pendingBargeSeed
+        pendingBargeSeed = nil
+        return seed
     }
 
     /// Stop a waiting session's forwarding tasks without touching its
@@ -975,10 +1031,15 @@ public actor ConversationCallCoordinator {
     /// late-arriving transcript sends the turn, unless speech audio
     /// resumed first, which re-arms the endpoint. Returns nil when
     /// the call was hung up mid-listen.
-    private func awaitTurnEnd(_ wait: TurnWait) async -> TurnEnd? {
+    private func awaitTurnEnd(
+        _ wait: TurnWait,
+        seededStrong: Bool = false
+    ) async -> TurnEnd? {
         defer { endTurnWait(wait) }
 
-        var sawStrongSpeech = false
+        // A seeded barge sentence is speech already heard: the next
+        // pause sends it even if the user adds nothing.
+        var sawStrongSpeech = seededStrong
         var pendingPause = false
         for await event in wait.events {
             guard !Task.isCancelled else { return nil }
@@ -1069,7 +1130,7 @@ public actor ConversationCallCoordinator {
             continuation.yield(.narrationEnded)
         }
 
-        let outcome = await watchNarration(turnWait)
+        let outcome = await watchNarration(turnWait, sessionID: sessionID)
         clearCapture(generation: generation, sessionID: sessionID)
         await pipeline.cancel(sessionID: sessionID)
         guard generation == callGeneration, !Task.isCancelled
@@ -1082,16 +1143,22 @@ public actor ConversationCallCoordinator {
     /// discarded when the narration resolves.
     ///
     /// A voice barge stops the playback but does not resolve the
-    /// watch: the user's barging sentence is still in flight, and its
-    /// tail — clipped of its opening — transcribes as garbage. The
-    /// discarded session absorbs the whole sentence, through its
-    /// pause, so the barge is purely a stop signal and the fresh
-    /// session that follows opens in silence for the real message.
-    private func watchNarration(_ wait: TurnWait) async -> NarrationOutcome {
+    /// watch: the user's barging sentence is still in flight. The
+    /// watch session absorbs the whole sentence through its pause,
+    /// then its audio — sliced from just before the barge's onset —
+    /// is carried into the fresh session that follows, so the words
+    /// that stopped the voice open the user's next message instead
+    /// of vanishing. The watch session's own transcript still dies
+    /// with it: everything before the onset is narration residual.
+    private func watchNarration(
+        _ wait: TurnWait,
+        sessionID: DictationSessionID
+    ) async -> NarrationOutcome {
         defer { endTurnWait(wait) }
 
         var narrationRunning = true
         var absorbingBarge = false
+        var bargeStartedAt: Date?
         var bargeArmed = narrationOnsetGuardSeconds <= 0
         var armTask: Task<Void, Never>?
         if !bargeArmed {
@@ -1120,14 +1187,26 @@ public actor ConversationCallCoordinator {
                 Log.debug("[Call] voice barge-in over narration")
                 narrationRunning = false
                 absorbingBarge = true
+                bargeStartedAt = Date()
                 synthesizer.stopSpeaking()
             case .signal(.pause):
                 if absorbingBarge {
                     Log.debug("[Call] barge sentence absorbed")
-                    // The absorb ends in designed silence; the cue is
-                    // what tells the user the floor is now theirs.
+                    // The cue tells the user the floor is now theirs;
+                    // the absorbed words ride along as carried audio.
                     cuePlayer.playBargeCue()
-                    return .finished
+                    let carrySeconds = min(
+                        Date().timeIntervalSince(bargeStartedAt ?? Date())
+                            + bargeCarryPreRollSeconds,
+                        bargeCarryMaximumSeconds)
+                    let carried = await pipeline.recentCapturedAudio(
+                        sessionID: sessionID, seconds: carrySeconds)
+                    if let carried {
+                        Log.debug(
+                            "[Call] barge sentence carried "
+                                + "(\(carried.count) bytes)")
+                    }
+                    return .finished(bargedAudio: carried)
                 }
                 // The cancelled voice's silence means nothing.
                 continue
@@ -1146,13 +1225,13 @@ public actor ConversationCallCoordinator {
                 // Under an absorb the voice was already stopped; the
                 // user's sentence is still finishing.
                 if absorbingBarge { continue }
-                return .finished
+                return .finished(bargedAudio: nil)
             case .force:
                 // The send key during a narration stops the voice;
                 // the fresh session that follows is what can send.
                 narrationRunning = false
                 synthesizer.stopSpeaking()
-                return .finished
+                return .finished(bargedAudio: nil)
             case .idleTimeout:
                 continue
             }
