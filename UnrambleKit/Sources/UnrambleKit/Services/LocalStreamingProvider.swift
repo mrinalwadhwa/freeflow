@@ -69,11 +69,16 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     /// Bytes of accumulated audio already fed to the streaming session.
     private var fedBytes = 0
 
-    /// End offset of the newest accumulated chunk that rose above half the
-    /// silence threshold. A pending slice wholly past this offset is silence;
-    /// the cycle advances over it without feeding the recognizer, because a
+    /// End offset of the newest accumulated chunk that rose above the feed
+    /// gate. A pending slice wholly past this offset is silence; the cycle
+    /// advances over it without feeding the recognizer, because a
     /// recognizer fed sustained silence drifts into degenerate decodes.
     private var lastAudibleByte = 0
+
+    /// Absolute floor for the feed gate, post-gain. Live breath-level
+    /// noise measured 0.0005-0.0012 and hallucinated whole sentences;
+    /// real speech measured 0.009 and above on the same microphone.
+    static let minimumFeedGateRMS: Float = 0.003
 
     /// Detects turn-ending pauses in live audio for a conversation
     /// call observing this session.
@@ -217,7 +222,12 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             }
             accumulatedAudio.append(pcmData)
             let rms = AudioLevelAnalyzer.rmsLevel(pcm16: pcmData)
-            if rms >= silenceThreshold / 2 {
+            // The gate keeps an absolute floor: a silent room can
+            // calibrate the threshold near zero, and breath-level
+            // noise fed to the recognizer decodes as hallucinated
+            // sentences. Real speech sits an order of magnitude
+            // above the floor even on quiet near-field microphones.
+            if rms >= max(silenceThreshold / 2, Self.minimumFeedGateRMS) {
                 lastAudibleByte = accumulatedAudio.count
             }
             guard turnSignals != nil else { return (true, [], nil) }

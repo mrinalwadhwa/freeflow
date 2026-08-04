@@ -1275,6 +1275,39 @@ struct LocalStreamingSilenceGatingTests {
         #expect(seedRange!.lowerBound < liveRange!.lowerBound)
     }
 
+    @Test("The feed gate holds an absolute floor over a tiny threshold")
+    func feedGateHoldsAbsoluteFloor() async throws {
+        let engine = ScriptedRecognizer()
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            cycleInterval: 0.05)
+        // A silent room can calibrate the threshold near zero.
+        provider.setSilenceThreshold(0.0005)
+        let sessionID = try await startSession(provider)
+
+        // Breath-level noise: rms about 0.002, above half the tiny
+        // threshold but below the absolute floor.
+        let breath = makePCM(samples: [Int16](repeating: 66, count: 8_000))
+        for _ in 0..<4 {
+            try await provider.sendAudio(breath, sessionID: sessionID)
+        }
+        let observed = engine.transcriptCallCount
+        try await poll { engine.transcriptCallCount >= observed + 2 }
+        #expect(engine.feedCallCount == 0)
+
+        // Real speech clears the floor and feeds.
+        try await provider.sendAudio(
+            makePCM(bytes: 3_200), sessionID: sessionID)
+        try await poll { engine.feedCallCount >= 1 }
+
+        await provider.cancelStreaming(sessionID: sessionID)
+    }
+
+    private func makePCM(samples: [Int16]) -> Data {
+        samples.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+
     @Test("A seed for a stale session is ignored")
     func staleSeedIsIgnored() async throws {
         let engine = ScriptedRecognizer()

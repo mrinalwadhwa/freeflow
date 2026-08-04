@@ -1009,17 +1009,21 @@ public actor DictationPipeline: PipelineProviding {
         sessionID: DictationSessionID
     ) async {
         guard activeSession?.id == sessionID else { return }
-        seededTranscriptSessionID = sessionID
-        await backend.streamingProvider.seedTranscript(
-            text, sessionID: sessionID)
+        // Hold the seed here; the provider session may still be
+        // starting, and its start wipes committed state. It is
+        // applied at completion, when the session is fully alive.
+        pendingTranscriptSeed = (text, sessionID)
     }
 
-    /// The one session holding a seeded transcript prefix. Its
-    /// completion must reach the provider even when the live audio
-    /// stayed silent: the early-silence short-circuit would discard
-    /// the carried words with the empty capture. Session IDs are
-    /// never reused, so a stale value is inert.
-    private var seededTranscriptSessionID: DictationSessionID?
+    /// A carried transcript waiting to open its session's result.
+    /// Held at the pipeline because seeding races provider session
+    /// startup; applied just before the finish. Its completion must
+    /// also reach the provider even when the live audio stayed
+    /// silent — the early-silence short-circuit would discard the
+    /// carried words with the empty capture. Session IDs are never
+    /// reused, so a stale value is inert.
+    private var pendingTranscriptSeed:
+        (text: String, sessionID: DictationSessionID)?
 
     @discardableResult
     public func activate() async -> DictationSessionID? {
@@ -1792,7 +1796,7 @@ public actor DictationPipeline: PipelineProviding {
         if let earlyMetrics = audioProvider.metrics(owner: captureOwner),
             earlyMetrics.peakRMS > 0,
             earlyMetrics.peakRMS <= earlyThreshold,
-            seededTranscriptSessionID != session.id
+            pendingTranscriptSeed?.sessionID != session.id
         {
             let setupTask = audioSetupTask
             setupTask?.cancel()
@@ -2894,6 +2898,11 @@ public actor DictationPipeline: PipelineProviding {
         }
 
         Log.debug("[Pipeline] finishing streaming session (local)")
+        if let seed = pendingTranscriptSeed, seed.sessionID == sessionID {
+            pendingTranscriptSeed = nil
+            await streaming.seedTranscript(seed.text, sessionID: sessionID)
+            Log.debug("[Pipeline] carried transcript applied at finish")
+        }
         do {
             let text = try await streaming.finishStreaming(sessionID: sessionID)
             guard ownsSession(sessionID) else { return nil }
