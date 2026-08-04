@@ -71,10 +71,16 @@ public actor TranscriptResponseWatcher: ResponseWatching {
             // No locator understands this agent, so completion can
             // never be observed; resolve as tool-only rather than
             // leaving the call waiting forever.
+            Log.debug(
+                "[Watch] no locator for agent \(session.agentName); "
+                    + "resolving tool-only")
             continuation.yield(.toolOnly)
             continuation.finish()
             return stream
         }
+        Log.debug(
+            "[Watch] armed on \(session.agentName) via "
+                + "\(type(of: locator))")
 
         let quiescenceWindow = quiescenceWindow
         let extendedWindow = extendedWindow
@@ -139,6 +145,10 @@ public actor TranscriptResponseWatcher: ResponseWatching {
                     (try? locator.sessionFile(
                         forProcessWorkingDirectory: session.workingDirectory))
                     ?? nil
+                if let found = sessionFile {
+                    Log.debug(
+                        "[Watch] transcript file: \(found.lastPathComponent)")
+                }
             }
             let fingerprint = sessionFile.flatMap(Self.fingerprint(of:))
             if fingerprint != lastFingerprint {
@@ -180,6 +190,9 @@ public actor TranscriptResponseWatcher: ResponseWatching {
                     Self.isMostlyProse(response.markdown)
                 {
                     narrated.insert(response.markdown)
+                    Log.debug(
+                        "[Watch] interim response "
+                            + "(\(response.markdown.count) chars)")
                     continuation.yield(
                         .interimMessage(markdown: response.markdown))
                 }
@@ -195,22 +208,35 @@ public actor TranscriptResponseWatcher: ResponseWatching {
                 // cannot change its edge, and any change resets
                 // stillness anyway.
                 parsedFingerprint = fingerprint
-                if let edge = try? locator.transcriptEdge(
+                let edge = try? locator.transcriptEdge(
                     of: stillFile,
-                    forProcessWorkingDirectory: session.workingDirectory),
+                    forProcessWorkingDirectory: session.workingDirectory)
+                if let edge,
                     edge.endsWithAssistantText,
                     let response = edge.latestResponse,
                     response.timestamp > armDate
                 {
                     if narrated.contains(response.markdown) {
+                        Log.debug(
+                            "[Watch] completed after narration "
+                                + "(\(response.markdown.count) chars)")
                         continuation.yield(
                             .completed(markdown: response.markdown))
                     } else {
+                        Log.debug(
+                            "[Watch] final response "
+                                + "(\(response.markdown.count) chars)")
                         continuation.yield(
                             .response(markdown: response.markdown))
                     }
                     return
                 }
+                Log.debug(
+                    "[Watch] still edge unresolved: edge="
+                        + "\(edge != nil) assistantText="
+                        + "\(edge?.endsWithAssistantText == true) "
+                        + "fresh=\((edge?.latestResponse?.timestamp).map { $0 > armDate } ?? false)"
+                )
                 // Nothing fresh at this edge: drop the cached file so
                 // the next poll re-resolves. A newer session file —
                 // created after the watch armed — then takes over
@@ -218,6 +244,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
                 sessionFile = nil
             }
             if still >= extendedWindow {
+                Log.debug("[Watch] extended window expired; tool-only")
                 continuation.yield(.toolOnly)
                 return
             }

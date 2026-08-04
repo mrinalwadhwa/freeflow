@@ -1291,9 +1291,9 @@ struct LocalStreamingSilenceGatingTests {
         provider.setSilenceThreshold(0.0005)
         let sessionID = try await startSession(provider)
 
-        // Breath-level noise: rms about 0.002, above half the tiny
-        // threshold but below the absolute floor.
-        let breath = makePCM(samples: [Int16](repeating: 66, count: 8_000))
+        // Breath-level noise: raw rms about 0.0015, above half the
+        // tiny threshold but below the raw floor.
+        let breath = makePCM(samples: [Int16](repeating: 50, count: 8_000))
         for _ in 0..<4 {
             try await provider.sendAudio(breath, sessionID: sessionID)
         }
@@ -1304,6 +1304,34 @@ struct LocalStreamingSilenceGatingTests {
         // Real speech clears the floor and feeds.
         try await provider.sendAudio(
             makePCM(bytes: 3_200), sessionID: sessionID)
+        try await poll { engine.feedCallCount >= 1 }
+
+        await provider.cancelStreaming(sessionID: sessionID)
+    }
+
+    @Test("Gained room ambience stays under the raw feed floor")
+    func gainedAmbienceStaysUnderRawFloor() async throws {
+        let engine = ScriptedRecognizer()
+        let provider = LocalStreamingProvider(
+            sttEngine: engine,
+            polishChatClient: nil,
+            cycleInterval: 0.05,
+            captureGain: { 16 })
+        let sessionID = try await startSession(provider)
+
+        // Far-field ambience at raw 0.001 arrives post-gain around
+        // 0.016 — over any post-gain threshold, under the raw floor.
+        let ambience = makePCM(samples: [Int16](repeating: 524, count: 8_000))
+        for _ in 0..<4 {
+            try await provider.sendAudio(ambience, sessionID: sessionID)
+        }
+        let observed = engine.transcriptCallCount
+        try await poll { engine.transcriptCallCount >= observed + 2 }
+        #expect(engine.feedCallCount == 0)
+
+        // Far-field speech at raw 0.005 (post-gain 0.08) feeds.
+        let speech = makePCM(samples: [Int16](repeating: 2_621, count: 8_000))
+        try await provider.sendAudio(speech, sessionID: sessionID)
         try await poll { engine.feedCallCount >= 1 }
 
         await provider.cancelStreaming(sessionID: sessionID)

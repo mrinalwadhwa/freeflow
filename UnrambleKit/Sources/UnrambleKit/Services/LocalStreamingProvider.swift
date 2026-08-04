@@ -75,10 +75,12 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     /// recognizer fed sustained silence drifts into degenerate decodes.
     private var lastAudibleByte = 0
 
-    /// Absolute floor for the feed gate, post-gain. Live breath-level
-    /// noise measured 0.0005-0.0012 and hallucinated whole sentences;
-    /// real speech measured 0.009 and above on the same microphone.
-    static let minimumFeedGateRMS: Float = 0.003
+    /// Absolute floor for the feed gate, judged raw (gain divided
+    /// out). Live breath-level noise on a near-field microphone
+    /// measured 0.0005-0.0012 raw and hallucinated whole sentences;
+    /// gained far-field room ambience measured about 0.001 raw; real
+    /// speech measured 0.005 raw and above on every microphone.
+    static let minimumFeedGateRawRMS: Float = 0.002
 
     /// Detects turn-ending pauses in live audio for a conversation
     /// call observing this session.
@@ -228,12 +230,16 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             }
             accumulatedAudio.append(pcmData)
             let rms = AudioLevelAnalyzer.rmsLevel(pcm16: pcmData)
-            // The gate keeps an absolute floor: a silent room can
-            // calibrate the threshold near zero, and breath-level
-            // noise fed to the recognizer decodes as hallucinated
-            // sentences. Real speech sits an order of magnitude
-            // above the floor even on quiet near-field microphones.
-            if rms >= max(silenceThreshold / 2, Self.minimumFeedGateRMS) {
+            // The gate keeps an absolute floor JUDGED RAW, with the
+            // software gain divided out: a silent room calibrates the
+            // threshold near zero, and a gained far-field microphone
+            // lifts room ambience over any post-gain floor — both fed
+            // the recognizer noise that decoded as hallucinated
+            // sentences. Real speech clears the raw floor on every
+            // microphone measured; gained ambience does not.
+            if rms >= silenceThreshold / 2,
+                rms / max(gain, 1) >= Self.minimumFeedGateRawRMS
+            {
                 lastAudibleByte = accumulatedAudio.count
             }
             guard turnSignals != nil else { return (true, [], nil) }
