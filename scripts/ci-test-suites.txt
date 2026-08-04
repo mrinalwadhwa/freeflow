@@ -119,6 +119,7 @@ ci OpenAIRealtimeTransportTests
 ci OpenAISpeechSynthesizerTests
 ci PCMConverterLifecycleTests
 ci PhraseMetaCommandInterpreterTests
+ci PinnedFocusInjectorTests
 ci PipelineDeadlineTests
 ci PipelineDictationTests
 ci PipelineIntegrationTests

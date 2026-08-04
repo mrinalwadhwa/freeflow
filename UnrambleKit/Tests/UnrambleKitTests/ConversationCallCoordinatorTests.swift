@@ -22,6 +22,7 @@ struct ConversationCallCoordinatorTests {
     private struct Harness {
         let coordinator: ConversationCallCoordinator
         let resolver: StubAgentSessionResolver
+        let contextProvider: MockAppContextProvider
         let pipeline: MockPipelineProvider
         let hub: TurnSignalHub
         let observer: MockInjectionObserver
@@ -48,6 +49,14 @@ struct ConversationCallCoordinatorTests {
             ttyDevice: 5)
     }
 
+    private func context(pid: Int32?) -> AppContext {
+        AppContext(
+            bundleID: "com.googlecode.iterm2",
+            appName: "iTerm2",
+            windowTitle: "claude",
+            processIdentifier: pid)
+    }
+
     private func makeHarness(
         session: ResolvedAgentSession?,
         injectedText: String? = "Fix the failing resampler test.",
@@ -56,6 +65,7 @@ struct ConversationCallCoordinatorTests {
         readSessionStops: ReadSessionStopCounter = ReadSessionStopCounter()
     ) -> Harness {
         let resolver = StubAgentSessionResolver(session: session)
+        let contextProvider = MockAppContextProvider()
         let pipeline = MockPipelineProvider()
         let hub = TurnSignalHub()
         let observer = MockInjectionObserver(text: injectedText)
@@ -65,7 +75,7 @@ struct ConversationCallCoordinatorTests {
         let cues = MockCallCuePlayer()
         let synthesizer = MockSpeechSynthesizer()
         let coordinator = ConversationCallCoordinator(
-            contextProvider: MockAppContextProvider(),
+            contextProvider: contextProvider,
             sessionResolver: resolver,
             pipeline: pipeline,
             signalHub: hub,
@@ -81,6 +91,7 @@ struct ConversationCallCoordinatorTests {
         return Harness(
             coordinator: coordinator,
             resolver: resolver,
+            contextProvider: contextProvider,
             pipeline: pipeline,
             hub: hub,
             observer: observer,
@@ -392,26 +403,25 @@ struct ConversationCallCoordinatorTests {
         #expect(harness.submitter.submitCount == 1)
     }
 
-    @Test("A non-agent target gets plain dictation and the call relistens")
-    func nonAgentTargetIsNotSubmitted() async {
+    @Test("The pinned delivery address is exposed for the call's life")
+    func exposesPinnedDeliveryDuringCall() async {
         let harness = makeHarness(session: agentSession())
-        // The start gate resolves an agent; the send-time resolution
-        // finds none — the user focused another app mid-call.
-        harness.resolver.enqueue(agentSession())
-        harness.resolver.enqueue(nil)
+        harness.contextProvider.stubbedContext = context(pid: 111)
+
+        #expect(await harness.coordinator.pinnedDelivery == nil)
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
-        harness.publish(.transcribedSpeech)
-        harness.publish(.pause)
 
-        await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
-        }
+        #expect(
+            await harness.coordinator.pinnedDelivery
+                == PinnedDelivery(
+                    bundleID: "com.googlecode.iterm2",
+                    processIdentifier: 111,
+                    ttyDevice: 5))
 
-        #expect(harness.submitter.submitCount == 0)
-        #expect(harness.watcher.armed.isEmpty)
-        #expect(harness.pipeline.completedSessionIDs.count == 1)
+        await harness.coordinator.hangUp()
+        #expect(await harness.coordinator.pinnedDelivery == nil)
     }
 
     @Test("A sent agent turn arms the response watch on the injected text")

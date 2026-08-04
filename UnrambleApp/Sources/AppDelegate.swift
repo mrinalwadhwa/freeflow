@@ -180,13 +180,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// observe the exact text a completed turn delivered.
     private let textInjector = InjectionRecorder(
         wrapping: SerializedTextInjector(base: AppTextInjector()))
-    /// The gate wraps the recorder so a call turn whose utterance is
-    /// a spoken meta-command executes instead of injecting; outside
-    /// calls it passes text straight through.
+    /// The gate wraps the delivery chain so a call turn whose
+    /// utterance is a spoken meta-command executes instead of
+    /// injecting; a content turn then focuses the pinned session at
+    /// the instant of injection. Outside calls both layers pass text
+    /// straight through.
     private lazy var callCommandGate = CallCommandGate(
         interpreter: PhraseMetaCommandInterpreter(),
         isCallTurnActive: { [callActivity] in callActivity.isActive },
-        wrapping: textInjector)
+        wrapping: PinnedFocusInjector(
+            focuser: AppleEventTerminalFocuser(),
+            contextProvider: AXAppContextProvider(),
+            pinnedDelivery: { [weak self] in
+                let coordinator = await MainActor.run {
+                    self?.conversationCallCoordinator
+                }
+                return await coordinator?.pinnedDelivery
+            },
+            wrapping: textInjector))
     private let audioDeviceProvider = CoreAudioDeviceProvider()
     private let soundFeedbackProvider = SoundFeedbackProvider()
     private var pipeline: DictationPipeline?

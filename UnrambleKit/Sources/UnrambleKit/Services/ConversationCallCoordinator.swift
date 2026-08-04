@@ -14,11 +14,10 @@ import Foundation
 /// While the call listens, the streaming provider publishes
 /// `TurnSignal`s for the capture session. A pause sends the turn only
 /// when speech was transcribed — silence and background noise never
-/// send — and the dictation key sends immediately. Sending completes
-/// the capture session, which injects through the ordinary dictation
-/// path; a coding-agent target is then submitted and watched, while
-/// any other target keeps plain dictation semantics and the call keeps
-/// listening. Whenever a narration finishes, the mic reopens over the
+/// send — and the dictation key sends immediately. The conversation
+/// is pinned to the session resolved at call start: every sent turn
+/// is delivered to it — refocusing its application first when the
+/// user has wandered — then submitted and watched. Whenever a narration finishes, the mic reopens over the
 /// still-armed watch so the user can speak the moment the voice stops;
 /// an empty pause returns the call to waiting. A turn whose whole
 /// utterance is a spoken meta-command — "hang up" — executes against
@@ -135,10 +134,27 @@ public actor ConversationCallCoordinator {
     private var continuations:
         [UUID: AsyncStream<ConversationCallState>.Continuation] = [:]
 
-    /// The agent session whose response the call is watching or
-    /// speaking, for presentation. Set when a turn arms the watch and
-    /// cleared when the call ends.
+    /// The agent session this conversation is pinned to, resolved
+    /// once at call start and cleared when the call ends. Every turn
+    /// is delivered to it and the watch always observes it, no
+    /// matter where focus wanders.
     public private(set) var lastResolvedAgent: ResolvedAgentSession?
+
+    /// The application hosting the pinned session's pane. The
+    /// injection chain reads this to focus the exact tab at the
+    /// instant of delivery.
+    private var pinnedApplication: Int32?
+    private var pinnedBundleID: String?
+
+    /// The pinned delivery address for the injection chain, or nil
+    /// outside calls.
+    public var pinnedDelivery: PinnedDelivery? {
+        guard let pinnedBundleID else { return nil }
+        return PinnedDelivery(
+            bundleID: pinnedBundleID,
+            processIdentifier: pinnedApplication,
+            ttyDevice: lastResolvedAgent?.ttyDevice)
+    }
 
     public init(
         contextProvider: any AppContextProviding,
@@ -240,6 +256,8 @@ public actor ConversationCallCoordinator {
         callGeneration += 1
         bargeInRequested = false
         lastResolvedAgent = nil
+        pinnedApplication = nil
+        pinnedBundleID = nil
         task.cancel()
         synthesizer.stopSpeaking()
         let sessionID = captureSessionID
@@ -321,11 +339,17 @@ public actor ConversationCallCoordinator {
         let context = await contextProvider.readContext()
         guard !Task.isCancelled else { return }
 
-        guard await sessionResolver.resolveSession(for: context) != nil else {
+        // Pin the conversation: the session focused at start is the
+        // other end for the whole call.
+        guard let pinned = await sessionResolver.resolveSession(for: context)
+        else {
             finishCall(generation: generation, in: .noAgent)
             return
         }
         guard !Task.isCancelled else { return }
+        lastResolvedAgent = pinned
+        pinnedApplication = context.processIdentifier
+        pinnedBundleID = context.bundleID
 
         await runTurnLoop(generation: generation)
     }
@@ -431,6 +455,9 @@ public actor ConversationCallCoordinator {
         case .send:
             await injectionObserver.reset()
             await commandGate.reset()
+            // Delivery targeting happens inside the injection chain:
+            // the pinned session is focused at the instant the text
+            // injects, not before transcription runs.
             await pipeline.complete(sessionID: sessionID)
             clearCapture(generation: generation, sessionID: sessionID)
             guard generation == callGeneration, !Task.isCancelled else {
@@ -452,20 +479,10 @@ public actor ConversationCallCoordinator {
             else { return .listeningContinues }
             cuePlayer.playSendCue()
 
-            let sendContext = await contextProvider.readContext()
-            guard generation == callGeneration, !Task.isCancelled else {
-                return .ended
-            }
-            guard
-                let target = await sessionResolver.resolveSession(
-                    for: sendContext)
-            else {
-                // The turn went to a non-agent target as plain
-                // dictation; the call keeps listening.
+            guard let target = lastResolvedAgent else {
                 return .listeningContinues
             }
             await submitter.submitTurn()
-            lastResolvedAgent = target
             let watchEvents = await watcher.arm(
                 session: target, anchor: injected)
             transitionIfCurrent(generation: generation, to: .waiting)
@@ -736,6 +753,8 @@ public actor ConversationCallCoordinator {
         guard generation == callGeneration else { return }
         callTask = nil
         lastResolvedAgent = nil
+        pinnedApplication = nil
+        pinnedBundleID = nil
         transition(to: terminalState)
     }
 }

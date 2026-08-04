@@ -125,6 +125,50 @@ public final class StubMetaCommandInterpreter: MetaCommandInterpreting,
     }
 }
 
+/// A mock `AgentFocusing` that records requested selections.
+public final class MockAgentFocuser: AgentFocusing, @unchecked Sendable {
+
+    public struct Request: Equatable, Sendable {
+        public let bundleID: String
+        public let processIdentifier: Int32?
+        public let ttyDevice: Int32?
+
+        public init(
+            bundleID: String,
+            processIdentifier: Int32?,
+            ttyDevice: Int32?
+        ) {
+            self.bundleID = bundleID
+            self.processIdentifier = processIdentifier
+            self.ttyDevice = ttyDevice
+        }
+    }
+
+    private let lock = NSLock()
+
+    /// Selections passed to `focusSession`, in order.
+    public var requests: [Request] {
+        lock.withLock { _requests }
+    }
+    private var _requests: [Request] = []
+
+    public init() {}
+
+    public func focusSession(
+        bundleID: String,
+        processIdentifier: Int32?,
+        ttyDevice: Int32?
+    ) async {
+        lock.withLock {
+            _requests.append(
+                Request(
+                    bundleID: bundleID,
+                    processIdentifier: processIdentifier,
+                    ttyDevice: ttyDevice))
+        }
+    }
+}
+
 /// A mock `CallCuePlaying` that counts each cue.
 public final class MockCallCuePlayer: CallCuePlaying, @unchecked Sendable {
 
