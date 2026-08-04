@@ -1981,6 +1981,46 @@ public actor DictationPipeline: PipelineProviding {
         }
 
         if captureBoundaryMissedSessionID == session.id {
+            // A seeded completion carries its content as text; a
+            // capture that never went live cannot have lost anything.
+            // Deliver the carried words instead of failing the turn —
+            // an immediate barge send completes the session faster
+            // than its capture can start.
+            if let seed = pendingTranscriptSeed,
+                seed.sessionID == session.id
+            {
+                Log.debug(
+                    "[Pipeline] capture missed on a seeded turn; delivering carried text"
+                )
+                pendingTranscriptSeed = nil
+                captureBoundaryMissedSessionID = nil
+                previewPreRollRecoverySessionID = nil
+                audioSetupFailed = false
+                isStreamingSession = false
+                recordingStartedAt = nil
+                let drainedLateStart = await drainRetainedAudioStartOperation()
+                if !drainedLateStart {
+                    _ = try? await audioProvider.stopRecording(
+                        owner: captureOwner)
+                }
+                let now = CFAbsoluteTimeGetCurrent()
+                await injectResult(
+                    seed.text,
+                    sessionID: session.id,
+                    context: .empty,
+                    audioBuffer: .empty,
+                    coordinator: coordinator,
+                    textInjector: textInjector,
+                    transcriptBuffer: transcriptBuffer,
+                    micDiagnosticStore: micDiagnosticStore,
+                    audioProvider: audioProvider,
+                    silenceThreshold: effectiveSilenceThreshold(
+                        sessionID: session.id),
+                    t0: completeEnteredAt, t1: now, t4: now,
+                    completeEnteredAt: completeEnteredAt,
+                    source: .local)
+                return
+            }
             if isAccidentalTapBeforeCapture,
                 let missedCaptureHoldDuration
             {
