@@ -80,9 +80,9 @@ public actor ConversationCallCoordinator {
         /// by the user's voice — whose whole sentence was absorbed
         /// through its pause, so the user is silent when this
         /// resolves. A voice barge carries the absorbed sentence's
-        /// audio here so it can open the next session instead of
-        /// dying with the watch.
-        case finished(bargedAudio: Data?)
+        /// transcription here so it can open the next message instead
+        /// of dying with the watch.
+        case finished(bargedText: String?)
 
         /// The call ended mid-narration.
         case ended
@@ -180,12 +180,14 @@ public actor ConversationCallCoordinator {
     /// the buttons still barge.
     private let narrationOnsetGuardSeconds: TimeInterval
 
-    /// A barging sentence's audio, sliced from the discarded watch
-    /// session and waiting to open the next capture session. The
-    /// slice starts just before the barge's onset, where the user's
-    /// voice dominates any narration residual, so the carried audio
-    /// re-transcribes as their words on speakers as well as in-ear.
-    private var pendingBargeSeed: Data?
+    /// A barging sentence's transcription, recovered from the
+    /// discarded watch session and waiting to open the next message.
+    /// The audio slice behind it starts just before the barge's
+    /// onset, where the user's voice dominates any narration
+    /// residual, so it reads as their words on speakers as well as
+    /// in-ear. Text, not audio: carried audio fed to a live session
+    /// ages out of the recognizer's rolling window undecoded.
+    private var pendingBargeText: String?
 
     /// Pre-roll carried ahead of the barge's emphatic signal, which
     /// fires a sustained run after the voice's true onset. Too little
@@ -327,7 +329,7 @@ public actor ConversationCallCoordinator {
         lastResolvedAgent = nil
         pinnedApplication = nil
         pinnedBundleID = nil
-        pendingBargeSeed = nil
+        pendingBargeText = nil
         task.cancel()
         synthesizer.stopSpeaking()
         let sessionID = captureSessionID
@@ -383,7 +385,7 @@ public actor ConversationCallCoordinator {
 
     private func startCall() {
         callGeneration += 1
-        pendingBargeSeed = nil
+        pendingBargeText = nil
         let generation = callGeneration
         callTask = Task { [weak self] in
             guard let self else { return }
@@ -480,9 +482,9 @@ public actor ConversationCallCoordinator {
         // A barge that resolved into relistening carries its sentence
         // into this fresh session before capture adoption.
         var seededStrong = false
-        if let seed = takePendingBargeSeed() {
-            await pipeline.seedCapturedAudio(seed, sessionID: sessionID)
-            Log.debug("[Call] barge audio seeded (\(seed.count) bytes)")
+        if let seed = takePendingBargeText() {
+            await pipeline.seedTranscript(seed, sessionID: sessionID)
+            Log.debug("[Call] barge text seeded")
             seededStrong = true
         }
 
@@ -639,10 +641,10 @@ public actor ConversationCallCoordinator {
             cuePlayer.playReplyCue()
             let outcome = await narrateOverWatch(
                 generation: generation, markdown: markdown)
-            if case .finished(let bargedAudio) = outcome,
-                let bargedAudio
+            if case .finished(let bargedText) = outcome,
+                let bargedText
             {
-                pendingBargeSeed = bargedAudio
+                pendingBargeText = bargedText
             }
             dropInterimsBefore = Date()
             return outcome
@@ -659,7 +661,7 @@ public actor ConversationCallCoordinator {
             }
         }
 
-        let initialSeed = takePendingBargeSeed()
+        let initialSeed = takePendingBargeText()
         guard
             var session = await openWaitingSession(
                 generation: generation, into: mergedContinuation,
@@ -674,7 +676,7 @@ public actor ConversationCallCoordinator {
         /// Reopen the microphone after a narration and reset the
         /// endpoint state for the fresh session.
         func reopen() async -> Bool {
-            let seed = takePendingBargeSeed()
+            let seed = takePendingBargeText()
             guard
                 let fresh = await openWaitingSession(
                     generation: generation, into: mergedContinuation,
@@ -896,7 +898,7 @@ public actor ConversationCallCoordinator {
     private func openWaitingSession(
         generation: Int,
         into merged: AsyncStream<WatchPhaseEvent>.Continuation,
-        seeding seed: Data? = nil
+        seeding seed: String? = nil
     ) async -> WaitingSession? {
         guard let sessionID = await pipeline.activate(playsCaptureCues: false)
         else {
@@ -907,10 +909,10 @@ public actor ConversationCallCoordinator {
             return nil
         }
         // Seed before capture adoption so the carried sentence sits
-        // ahead of the first live audio.
+        // ahead of whatever the live audio decodes.
         if let seed {
-            await pipeline.seedCapturedAudio(seed, sessionID: sessionID)
-            Log.debug("[Call] barge audio seeded (\(seed.count) bytes)")
+            await pipeline.seedTranscript(seed, sessionID: sessionID)
+            Log.debug("[Call] barge text seeded")
         }
         let signals = signalHub.signals(for: sessionID)
         let forwarder = Task {
@@ -952,10 +954,10 @@ public actor ConversationCallCoordinator {
     }
 
     /// Take the carried barge sentence, if any, leaving none behind.
-    private func takePendingBargeSeed() -> Data? {
-        let seed = pendingBargeSeed
-        pendingBargeSeed = nil
-        return seed
+    private func takePendingBargeText() -> String? {
+        let text = pendingBargeText
+        pendingBargeText = nil
+        return text
     }
 
     /// Stop a waiting session's forwarding tasks without touching its
@@ -1199,14 +1201,13 @@ public actor ConversationCallCoordinator {
                         Date().timeIntervalSince(bargeStartedAt ?? Date())
                             + bargeCarryPreRollSeconds,
                         bargeCarryMaximumSeconds)
-                    let carried = await pipeline.recentCapturedAudio(
+                    let carried = await pipeline.transcribeRecentCapture(
                         sessionID: sessionID, seconds: carrySeconds)
                     if let carried {
                         Log.debug(
-                            "[Call] barge sentence carried "
-                                + "(\(carried.count) bytes)")
+                            "[Call] barge sentence carried: \(carried)")
                     }
-                    return .finished(bargedAudio: carried)
+                    return .finished(bargedText: carried)
                 }
                 // The cancelled voice's silence means nothing.
                 continue
@@ -1225,13 +1226,13 @@ public actor ConversationCallCoordinator {
                 // Under an absorb the voice was already stopped; the
                 // user's sentence is still finishing.
                 if absorbingBarge { continue }
-                return .finished(bargedAudio: nil)
+                return .finished(bargedText: nil)
             case .force:
                 // The send key during a narration stops the voice;
                 // the fresh session that follows is what can send.
                 narrationRunning = false
                 synthesizer.stopSpeaking()
-                return .finished(bargedAudio: nil)
+                return .finished(bargedText: nil)
             case .idleTimeout:
                 continue
             }

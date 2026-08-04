@@ -1213,9 +1213,9 @@ struct LocalStreamingSilenceGatingTests {
         }
     }
 
-    @Test("The captured tail is the newest slice of the session")
-    func capturedTailIsNewestSlice() async throws {
-        let engine = ScriptedRecognizer()
+    @Test("The captured tail transcribes through a throwaway session")
+    func capturedTailTranscribes() async throws {
+        let engine = ScriptedRecognizer(transcription: "carried words")
         let provider = LocalStreamingProvider(
             sttEngine: engine, polishChatClient: nil)
         let sessionID = try await startSession(provider)
@@ -1226,57 +1226,66 @@ struct LocalStreamingSilenceGatingTests {
         try await provider.sendAudio(
             makePCM(bytes: 16_000), sessionID: sessionID)
 
-        let tail = await provider.capturedAudioTail(
+        let text = await provider.transcribeCapturedTail(
             seconds: 0.5, sessionID: sessionID)
-        #expect(tail == makePCM(bytes: 16_000))
-
-        // A slice longer than the session returns everything.
-        let all = await provider.capturedAudioTail(
-            seconds: 60, sessionID: sessionID)
-        #expect(all?.count == 32_000)
+        #expect(text == "carried words")
+        // The throwaway pass owns its own recognition session and
+        // finishes it; the live session stays open and unfinished.
+        #expect(engine.sessionCreationCount == 2)
+        #expect(engine.finishCallCount == 1)
 
         // A stale session sees nothing.
-        let stale = await provider.capturedAudioTail(
+        let stale = await provider.transcribeCapturedTail(
             seconds: 0.5, sessionID: DictationSessionID())
         #expect(stale == nil)
 
         await provider.cancelStreaming(sessionID: sessionID)
     }
 
-    @Test("Seeded audio feeds the recognizer despite the silence gate")
-    func seededAudioFeedsRecognizer() async throws {
+    @Test("A seeded transcript alone finishes as the whole result")
+    func seededTranscriptFinishesAlone() async throws {
         let engine = ScriptedRecognizer()
         let provider = LocalStreamingProvider(
-            sttEngine: engine,
-            polishChatClient: nil,
-            cycleInterval: 0.05)
+            sttEngine: engine, polishChatClient: nil)
         let sessionID = try await startSession(provider)
 
-        // Even a silent seed is deliberate carried content: it is
-        // marked audible, so the cycle feeds it.
-        await provider.seedCapturedAudio(
-            makeSilence(bytes: 16_000), sessionID: sessionID)
-        try await poll { engine.feedCallCount >= 1 }
-        #expect(engine.fedSampleCounts.first == 8_000)
+        await provider.seedTranscript(
+            "Let's start planning the release.", sessionID: sessionID)
+        let result = try await provider.finishStreaming(sessionID: sessionID)
 
-        await provider.cancelStreaming(sessionID: sessionID)
+        #expect(result == "Let's start planning the release.")
+    }
+
+    @Test("Live speech appends after a seeded transcript")
+    func liveSpeechAppendsAfterSeed() async throws {
+        let engine = ScriptedRecognizer(transcription: "and use staging")
+        let provider = LocalStreamingProvider(
+            sttEngine: engine, polishChatClient: nil)
+        let sessionID = try await startSession(provider)
+
+        await provider.seedTranscript(
+            "Let's start planning the release.", sessionID: sessionID)
+        try await provider.sendAudio(makePCM(bytes: 16_000), sessionID: sessionID)
+        let result = try await provider.finishStreaming(sessionID: sessionID)
+
+        #expect(result.contains("Let's start planning the release."))
+        #expect(result.lowercased().contains("and use staging"))
+        let seedRange = result.range(of: "planning")
+        let liveRange = result.range(of: "staging")
+        #expect(seedRange!.lowerBound < liveRange!.lowerBound)
     }
 
     @Test("A seed for a stale session is ignored")
     func staleSeedIsIgnored() async throws {
         let engine = ScriptedRecognizer()
         let provider = LocalStreamingProvider(
-            sttEngine: engine,
-            polishChatClient: nil,
-            cycleInterval: 0.05)
+            sttEngine: engine, polishChatClient: nil)
         let sessionID = try await startSession(provider)
 
-        await provider.seedCapturedAudio(
-            makePCM(bytes: 16_000), sessionID: DictationSessionID())
-        let observed = engine.transcriptCallCount
-        try await poll { engine.transcriptCallCount >= observed + 2 }
-        #expect(engine.feedCallCount == 0)
+        await provider.seedTranscript(
+            "Ghost words.", sessionID: DictationSessionID())
+        let result = try await provider.finishStreaming(sessionID: sessionID)
 
-        await provider.cancelStreaming(sessionID: sessionID)
+        #expect(result == "")
     }
 }

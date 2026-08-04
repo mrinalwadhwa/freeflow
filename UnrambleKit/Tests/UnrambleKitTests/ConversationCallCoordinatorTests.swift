@@ -990,15 +990,15 @@ struct ConversationCallCoordinatorTests {
         await eventually { harness.submitter.submitCount == 2 }
         #expect(harness.watcher.armed.count == 2)
         // With no retrievable audio, nothing was carried forward.
-        #expect(harness.pipeline.seededAudio.isEmpty)
+        #expect(harness.pipeline.seededTranscripts.isEmpty)
     }
 
     @Test("A voice barge carries its sentence into the fresh session")
     func bargeSentenceIsCarried() async {
         let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
-        let bargeAudio = Data(repeating: 0x51, count: 32_000)
-        harness.pipeline.recentCapturedAudioStub = bargeAudio
+        let bargeText = "Let's start planning the release."
+        harness.pipeline.transcribeRecentCaptureStub = bargeText
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
@@ -1018,13 +1018,13 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.pause)
         await waitForState(harness.coordinator, .listening)
         #expect(harness.cues.bargeCueCount == 1)
-        let request = harness.pipeline.recentCapturedAudioRequests.last
+        let request = harness.pipeline.transcribeRecentCaptureRequests.last
         #expect((request?.seconds ?? 0) >= 1.5)
 
-        // The carried audio opens the fresh listening session.
-        await eventually { harness.pipeline.seededAudio.count == 1 }
-        let seeded = harness.pipeline.seededAudio.last
-        #expect(seeded?.pcmData == bargeAudio)
+        // The carried text opens the fresh listening session.
+        await eventually { harness.pipeline.seededTranscripts.count == 1 }
+        let seeded = harness.pipeline.seededTranscripts.last
+        #expect(seeded?.text == bargeText)
         #expect(seeded?.sessionID == harness.pipeline.activatedSessionIDs.last)
 
         // The carried sentence is speech already heard: a bare pause
@@ -1038,8 +1038,8 @@ struct ConversationCallCoordinatorTests {
     func bargeOverInterimCarriesIntoWaiting() async {
         let harness = makeHarness(session: agentSession())
         harness.synthesizer.blocksUntilStopped = true
-        let bargeAudio = Data(repeating: 0x52, count: 16_000)
-        harness.pipeline.recentCapturedAudioStub = bargeAudio
+        let bargeText = "Actually, use the staging config."
+        harness.pipeline.transcribeRecentCaptureStub = bargeText
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
@@ -1057,9 +1057,9 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .waiting)
 
         // The reopened waiting session starts with the carried words.
-        await eventually { harness.pipeline.seededAudio.count == 1 }
-        let seeded = harness.pipeline.seededAudio.last
-        #expect(seeded?.pcmData == bargeAudio)
+        await eventually { harness.pipeline.seededTranscripts.count == 1 }
+        let seeded = harness.pipeline.seededTranscripts.last
+        #expect(seeded?.text == bargeText)
         #expect(seeded?.sessionID == harness.pipeline.activatedSessionIDs.last)
 
         // A bare pause sends the carried sentence to the agent.

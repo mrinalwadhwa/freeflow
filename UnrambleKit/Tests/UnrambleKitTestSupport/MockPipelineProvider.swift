@@ -47,29 +47,31 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
     }
     private var _cancelledSessionIDs: [DictationSessionID] = []
 
-    /// What `recentCapturedAudio` returns; nil simulates a backend
+    /// What `transcribeRecentCapture` returns; nil simulates a backend
     /// that retains no capture.
-    public var recentCapturedAudioStub: Data? {
-        get { lock.withLock { _recentCapturedAudioStub } }
-        set { lock.withLock { _recentCapturedAudioStub = newValue } }
+    public var transcribeRecentCaptureStub: String? {
+        get { lock.withLock { _transcribeRecentCaptureStub } }
+        set { lock.withLock { _transcribeRecentCaptureStub = newValue } }
     }
-    private var _recentCapturedAudioStub: Data?
+    private var _transcribeRecentCaptureStub: String?
 
-    /// Each `recentCapturedAudio` request, in order.
-    public var recentCapturedAudioRequests:
+    /// Each `transcribeRecentCapture` request, in order.
+    public var transcribeRecentCaptureRequests:
         [(sessionID: DictationSessionID, seconds: TimeInterval)]
     {
-        lock.withLock { _recentCapturedAudioRequests }
+        lock.withLock { _transcribeRecentCaptureRequests }
     }
-    private var _recentCapturedAudioRequests:
+    private var _transcribeRecentCaptureRequests:
         [(sessionID: DictationSessionID, seconds: TimeInterval)] = []
 
-    /// Each `seedCapturedAudio` call, in order.
-    public var seededAudio: [(pcmData: Data, sessionID: DictationSessionID)] {
-        lock.withLock { _seededAudio }
+    /// Each `seedTranscript` call, in order.
+    public var seededTranscripts:
+        [(text: String, sessionID: DictationSessionID)]
+    {
+        lock.withLock { _seededTranscripts }
     }
-    private var _seededAudio: [(pcmData: Data, sessionID: DictationSessionID)] =
-        []
+    private var _seededTranscripts:
+        [(text: String, sessionID: DictationSessionID)] = []
 
     private var _state: RecordingState = .idle
     private var _currentSessionID: DictationSessionID?
@@ -145,22 +147,22 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
         }
     }
 
-    public func recentCapturedAudio(
+    public func transcribeRecentCapture(
         sessionID: DictationSessionID,
         seconds: TimeInterval
-    ) async -> Data? {
+    ) async -> String? {
         lock.withLock {
-            _recentCapturedAudioRequests.append((sessionID, seconds))
-            return _recentCapturedAudioStub
+            _transcribeRecentCaptureRequests.append((sessionID, seconds))
+            return _transcribeRecentCaptureStub
         }
     }
 
-    public func seedCapturedAudio(
-        _ pcmData: Data,
+    public func seedTranscript(
+        _ text: String,
         sessionID: DictationSessionID
     ) async {
         lock.withLock {
-            _seededAudio.append((pcmData, sessionID))
+            _seededTranscripts.append((text, sessionID))
         }
     }
 }

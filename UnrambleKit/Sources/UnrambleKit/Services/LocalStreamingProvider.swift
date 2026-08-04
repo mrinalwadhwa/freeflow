@@ -664,12 +664,16 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
 
     /// Replay a retained production capture through the same cycle and unit
     /// machinery as live local dictation, without a wall-clock timer.
-    /// Snapshot the newest seconds of the session's accumulated capture.
-    /// The slice is a copy; the session keeps accumulating untouched.
-    public func capturedAudioTail(
+    /// Transcribe the newest seconds of the session's accumulated
+    /// capture through a throwaway recognition session, leaving the
+    /// live session untouched. Feeding carried audio into a live
+    /// session loses it — the recognizer's rolling window ages the
+    /// prefix out before a decode materializes its text — so a barge
+    /// carry decodes immediately and travels as text.
+    public func transcribeCapturedTail(
         seconds: TimeInterval,
         sessionID: DictationSessionID
-    ) async -> Data? {
+    ) async -> String? {
         let (tail, probe) = lock.withLock {
             () -> (Data?, String?) in
             guard activeSessionID == sessionID else {
@@ -695,23 +699,52 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             return (accumulatedAudio.subdata(in: start..<end), nil)
         }
         if let probe { Log.debug(probe) }
-        return tail
+        guard let tail else { return nil }
+        #if DEBUG
+            let wav = WAVEncoder.encode(
+                pcmData: tail,
+                sampleRate: Int(AudioCaptureProvider.targetSampleRate),
+                channels: 1,
+                bitsPerSample: 16)
+            try? wav.write(
+                to: URL(fileURLWithPath: "/tmp/unramble-barge-carry.wav"))
+        #endif
+        do {
+            let session = try sttEngine.makeRecognitionSession()
+            let step = Int(3 * Double(LocalUnitPolicy.sourceBytesPerSecond))
+            var offset = 0
+            while offset < tail.count {
+                let end = min(offset + step, tail.count)
+                try session.feed(
+                    Self.pcmToFloat(tail.subdata(in: offset..<end)))
+                offset = end
+            }
+            let text = try session.finish()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        } catch {
+            Log.debug("[LocalStreaming] tail transcription failed: \(error)")
+            return nil
+        }
     }
 
-    /// Carry previously captured PCM into this session as opening
-    /// content. The seed counts as audible so the next cycle feeds it;
-    /// the turn-pause detector never sees it — live audio alone drives
-    /// the endpoint.
-    public func seedCapturedAudio(
-        _ pcmData: Data,
+    /// Plant carried text as this session's committed transcript
+    /// prefix. The live audio's decode appends to it, and a turn that
+    /// stays silent still finishes with the carried words.
+    public func seedTranscript(
+        _ text: String,
         sessionID: DictationSessionID
     ) async {
-        guard !pcmData.isEmpty else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         lock.withLock {
             guard activeSessionID == sessionID, !finishing, !cancelling
             else { return }
-            accumulatedAudio.append(pcmData)
-            lastAudibleByte = accumulatedAudio.count
+            // Only the polished assembly carries the prefix. The raw
+            // committed transcript stays engine-relative: the carried
+            // words never appear in this session's recognizer output,
+            // and unit deltas strip by common prefix against it.
+            committedPolished = Self.joinPolished(committedPolished, trimmed)
         }
     }
 

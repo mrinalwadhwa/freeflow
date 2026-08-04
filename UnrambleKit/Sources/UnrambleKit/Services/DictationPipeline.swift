@@ -989,10 +989,10 @@ public actor DictationPipeline: PipelineProviding {
         activeSession?.id
     }
 
-    public func recentCapturedAudio(
+    public func transcribeRecentCapture(
         sessionID: DictationSessionID,
         seconds: TimeInterval
-    ) async -> Data? {
+    ) async -> String? {
         guard activeSession?.id == sessionID else {
             Log.debug(
                 "[Pipeline] capture tail refused: active="
@@ -1000,17 +1000,17 @@ public actor DictationPipeline: PipelineProviding {
                     + "requested=\(sessionID)")
             return nil
         }
-        return await backend.streamingProvider.capturedAudioTail(
+        return await backend.streamingProvider.transcribeCapturedTail(
             seconds: seconds, sessionID: sessionID)
     }
 
-    public func seedCapturedAudio(
-        _ pcmData: Data,
+    public func seedTranscript(
+        _ text: String,
         sessionID: DictationSessionID
     ) async {
         guard activeSession?.id == sessionID else { return }
-        await backend.streamingProvider.seedCapturedAudio(
-            pcmData, sessionID: sessionID)
+        await backend.streamingProvider.seedTranscript(
+            text, sessionID: sessionID)
     }
 
     @discardableResult

@@ -92,19 +92,19 @@ final class CurrentPipelineProxy: PipelineProviding, @unchecked Sendable {
     // forwarding: an unforwarded call lands in the silent default and
     // the capability quietly vanishes behind the proxy.
 
-    func recentCapturedAudio(
+    func transcribeRecentCapture(
         sessionID: DictationSessionID,
         seconds: TimeInterval
-    ) async -> Data? {
-        await current()?.recentCapturedAudio(
+    ) async -> String? {
+        await current()?.transcribeRecentCapture(
             sessionID: sessionID, seconds: seconds)
     }
 
-    func seedCapturedAudio(
-        _ pcmData: Data,
+    func seedTranscript(
+        _ text: String,
         sessionID: DictationSessionID
     ) async {
-        await current()?.seedCapturedAudio(pcmData, sessionID: sessionID)
+        await current()?.seedTranscript(text, sessionID: sessionID)
     }
 }
 
