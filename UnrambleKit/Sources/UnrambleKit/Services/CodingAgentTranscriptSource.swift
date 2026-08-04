@@ -40,7 +40,13 @@ public struct CodingAgentTranscriptSource: ContentSourceProviding {
         for locator in locators {
             matchedNames.formUnion(locator.processNames)
         }
-        let agents = finder.findAgents(under: rootPid, matching: matchedNames)
+        var agents = finder.findAgents(under: rootPid, matching: matchedNames)
+        if agents.isEmpty, context.isTerminal {
+            // Terminal server architectures (iTerm 3.6) parent the
+            // sessions to a daemon beside the GUI app; scan the whole
+            // table and let tty, title, and recency scope the pick.
+            agents = finder.findAgents(matching: matchedNames)
+        }
         guard !agents.isEmpty else { return nil }
 
         // Scope to the focused pane when the terminal names its tty, so

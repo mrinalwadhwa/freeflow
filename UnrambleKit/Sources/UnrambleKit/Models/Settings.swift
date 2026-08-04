@@ -34,6 +34,8 @@ public final class Settings: @unchecked Sendable {
         case incognitoModeShortcutLabel = "incognitoModeShortcutLabel"
         case incognitoModeShortcutBinding = "incognitoModeShortcutBinding"
         case readAloudShortcutBinding = "readAloudShortcutBinding"
+        case conversationCallShortcutBinding = "conversationCallShortcutBinding"
+        case interimNarrationEnabled = "interimNarrationEnabled"
     }
 
     // MARK: - Init
@@ -313,6 +315,35 @@ public final class Settings: @unchecked Sendable {
             return .defaultReadAloud
         }
         return binding
+    }
+
+    /// The key binding for the conversation-call shortcut.
+    /// Defaults to ⌃⇧C (Control+Shift+C, key code 8). Read-only until a
+    /// Settings surface exists to rebind it with conflict validation.
+    public var conversationCallShortcutBinding: ShortcutBinding {
+        guard
+            let data = defaults.data(
+                forKey: Key.conversationCallShortcutBinding.rawValue),
+            let binding = try? JSONDecoder().decode(
+                ShortcutBinding.self, from: data)
+        else {
+            return .defaultConversationCall
+        }
+        return binding
+    }
+
+    /// Whether a conversation call narrates mostly-prose interim
+    /// messages while the agent works. On by default; the experiment
+    /// is judged by ear.
+    public var interimNarrationEnabled: Bool {
+        get {
+            defaults.object(forKey: Key.interimNarrationEnabled.rawValue)
+                as? Bool ?? true
+        }
+        set {
+            defaults.set(
+                newValue, forKey: Key.interimNarrationEnabled.rawValue)
+        }
     }
 
     /// The key binding for the cancel shortcut.

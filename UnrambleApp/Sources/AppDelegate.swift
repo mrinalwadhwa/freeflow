@@ -16,6 +16,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var registeredReadAloudBinding: ShortcutBinding?
     private var readAloudCoordinator: ReadAloudCoordinator?
     private var readAloudObservationTask: Task<Void, Never>?
+    private let callHotkeyProvider = CarbonHotkeyProvider()
+    private var registeredCallBinding: ShortcutBinding?
+    private var conversationCallCoordinator: ConversationCallCoordinator?
+    private var callObservationTask: Task<Void, Never>?
+    private let turnSignalHub = TurnSignalHub()
+    private let callActivity = CallActivityFlag()
+    private var sharedSpeechSynthesizer: (any SpeechSynthesizing)?
+
+    /// Return the conversation-call coordinator, building it on first
+    /// use so ordinary dictation never constructs the call graph.
+    private func ensureConversationCallCoordinator()
+        -> ConversationCallCoordinator
+    {
+        if let conversationCallCoordinator { return conversationCallCoordinator }
+        let recordingCoordinator = coordinator
+        let created = ConversationCallCoordinator(
+            contextProvider: AXAppContextProvider(),
+            sessionResolver: AgentSessionResolver(
+                processTable: LibprocProcessTable(),
+                terminalFocusReader: AppleEventTerminalFocusReader()),
+            pipeline: CurrentPipelineProxy { [weak self] in
+                await MainActor.run { self?.pipeline }
+            },
+            signalHub: turnSignalHub,
+            injectionObserver: textInjector,
+            commandGate: callCommandGate,
+            submitter: ReturnKeySubmitter(),
+            watcher: TranscriptResponseWatcher(
+                narratesInterimMessages: {
+                    Settings.shared.interimNarrationEnabled
+                }),
+            cuePlayer: DictationSoundCallCues(feedback: soundFeedbackProvider),
+            synthesizer: ensureSpeechSynthesizer(),
+            isDictationActive: {
+                await recordingCoordinator.state != .idle
+            },
+            stopReadSession: { [weak self] in
+                let readAloud = await MainActor.run {
+                    self?.readAloudCoordinator
+                }
+                await readAloud?.stop()
+            })
+        conversationCallCoordinator = created
+        hudController?.attachConversationCall(created)
+        callObservationTask = Task { [callActivity] in
+            for await state in await created.stateStream {
+                guard !Task.isCancelled else { break }
+                callActivity.setActive(
+                    state == .listening || state == .waiting
+                        || state == .speaking)
+            }
+        }
+        return created
+    }
 
     /// Return the read-aloud coordinator, building it on first use so
     /// termination and dictation paths never construct the feature's
@@ -37,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 WebAreaContentSource(
                     webReader: AXWebContentReader()),
             ],
-            synthesizer: makeSpeechSynthesizer(),
+            synthesizer: ensureSpeechSynthesizer(),
             isDictationActive: {
                 await recordingCoordinator.state != .idle
             })
@@ -54,6 +108,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        return created
+    }
+
+    /// Return the one speech synthesizer read-aloud and conversation
+    /// calls share, so stopping speech from either feature silences
+    /// whatever is playing.
+    private func ensureSpeechSynthesizer() -> any SpeechSynthesizing {
+        if let sharedSpeechSynthesizer { return sharedSpeechSynthesizer }
+        let created = makeSpeechSynthesizer()
+        sharedSpeechSynthesizer = created
         return created
     }
 
@@ -108,7 +172,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyReRegistrationTask: Task<Void, Never>?
     private var registeredModeHotkeyBinding: ShortcutBinding?
     private let transcriptBuffer = TranscriptBuffer()
-    private let textInjector = SerializedTextInjector(base: AppTextInjector())
+    /// The recorder wraps the injector so a conversation call can
+    /// observe the exact text a completed turn delivered.
+    private let textInjector = InjectionRecorder(
+        wrapping: SerializedTextInjector(base: AppTextInjector()))
+    /// The gate wraps the recorder so a call turn whose utterance is
+    /// a spoken meta-command executes instead of injecting; outside
+    /// calls it passes text straight through.
+    private lazy var callCommandGate = CallCommandGate(
+        interpreter: PhraseMetaCommandInterpreter(),
+        isCallTurnActive: { [callActivity] in callActivity.isActive },
+        wrapping: textInjector)
     private let audioDeviceProvider = CoreAudioDeviceProvider()
     private let soundFeedbackProvider = SoundFeedbackProvider()
     private var pipeline: DictationPipeline?
@@ -214,9 +288,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         unregisterHotkey()
         unregisterModeHotkey()
         unregisterReadAloudHotkey()
+        unregisterConversationCallHotkey()
         readAloudObservationTask?.cancel()
+        callObservationTask?.cancel()
         if let readAloud = readAloudCoordinator {
             Task { await readAloud.stop() }
+        }
+        if let call = conversationCallCoordinator {
+            Task { await call.hangUp() }
         }
         hudController?.stop()
         menuBarController?.stop()
@@ -498,7 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 modelManager: modelManager,
                 bundledModelsRoot: bundledModelsRoot,
                 cycleInterval: DictationCompositionFactory.cycleInterval(
-                    from: ProcessInfo.processInfo.environment))
+                    from: ProcessInfo.processInfo.environment),
+                turnSignals: turnSignalHub)
             localModelRuntime = composition.localRuntime
             if let runtime = composition.localRuntime {
                 startModelPreload(runtime)
@@ -512,7 +592,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 apiKey: ServiceConfig.shared.openAIAPIKey ?? "",
                 onSessionExpired: { [weak self] in
                     Task { @MainActor in self?.beginSessionRecovery() }
-                })
+                },
+                turnSignals: turnSignalHub)
         }
 
         let isLocal = mode == .local
@@ -522,7 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             audioProvider: audioProvider,
             contextProvider: AXAppContextProvider(),
             backend: composition.backend,
-            textInjector: textInjector,
+            textInjector: callCommandGate,
             coordinator: coordinator,
             transcriptBuffer: transcriptBuffer,
             language: language,
@@ -575,6 +656,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return driver.transferHeldSession(completion)
         }
         controller.viewModel.isIncognitoMode = modeTransition.effectiveMode == .local
+        if let conversationCallCoordinator {
+            controller.attachConversationCall(conversationCallCoordinator)
+        }
         if let readAloudCoordinator {
             controller.attachReadAloud(readAloudCoordinator)
         }
@@ -1081,6 +1165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dictationHotkeyPublicationRequested = true
         registerModeHotkey()
         registerReadAloudHotkey()
+        registerConversationCallHotkey()
         publishDictationHotkeyIfReady()
     }
 
@@ -1116,6 +1201,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func unregisterReadAloudHotkey() {
         readAloudHotkeyProvider.unregister()
         registeredReadAloudBinding = nil
+    }
+
+    private func registerConversationCallHotkey() {
+        guard !didFenceApplicationTermination else { return }
+        let binding = Settings.shared.conversationCallShortcutBinding
+        guard registeredCallBinding != binding else { return }
+
+        unregisterConversationCallHotkey()
+        let setting = HotkeySetting.modifierPlusKey(
+            modifierFlags: binding.standardModifierFlags,
+            keyCode: binding.keyCode,
+            keyName: binding.label)
+        do {
+            try callHotkeyProvider.register(with: setting) {
+                [weak self] event in
+                guard event == .pressed else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.ensureConversationCallCoordinator().toggle()
+                }
+            }
+            registeredCallBinding = binding
+            Log.debug(
+                "[AppDelegate] Conversation-call shortcut registered"
+                    + " (\(binding.label))")
+        } catch {
+            callHotkeyProvider.unregister()
+            Log.debug(
+                "[AppDelegate] Failed to register conversation-call"
+                    + " shortcut: \(error)")
+        }
+    }
+
+    private func unregisterConversationCallHotkey() {
+        callHotkeyProvider.unregister()
+        registeredCallBinding = nil
     }
 
     private func publishDictationHotkeyIfReady() {
@@ -1169,8 +1290,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             })
 
+        let callActivity = callActivity
         do {
-            try hotkeyProvider.registerTimestamped { event, hostTime in
+            try hotkeyProvider.registerTimestamped { [weak self] event, hostTime in
+                // During a call the dictation key belongs to the call:
+                // force-send while listening, barge-in while waiting or
+                // speaking. The flag is read synchronously so press and
+                // release stay ordered for the driver when no call runs.
+                if callActivity.isActive {
+                    if event == .pressed {
+                        Task { @MainActor [weak self] in
+                            await self?.conversationCallCoordinator?
+                                .dictationKeyPressed()
+                        }
+                    }
+                    return
+                }
                 driver.submit(event, hostTime: hostTime)
             }
             hotkeyPipelineDriver = driver

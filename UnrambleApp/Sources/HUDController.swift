@@ -19,6 +19,7 @@ final class HUDController {
     private weak var coordinator: RecordingCoordinator?
     private weak var pipeline: DictationPipeline?
     private weak var readAloudCoordinator: ReadAloudCoordinator?
+    private weak var conversationCallCoordinator: ConversationCallCoordinator?
     private var audioDeviceProvider: (any AudioDeviceProviding)?
     private var messageService: InAppMessageService?
 
@@ -35,6 +36,8 @@ final class HUDController {
         CarbonHotkeyProvider(),
     ]
     private var handsfreeSessionShortcutsRegistered = false
+    private let callSessionHotkeyProvider = CarbonHotkeyProvider()
+    private var callSessionShortcutRegistered = false
     private var handsfreeStopOnShortcutRelease = false
     private var currentSessionID: DictationSessionID?
     private var latestSessionUpdate: RecordingStateUpdate?
@@ -187,6 +190,7 @@ final class HUDController {
                 previousMessageID = currentMessageID
                 if stateChanged {
                     self.syncHandsfreeSessionShortcuts(for: current)
+                    self.syncCallSessionShortcut(for: current)
                 }
 
                 if screenChanged {
@@ -206,6 +210,14 @@ final class HUDController {
     func attachReadAloud(_ coordinator: ReadAloudCoordinator) {
         readAloudCoordinator = coordinator
         viewModel.observeReadAloud(coordinator: coordinator)
+    }
+
+    /// Begin observing a conversation-call coordinator to drive the
+    /// HUD's call states. The coordinator is built on first use, so
+    /// this may run before or after `start`.
+    func attachConversationCall(_ coordinator: ConversationCallCoordinator) {
+        conversationCallCoordinator = coordinator
+        viewModel.observeConversationCall(coordinator: coordinator)
     }
 
     /// Stop observing and remove the HUD from screen.
@@ -233,6 +245,8 @@ final class HUDController {
         handsfreeHotkeyProvider.unregister()
         handsfreeStopOnShortcutRelease = false
         unregisterHandsfreeSessionShortcuts()
+        unregisterCallSessionShortcut()
+        conversationCallCoordinator = nil
         handsFreeActivationToken = nil
         handsFreeActivationTask = nil
         handsFreeOwnedSessionID = nil
@@ -444,6 +458,22 @@ final class HUDController {
         Task { await readAloudCoordinator.dismissGuidance() }
     }
 
+    // MARK: - Conversation-call actions
+
+    /// Hang up the call. Called from the hang-up button and Escape;
+    /// the call shortcut hangs up through the app delegate.
+    private func hangUpCall() {
+        guard let conversationCallCoordinator else { return }
+        Task { await conversationCallCoordinator.hangUp() }
+    }
+
+    /// Dismiss the no-agent guidance. Called from ✕, Escape, and the
+    /// view model's auto-dismiss timer.
+    private func dismissCallGuidance() {
+        guard let conversationCallCoordinator else { return }
+        Task { await conversationCallCoordinator.dismissGuidance() }
+    }
+
     /// Discard the saved complete recording and return to minimized.
     func dismissDictationFailure() {
         guard let pipeline, let sessionID = viewModel.pipelineSessionID else {
@@ -486,6 +516,12 @@ final class HUDController {
         }
         viewModel.onDismissReadingGuidance = { [weak self] in
             self?.dismissReadingGuidance()
+        }
+        viewModel.onHangUpCall = { [weak self] in
+            self?.hangUpCall()
+        }
+        viewModel.onDismissCallGuidance = { [weak self] in
+            self?.dismissCallGuidance()
         }
         viewModel.onMessageTapped = { [weak self] message in
             if let urlString = message.url, let url = URL(string: urlString) {
@@ -630,6 +666,10 @@ final class HUDController {
     /// we switch to hands-free mode so the user doesn't have to
     /// keep holding.
     func handleHandsfreeShortcut() {
+        // A call owns the microphone and the speech channel; the
+        // hands-free toggle is ignored until hangup restores the
+        // pre-call state.
+        guard !viewModel.visualState.isCallState else { return }
         Log.debug(
             "[HUDController] Hands-free shortcut pressed (state=\(viewModel.visualState))")
         if viewModel.visualState != .listeningHandsFree {
@@ -728,6 +768,45 @@ final class HUDController {
             provider.unregister()
         }
         handsfreeSessionShortcutsRegistered = false
+    }
+
+    /// Claim Escape only while a call is active, so hanging up never
+    /// leaks an Escape keystroke into the agent's terminal.
+    private func syncCallSessionShortcut(for state: HUDVisualState) {
+        guard state.isCallState else {
+            unregisterCallSessionShortcut()
+            return
+        }
+        guard !callSessionShortcutRegistered else { return }
+        callSessionShortcutRegistered = true
+        do {
+            let setting = HotkeySetting.modifierPlusKey(
+                modifierFlags: 0,
+                keyCode: UInt16(kVK_Escape),
+                keyName: "Escape")
+            try callSessionHotkeyProvider.register(with: setting) {
+                [weak self] event in
+                guard event == .pressed else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if self.viewModel.visualState == .callNoAgent {
+                        self.dismissCallGuidance()
+                    } else if self.viewModel.visualState.isCallState {
+                        self.hangUpCall()
+                    }
+                }
+            }
+        } catch {
+            unregisterCallSessionShortcut()
+            Log.debug(
+                "[HUDController] Failed to register call Escape: \(error)")
+        }
+    }
+
+    private func unregisterCallSessionShortcut() {
+        guard callSessionShortcutRegistered else { return }
+        callSessionHotkeyProvider.unregister()
+        callSessionShortcutRegistered = false
     }
 
     /// Transfer a held or still-activating Right Option session to the HUD.
@@ -895,6 +974,12 @@ final class HUDController {
         case .readingNoContent:
             dismissReadingGuidance()
             return true
+        case .callListening, .callWaiting, .callSpeaking:
+            hangUpCall()
+            return true
+        case .callNoAgent:
+            dismissCallGuidance()
+            return true
         case .minimized, .ready, .listeningHeld, .processingCollapsing, .processingBreathing:
             return false
         }
@@ -907,6 +992,7 @@ final class HUDController {
         for provider in handsfreeSessionHotkeyProviders {
             provider.unregister()
         }
+        callSessionHotkeyProvider.unregister()
         if let monitor = localEscapeMonitor {
             NSEvent.removeMonitor(monitor)
         }

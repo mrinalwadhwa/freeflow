@@ -76,6 +76,43 @@ public struct CodexTranscriptLocator: AgentTranscriptLocating {
             sessionWorkingDirectory, processWorkingDirectory)
     }
 
+    public func sessionFile(
+        forProcessWorkingDirectory processWorkingDirectory: String
+    ) throws -> URL? {
+        let candidates = TranscriptFiles.jsonlFilesByNewestFirst(
+            underTree: sessionsDirectory,
+            limit: candidateLimit)
+        return candidates.first {
+            sessionMatches(
+                file: $0,
+                processWorkingDirectory: processWorkingDirectory)
+        }
+    }
+
+    public func transcriptEdge(
+        of file: URL,
+        forProcessWorkingDirectory processWorkingDirectory: String
+    ) throws -> AgentTranscriptEdge {
+        let lines = TranscriptFiles.tailLines(of: file)
+        let newestRecord = lines.reversed().lazy
+            .compactMap(TranscriptFiles.jsonObject(from:))
+            .first { _ in true }
+        let endsWithAssistantText = newestRecord.map { record in
+            guard record["type"] as? String == "response_item",
+                let payload = record["payload"] as? [String: Any],
+                payload["type"] as? String == "message",
+                payload["role"] as? String == "assistant"
+            else { return false }
+            return assistantText(of: payload) != nil
+        }
+        return AgentTranscriptEdge(
+            endsWithAssistantText: endsWithAssistantText ?? false,
+            latestResponse: latestResponse(
+                inRolloutLines: lines,
+                processWorkingDirectory: processWorkingDirectory,
+                fallbackTimestamp: TranscriptFiles.modificationDate(of: file)))
+    }
+
     private func latestResponse(
         inRolloutLines lines: [String],
         processWorkingDirectory: String,

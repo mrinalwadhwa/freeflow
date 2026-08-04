@@ -43,6 +43,41 @@ public struct ClaudeCodeTranscriptLocator: AgentTranscriptLocating {
         return nil
     }
 
+    public func sessionFile(
+        forProcessWorkingDirectory processWorkingDirectory: String
+    ) throws -> URL? {
+        let slug = Self.slug(for: processWorkingDirectory)
+        let sessionDirectory = projectsDirectory.appendingPathComponent(slug)
+        return try TranscriptFiles.jsonlFilesByNewestFirst(in: sessionDirectory)
+            .first
+    }
+
+    public func transcriptEdge(
+        of file: URL,
+        forProcessWorkingDirectory processWorkingDirectory: String
+    ) throws -> AgentTranscriptEdge {
+        let lines = TranscriptFiles.tailLines(of: file)
+        let newestRecord = lines.reversed().lazy
+            .compactMap(TranscriptFiles.jsonObject(from:))
+            .first { _ in true }
+        let endsWithAssistantText = newestRecord.map { record in
+            guard record["type"] as? String == "assistant" else { return false }
+            if let recordWorkingDirectory = record["cwd"] as? String,
+                !TranscriptFiles.pathsShareLineage(
+                    recordWorkingDirectory, processWorkingDirectory)
+            {
+                return false
+            }
+            return assistantText(of: record) != nil
+        }
+        return AgentTranscriptEdge(
+            endsWithAssistantText: endsWithAssistantText ?? false,
+            latestResponse: latestResponse(
+                inTranscriptLines: lines,
+                processWorkingDirectory: processWorkingDirectory,
+                fallbackTimestamp: TranscriptFiles.modificationDate(of: file)))
+    }
+
     private func latestResponse(
         inTranscriptLines lines: [String],
         processWorkingDirectory: String,

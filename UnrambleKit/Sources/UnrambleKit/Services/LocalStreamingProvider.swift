@@ -26,6 +26,8 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     private let unitPolicy: LocalUnitPolicy
     private let polishBatchTokenLimit: Int?
     private var silenceThreshold: Float
+    private let turnSignals: TurnSignalHub?
+    private let turnPauseSeconds: TimeInterval
 
     // MARK: - State (guarded by lock)
 
@@ -62,6 +64,17 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
 
     /// Bytes of accumulated audio already fed to the streaming session.
     private var fedBytes = 0
+
+    /// Detects turn-ending pauses in live audio for a conversation
+    /// call observing this session.
+    private var turnPauseDetector = LiveTurnPauseDetector(pauseSeconds: 2.0)
+
+    /// The recognizer transcript last published as transcribed speech,
+    /// so each cycle signals only real progress.
+    private var lastSignaledTranscript = ""
+
+    /// Counts audio chunks while a hub is attached, to pace probes.
+    private var turnAudioChunkCount = 0
 
     /// Accumulated polished text for all committed sentences. Used as
     /// preceding context for later chunks and as part of the full result.
@@ -109,7 +122,9 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         unitPolicy: LocalUnitPolicy = LocalUnitPolicy(),
         polishBatchTokenLimit: Int? = nil,
         silenceThreshold: Float? = nil,
-        loadSTT: (@Sendable () async throws -> Void)? = nil
+        loadSTT: (@Sendable () async throws -> Void)? = nil,
+        turnSignals: TurnSignalHub? = nil,
+        turnPauseSeconds: TimeInterval = 2.0
     ) {
         self.sttEngine = sttEngine
         self.loadSTT = loadSTT ?? { try await sttEngine.load() }
@@ -121,6 +136,10 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         self.polishBatchTokenLimit = polishBatchTokenLimit
         self.silenceThreshold = silenceThreshold
             ?? AudioLevelAnalyzer.minimumAcceptedSpeechRMS
+        self.turnSignals = turnSignals
+        self.turnPauseSeconds = turnPauseSeconds
+        self.turnPauseDetector = LiveTurnPauseDetector(
+            pauseSeconds: turnPauseSeconds)
     }
 
     // MARK: - StreamingDictationProviding
@@ -168,16 +187,43 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         _ pcmData: Data,
         sessionID: DictationSessionID
     ) async throws {
-        let accepted = lock.withLock {
+        let (accepted, signals, probe) = lock.withLock {
+            () -> (Bool, [TurnSignal], String?) in
             guard activeSessionID == sessionID,
                 recognitionSession != nil, !finishing, !cancelling
             else {
-                return false
+                return (false, [], nil)
             }
             accumulatedAudio.append(pcmData)
-            return true
+            guard turnSignals != nil else { return (true, [], nil) }
+            turnAudioChunkCount += 1
+            var probe: String?
+            if turnAudioChunkCount % 40 == 0 {
+                let rms = AudioLevelAnalyzer.rmsLevel(pcm16: pcmData)
+                probe = "[TurnAudio] rms=\(rms) threshold=\(silenceThreshold)"
+            }
+            return (
+                true,
+                turnPauseDetector.observe(
+                    chunk: pcmData, threshold: silenceThreshold),
+                probe
+            )
         }
         guard accepted else { throw CancellationError() }
+        if let probe { Log.debug(probe) }
+        if let turnSignals {
+            for signal in signals {
+                turnSignals.publish(signal, for: sessionID)
+                // The on-device recognizer yields its text at finish,
+                // not per cycle, so audible speech doubles as the
+                // content gate here as it does for cloud: a noise-only
+                // send completes to an empty transcript and injects
+                // nothing.
+                if signal == .audibleSpeech {
+                    turnSignals.publish(.transcribedSpeech, for: sessionID)
+                }
+            }
+        }
     }
 
     public func finishStreaming(
@@ -669,6 +715,29 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         trailingSilenceBytes = 0
         recognitionError = nil
         fedBytes = 0
+        turnPauseDetector.reset()
+        lastSignaledTranscript = ""
+    }
+
+    /// Publish transcript progress for a conversation call observing
+    /// this session: one signal per cycle whose recognizer transcript
+    /// actually changed.
+    private func publishTranscribedSpeech(
+        _ transcript: String,
+        generation: UInt64
+    ) {
+        guard let turnSignals else { return }
+        let sessionID = lock.withLock { () -> DictationSessionID? in
+            guard sessionGeneration == generation else {
+                Log.debug("[TurnSignal] transcript skip: stale generation")
+                return nil
+            }
+            guard lastSignaledTranscript != transcript else { return nil }
+            lastSignaledTranscript = transcript
+            return activeSessionID
+        }
+        guard let sessionID else { return }
+        turnSignals.publish(.transcribedSpeech, for: sessionID)
     }
 
     private func runOneCycle(generation: UInt64) async {
@@ -708,7 +777,11 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         let trimmed = session.transcript()
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let sttElapsed = CFAbsoluteTimeGetCurrent() - sttStart
+        if turnSignals != nil {
+            Log.debug("[TurnCycle] transcript chars=\(trimmed.count)")
+        }
         guard !trimmed.isEmpty else { return }
+        publishTranscribedSpeech(trimmed, generation: generation)
 
         // Update the trailing-silence run and decide whether a unit closes.
         let decision = lock.withLock {

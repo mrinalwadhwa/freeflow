@@ -62,6 +62,14 @@ final class HUDViewModel: ObservableObject {
     /// dismisses it (✕, Escape, or click).
     var onDismissReadingGuidance: (() -> Void)?
 
+    /// Called when the user hangs up the conversation call (button,
+    /// Escape, or the call shortcut).
+    var onHangUpCall: (() -> Void)?
+
+    /// Called when the no-agent guidance auto-dismisses or the user
+    /// dismisses it.
+    var onDismissCallGuidance: (() -> Void)?
+
     /// Called when the user taps the in-app message body.
     var onMessageTapped: ((InAppMessage) -> Void)?
 
@@ -106,6 +114,12 @@ final class HUDViewModel: ObservableObject {
     private var readingProcessingTask: Task<Void, Never>?
     private var readingProcessingFired = false
     private var readingGuidanceTask: Task<Void, Never>?
+
+    // MARK: - Conversation-call state
+
+    private var callState: ConversationCallState = .idle
+    private var callObservationTask: Task<Void, Never>?
+    private var callGuidanceTask: Task<Void, Never>?
 
     // MARK: - Audio level
 
@@ -176,12 +190,29 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
+    /// Begin observing a conversation-call coordinator's state stream
+    /// to drive the HUD's call states.
+    func observeConversationCall(coordinator: ConversationCallCoordinator) {
+        callObservationTask?.cancel()
+        callObservationTask = Task { [weak self] in
+            for await state in await coordinator.stateStream {
+                guard !Task.isCancelled else { break }
+                self?.handleCallState(state)
+            }
+        }
+    }
+
     /// Stop observing and reset to minimized.
     func stop() {
         observationTask?.cancel()
         observationTask = nil
         readAloudObservationTask?.cancel()
         readAloudObservationTask = nil
+        callObservationTask?.cancel()
+        callObservationTask = nil
+        callGuidanceTask?.cancel()
+        callGuidanceTask = nil
+        callState = .idle
         breathingTask?.cancel()
         breathingTask = nil
         slowProcessingTask?.cancel()
@@ -320,6 +351,31 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Conversation-call state handling
+
+    private func handleCallState(_ state: ConversationCallState) {
+        callState = state
+        if state != .noAgent {
+            callGuidanceTask?.cancel()
+            callGuidanceTask = nil
+        } else {
+            startCallGuidanceTimer()
+        }
+        recalculate()
+    }
+
+    /// Auto-dismiss the no-agent guidance after a few seconds. Dismissal
+    /// routes through the coordinator so its state returns to idle.
+    private func startCallGuidanceTimer() {
+        callGuidanceTask?.cancel()
+        callGuidanceTask = Task { [weak self, readingGuidanceDuration] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(readingGuidanceDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.onDismissCallGuidance?()
+        }
+    }
+
     // MARK: - Read-aloud state handling
 
     private func handleReadAloudState(_ state: ReadAloudState) {
@@ -411,6 +467,22 @@ final class HUDViewModel: ObservableObject {
     }
 
     private func deriveVisualState() -> HUDVisualState {
+        // A call owns the HUD for its whole duration: its capture and
+        // processing run through the pipeline, but the call presence —
+        // not the pipeline phase — is what the user should see.
+        switch callState {
+        case .listening:
+            return .callListening
+        case .waiting:
+            return .callWaiting
+        case .speaking:
+            return .callSpeaking
+        case .noAgent:
+            return .callNoAgent
+        case .idle:
+            break
+        }
+
         switch pipelineState {
         case .idle:
             // Read-session states only show while dictation is idle; the
@@ -573,6 +645,8 @@ final class HUDViewModel: ObservableObject {
     deinit {
         observationTask?.cancel()
         readAloudObservationTask?.cancel()
+        callObservationTask?.cancel()
+        callGuidanceTask?.cancel()
         breathingTask?.cancel()
         slowProcessingTask?.cancel()
         readingProcessingTask?.cancel()

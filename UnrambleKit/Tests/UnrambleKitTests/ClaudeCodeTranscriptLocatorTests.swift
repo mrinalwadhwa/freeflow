@@ -252,4 +252,67 @@ struct ClaudeCodeTranscriptLocatorTests {
             try locator.latestResponse(
                 forProcessWorkingDirectory: workingDirectory) == nil)
     }
+
+    @Test("Session file resolution picks the newest session")
+    func sessionFilePicksNewestSession() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        try fixture.writeJSONL(
+            at: "\(slugDirectory)/old.jsonl",
+            records: [TranscriptFixture.claudeAssistant(text: "Old.")],
+            modifiedAt: Date(timeIntervalSinceNow: -100))
+        let newest = try fixture.writeJSONL(
+            at: "\(slugDirectory)/new.jsonl",
+            records: [TranscriptFixture.claudeAssistant(text: "New.")])
+
+        let locator = ClaudeCodeTranscriptLocator(
+            projectsDirectory: fixture.root)
+        let resolved = try locator.sessionFile(
+            forProcessWorkingDirectory: workingDirectory)
+        #expect(
+            resolved?.resolvingSymlinksInPath()
+                == newest.resolvingSymlinksInPath())
+    }
+
+    @Test("The edge reports a transcript ending in assistant text")
+    func edgeReportsAssistantTextEnd() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        let file = try fixture.writeJSONL(
+            at: "\(slugDirectory)/session.jsonl",
+            records: [
+                TranscriptFixture.claudeUser(text: "Run the tests."),
+                TranscriptFixture.claudeAssistant(
+                    text: "They pass.", cwd: workingDirectory),
+            ])
+
+        let locator = ClaudeCodeTranscriptLocator(
+            projectsDirectory: fixture.root)
+        let edge = try locator.transcriptEdge(
+            of: file, forProcessWorkingDirectory: workingDirectory)
+
+        #expect(edge.endsWithAssistantText)
+        #expect(edge.latestResponse?.markdown == "They pass.")
+    }
+
+    @Test("The edge reports a transcript ending in tool use as incomplete")
+    func edgeReportsToolUseEndAsIncomplete() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        let file = try fixture.writeJSONL(
+            at: "\(slugDirectory)/session.jsonl",
+            records: [
+                TranscriptFixture.claudeAssistant(
+                    text: "Checking.", cwd: workingDirectory),
+                TranscriptFixture.claudeToolUseAssistant(cwd: workingDirectory),
+            ])
+
+        let locator = ClaudeCodeTranscriptLocator(
+            projectsDirectory: fixture.root)
+        let edge = try locator.transcriptEdge(
+            of: file, forProcessWorkingDirectory: workingDirectory)
+
+        #expect(!edge.endsWithAssistantText)
+        #expect(edge.latestResponse?.markdown == "Checking.")
+    }
 }

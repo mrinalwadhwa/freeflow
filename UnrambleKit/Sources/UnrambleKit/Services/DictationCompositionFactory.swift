@@ -17,11 +17,14 @@ public enum DictationCompositionFactory {
     /// Cloud composition: OpenAI streaming transcription with a batch fallback.
     public static func makeCloud(
         apiKey: String,
-        onSessionExpired: (@Sendable () -> Void)?
+        onSessionExpired: (@Sendable () -> Void)?,
+        turnSignals: TurnSignalHub? = nil
     ) -> DictationComposition {
         DictationComposition(
             backend: .cloud(
-                realtime: OpenAIStreamingProvider(apiKey: apiKey),
+                realtime: OpenAIStreamingProvider(
+                    apiKey: apiKey,
+                    turnSignals: turnSignals),
                 fallback: OpenAIFileTranscriber(apiKey: apiKey)),
             onSessionExpired: onSessionExpired,
             localRuntime: nil)
@@ -34,7 +37,8 @@ public enum DictationCompositionFactory {
     public static func makeLocal(
         modelManager: LocalModelManager,
         bundledModelsRoot: URL?,
-        cycleInterval: TimeInterval
+        cycleInterval: TimeInterval,
+        turnSignals: TurnSignalHub? = nil
     ) -> DictationComposition {
         guard let qwenModelPath = modelManager.resolveModelDirectory(
             modelID: "qwen3-0.6b-4bit", file: "model.safetensors",
@@ -82,7 +86,8 @@ public enum DictationCompositionFactory {
                 cycleInterval: cycleInterval,
                 unitPolicy: localUnitPolicy,
                 polishBatchTokenLimit: 256,
-                loadSTT: { try await runtime.loadSTT() }))
+                loadSTT: { try await runtime.loadSTT() },
+                turnSignals: turnSignals))
         return DictationComposition(
             backend: backend,
             onSessionExpired: nil,

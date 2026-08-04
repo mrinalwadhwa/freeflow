@@ -71,4 +71,25 @@ public struct AgentProcessFinder: Sendable {
         }
         return agents
     }
+
+    /// Return every process named in `names` anywhere in the process
+    /// table. Some terminal architectures host their sessions in a
+    /// sibling server daemon — iTerm 3.6's session server hangs off
+    /// launchd, not the GUI app — leaving agents unreachable from the
+    /// frontmost pid. A caller that found nothing beneath a terminal
+    /// app falls back to this table-wide scan and scopes the result by
+    /// focused tty, window title, or recency as usual.
+    public func findAgents(matching names: Set<String>) -> [AgentProcess] {
+        processTable.snapshot().compactMap { record in
+            guard names.contains(record.name),
+                let workingDirectory =
+                    processTable.currentWorkingDirectory(of: record.pid)
+            else { return nil }
+            return AgentProcess(
+                name: record.name,
+                pid: record.pid,
+                workingDirectory: workingDirectory,
+                ttyDevice: record.ttyDevice)
+        }
+    }
 }

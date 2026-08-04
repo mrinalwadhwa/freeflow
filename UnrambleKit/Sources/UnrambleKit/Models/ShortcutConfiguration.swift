@@ -64,4 +64,18 @@ public struct ShortcutConfiguration: Sendable, Equatable {
     public var noReadContentHint: String {
         "Select text, then \(readAloudShortcutName) to read aloud"
     }
+
+    /// Display name of the conversation-call shortcut, read dynamically
+    /// from settings.
+    public var conversationCallShortcutName: String {
+        Settings.shared.conversationCallShortcutBinding.label
+    }
+
+    /// The instructional hint shown when a call finds no coding-agent
+    /// session to talk to.
+    ///
+    /// Example: "Focus a coding agent, then ⌃⇧C to call"
+    public var noAgentSessionHint: String {
+        "Focus a coding agent, then \(conversationCallShortcutName) to call"
+    }
 }

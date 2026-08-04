@@ -62,6 +62,32 @@ enum HUDVisualState: Equatable {
     /// read shortcut and how to select text, with ✕ dismiss.
     case readingNoContent
 
+    /// A conversation call is listening. Waveform dots with a hang-up
+    /// button; a pause sends the turn.
+    case callListening
+
+    /// A conversation call sent a turn and watches the agent session
+    /// for its response. Breathing pulse at minimized dimensions.
+    case callWaiting
+
+    /// A conversation call speaks a response or interim message.
+    /// Expanded pill with a hang-up button.
+    case callSpeaking
+
+    /// A call-shortcut press found no coding-agent session. Shows
+    /// guidance naming the call shortcut, with ✕ dismiss.
+    case callNoAgent
+
+    /// Whether this state belongs to a conversation call.
+    var isCallState: Bool {
+        switch self {
+        case .callListening, .callWaiting, .callSpeaking, .callNoAgent:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Whether the HUD should accept mouse events in this state.
     ///
     /// States that rely on the keyboard as the control surface disable mouse
@@ -70,10 +96,10 @@ enum HUDVisualState: Equatable {
         switch self {
         case .minimized, .ready, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired, .dictationFailed, .readingSpeaking,
-            .readingNoContent:
+            .readingNoContent, .callListening, .callSpeaking, .callNoAgent:
             return true
         case .listeningHeld, .processingCollapsing, .processingBreathing,
-            .readingProcessing:
+            .readingProcessing, .callWaiting:
             return false
         }
     }
@@ -86,11 +112,11 @@ enum HUDVisualState: Equatable {
     var isExpanded: Bool {
         switch self {
         case .minimized, .ready, .processingCollapsing, .processingBreathing,
-            .readingProcessing:
+            .readingProcessing, .callWaiting:
             return false
         case .listeningHeld, .listeningHandsFree, .processingSlow, .noTarget,
             .sessionExpired, .dictationFailed, .readingSpeaking,
-            .readingNoContent:
+            .readingNoContent, .callListening, .callSpeaking, .callNoAgent:
             return true
         }
     }

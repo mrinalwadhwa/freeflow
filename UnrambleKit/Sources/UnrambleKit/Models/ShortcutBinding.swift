@@ -193,6 +193,16 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         label: "⌃⇧R"
     )
 
+    /// Default conversation-call shortcut: ⌃⇧C (Control+Shift+C, key
+    /// code 8). Joins the Control+Shift family; the Carbon registration
+    /// consumes the chord, so it cannot leak into the terminal apps a
+    /// call targets.
+    public static let defaultConversationCall = ShortcutBinding(
+        modifierFlags: controlFlag | shiftFlag,
+        keyCode: 8,
+        label: "⌃⇧C"
+    )
+
     /// Legacy incognito mode shortcut retained only for exact migration.
     public static let legacyDefaultIncognitoMode = ShortcutBinding(
         modifierFlags: controlFlag | optionFlag,

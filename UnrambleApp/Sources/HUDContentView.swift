@@ -50,6 +50,14 @@ struct HUDContentView: View {
             return 170
         case .readingNoContent:
             return 290
+        case .callListening:
+            return 140
+        case .callWaiting:
+            return 46
+        case .callSpeaking:
+            return 170
+        case .callNoAgent:
+            return 300
         }
     }
 
@@ -59,11 +67,13 @@ struct HUDContentView: View {
             return 8
         case .ready:
             return 10
-        case .processingCollapsing, .processingBreathing, .readingProcessing:
+        case .processingCollapsing, .processingBreathing, .readingProcessing,
+            .callWaiting:
             return 8
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed, .readingSpeaking, .readingNoContent:
+            .dictationFailed, .readingSpeaking, .readingNoContent,
+            .callListening, .callSpeaking, .callNoAgent:
             return 32
         }
     }
@@ -71,11 +81,12 @@ struct HUDContentView: View {
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
         case .minimized, .processingCollapsing, .processingBreathing,
-            .readingProcessing:
+            .readingProcessing, .callWaiting:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed, .readingSpeaking, .readingNoContent:
+            .dictationFailed, .readingSpeaking, .readingNoContent,
+            .callListening, .callSpeaking, .callNoAgent:
             return 0.5
         }
     }
@@ -83,11 +94,12 @@ struct HUDContentView: View {
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
         case .minimized, .processingCollapsing, .processingBreathing,
-            .readingProcessing:
+            .readingProcessing, .callWaiting:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed, .readingSpeaking, .readingNoContent:
+            .dictationFailed, .readingSpeaking, .readingNoContent,
+            .callListening, .callSpeaking, .callNoAgent:
             return 0.7
         }
     }
@@ -116,11 +128,12 @@ struct HUDContentView: View {
     private var isActive: Bool {
         switch viewModel.visualState {
         case .minimized, .ready, .processingCollapsing, .processingBreathing,
-            .readingProcessing:
+            .readingProcessing, .callWaiting:
             return false
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
-            .dictationFailed, .readingSpeaking, .readingNoContent:
+            .dictationFailed, .readingSpeaking, .readingNoContent,
+            .callListening, .callSpeaking, .callNoAgent:
             return true
         }
     }
@@ -129,6 +142,7 @@ struct HUDContentView: View {
     private var isBreathing: Bool {
         viewModel.visualState == .processingBreathing
             || viewModel.visualState == .readingProcessing
+            || viewModel.visualState == .callWaiting
     }
 
     // MARK: - Body
@@ -234,7 +248,7 @@ struct HUDContentView: View {
     private var activeContent: some View {
         switch viewModel.visualState {
         case .minimized, .ready, .processingCollapsing, .processingBreathing,
-            .readingProcessing:
+            .readingProcessing, .callWaiting:
             EmptyView()
         case .listeningHeld:
             listeningHeldContent
@@ -260,7 +274,90 @@ struct HUDContentView: View {
         case .readingNoContent:
             readingNoContentContent
                 .transition(.opacity)
+        case .callListening:
+            callListeningContent
+                .transition(.opacity)
+        case .callSpeaking:
+            callSpeakingContent
+                .transition(.opacity)
+        case .callNoAgent:
+            callNoAgentContent
+                .transition(.opacity)
         }
+    }
+
+    // MARK: - Conversation call
+
+    /// A call is listening: waveform bars with a hang-up button. A
+    /// pause sends the turn; Escape hangs up.
+    private var callListeningContent: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "phone.fill")
+                .font(.system(size: 11))
+                .foregroundColor(.green.opacity(0.85))
+
+            WaveformBarsView(audioLevel: viewModel.audioLevel)
+                .frame(maxWidth: .infinity)
+
+            Button(action: { viewModel.onHangUpCall?() }) {
+                Image(systemName: "phone.down.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.red.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hang up")
+        }
+        .padding(.horizontal, 12)
+    }
+
+    /// A call speaks the agent's response, with a hang-up button.
+    private var callSpeakingContent: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.85))
+
+            Text("On a call")
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+
+            Button(action: { viewModel.onHangUpCall?() }) {
+                Image(systemName: "phone.down.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.red.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hang up")
+        }
+        .padding(.horizontal, 12)
+    }
+
+    /// No coding-agent session was reachable when the call started.
+    private var callNoAgentContent: some View {
+        HStack(spacing: 8) {
+            Text(viewModel.shortcuts.noAgentSessionHint)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Button(action: { viewModel.onDismissCallGuidance?() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 12)
     }
 
     // MARK: - Ready hint tooltip

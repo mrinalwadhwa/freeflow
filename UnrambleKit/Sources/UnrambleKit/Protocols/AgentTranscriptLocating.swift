@@ -19,4 +19,17 @@ public protocol AgentTranscriptLocating: Sendable {
     func latestResponse(
         forProcessWorkingDirectory processWorkingDirectory: String
     ) throws -> AgentTranscriptResponse?
+
+    /// Return the newest session transcript file for the working
+    /// directory, or nil when none exists. The response watch stats
+    /// this file cheaply between parses.
+    func sessionFile(
+        forProcessWorkingDirectory processWorkingDirectory: String
+    ) throws -> URL?
+
+    /// Parse the live edge of one session transcript file.
+    func transcriptEdge(
+        of file: URL,
+        forProcessWorkingDirectory processWorkingDirectory: String
+    ) throws -> AgentTranscriptEdge
 }

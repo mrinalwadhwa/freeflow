@@ -84,6 +84,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
     typealias BackupRefreshObserver = @Sendable (UUID) async -> Void
     typealias BackupRefreshCompletionObserver = @Sendable (UUID) -> Void
     private let transportFactory: TransportFactory
+    private let turnSignals: TurnSignalHub?
     private let setupAdmission: SetupAdmission?
     private let backupReadyObserver: BackupReadyObserver?
     private let backupOpenWillPublish: BackupOpenObserver?
@@ -124,6 +125,10 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
 
     /// Monotonically increasing session counter for diagnostic logging.
     private var nextSessionID: Int = 1
+
+    /// Detects turn-ending pauses in live audio for a conversation
+    /// call observing this session.
+    private var turnPauseDetector: LiveTurnPauseDetector
 
     /// Timing breakdown for the active `startStreaming`/`finishStreaming`
     /// session. Lives under the lock; a fresh struct is installed in
@@ -217,7 +222,8 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
         realtimeModel: String = OpenAIStreamingProvider.defaultRealtimeModel,
         sttModel: String = "gpt-4o-mini-transcribe",
         commitPolicy: RealtimeCommitPolicy = RealtimeCommitPolicy(),
-        maxUnresolvedItems: Int = 2
+        maxUnresolvedItems: Int = 2,
+        turnSignals: TurnSignalHub? = nil
     ) {
         self.init(
             apiKeyProvider: apiKey,
@@ -225,7 +231,8 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
             sttModel: sttModel,
             commitPolicy: commitPolicy,
             maxUnresolvedItems: maxUnresolvedItems,
-            evidenceObserver: nil)
+            evidenceObserver: nil,
+            turnSignals: turnSignals)
     }
 
     init(
@@ -245,10 +252,15 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
         backupOpenDidFinish: BackupOpenCompletionObserver? = nil,
         backupRefreshDelay: TimeInterval = 35,
         backupRefreshWillDiscard: BackupRefreshObserver? = nil,
-        backupRefreshDidFinish: BackupRefreshCompletionObserver? = nil
+        backupRefreshDidFinish: BackupRefreshCompletionObserver? = nil,
+        turnSignals: TurnSignalHub? = nil,
+        turnPauseSeconds: TimeInterval = 2.0
     ) {
         precondition(maxUnresolvedItems > 0)
         precondition(backupRefreshDelay >= 0 && backupRefreshDelay.isFinite)
+        self.turnSignals = turnSignals
+        self.turnPauseDetector = LiveTurnPauseDetector(
+            pauseSeconds: turnPauseSeconds)
         self.apiKeyProvider = apiKeyProvider
         self.realtimeModel = realtimeModel
         self.sttModel = sttModel
@@ -308,6 +320,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
             self.commitSession = commitSession
             self.activeCasual = casual
             self.activePrecedingText = precedingText
+            self.turnPauseDetector.reset()
             return true
         }
         guard claimed else {
@@ -476,11 +489,35 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
         if !readerInstalled { reader.cancel() }
     }
 
+    /// Publish turn signals for a conversation call observing this
+    /// session. Realtime transcription arrives at finish, so detected
+    /// speech audio doubles as the content gate here: a noise-triggered
+    /// send costs one empty round trip and injects nothing.
+    private func publishTurnSignals(
+        for pcmData: Data,
+        sessionID: DictationSessionID
+    ) {
+        guard let turnSignals else { return }
+        let signals = lock.withLock { () -> [TurnSignal] in
+            guard activeSessionID == sessionID else { return [] }
+            return turnPauseDetector.observe(
+                chunk: pcmData,
+                threshold: AudioLevelAnalyzer.minimumAcceptedSpeechRMS)
+        }
+        for signal in signals {
+            turnSignals.publish(signal, for: sessionID)
+            if signal == .audibleSpeech {
+                turnSignals.publish(.transcribedSpeech, for: sessionID)
+            }
+        }
+    }
+
     public func sendAudio(
         _ pcmData: Data,
         sessionID: DictationSessionID
     ) async throws {
         guard !pcmData.isEmpty else { return }
+        publishTurnSignals(for: pcmData, sessionID: sessionID)
         try await awaitSetup(sessionID: sessionID)
 
         let state: ((any OpenAIRealtimeTransport)?, OpenAIRealtimeCommitSession?) =

@@ -214,4 +214,67 @@ struct CodexTranscriptLocatorTests {
             try locator.latestResponse(
                 forProcessWorkingDirectory: workingDirectory) == nil)
     }
+
+    @Test("Session file resolution picks the matching rollout")
+    func sessionFilePicksMatchingRollout() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        try fixture.writeJSONL(
+            at: "2026/08/01/rollout-other.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: "/somewhere/else")
+            ])
+        let matching = try fixture.writeJSONL(
+            at: "2026/08/01/rollout-match.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: workingDirectory)
+            ],
+            modifiedAt: Date(timeIntervalSinceNow: -100))
+
+        let locator = CodexTranscriptLocator(sessionsDirectory: fixture.root)
+        let resolved = try locator.sessionFile(
+            forProcessWorkingDirectory: workingDirectory)
+        #expect(
+            resolved?.resolvingSymlinksInPath()
+                == matching.resolvingSymlinksInPath())
+    }
+
+    @Test("The edge reports a rollout ending in assistant text")
+    func edgeReportsAssistantTextEnd() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        let file = try fixture.writeJSONL(
+            at: "2026/08/01/rollout-a.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: workingDirectory),
+                TranscriptFixture.codexAssistant(text: "They pass."),
+            ])
+
+        let locator = CodexTranscriptLocator(sessionsDirectory: fixture.root)
+        let edge = try locator.transcriptEdge(
+            of: file, forProcessWorkingDirectory: workingDirectory)
+
+        #expect(edge.endsWithAssistantText)
+        #expect(edge.latestResponse?.markdown == "They pass.")
+    }
+
+    @Test("The edge reports a rollout ending in an event as incomplete")
+    func edgeReportsEventEndAsIncomplete() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.remove() }
+        let file = try fixture.writeJSONL(
+            at: "2026/08/01/rollout-a.jsonl",
+            records: [
+                TranscriptFixture.codexSessionMeta(cwd: workingDirectory),
+                TranscriptFixture.codexAssistant(text: "Checking."),
+                TranscriptFixture.codexEvent(),
+            ])
+
+        let locator = CodexTranscriptLocator(sessionsDirectory: fixture.root)
+        let edge = try locator.transcriptEdge(
+            of: file, forProcessWorkingDirectory: workingDirectory)
+
+        #expect(!edge.endsWithAssistantText)
+        #expect(edge.latestResponse?.markdown == "Checking.")
+    }
 }
