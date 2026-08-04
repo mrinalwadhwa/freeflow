@@ -479,13 +479,28 @@ public actor ConversationCallCoordinator {
             return .ended
         }
 
-        // A barge that resolved into relistening carries its sentence
-        // into this fresh session before capture adoption.
-        var seededStrong = false
+        // A barge that resolved into relistening carries its
+        // sentence: it is already a complete message, so it sends
+        // the moment this fresh session opens.
         if let seed = takePendingBargeText() {
             await pipeline.seedTranscript(seed, sessionID: sessionID)
             Log.debug("[Call] barge text seeded")
-            seededStrong = true
+            guard
+                adoptCapture(generation: generation, sessionID: sessionID)
+            else {
+                await pipeline.cancel(sessionID: sessionID)
+                return .ended
+            }
+            switch await completeSend(
+                generation: generation, sessionID: sessionID)
+            {
+            case .ended:
+                return .ended
+            case .keepListening:
+                return .listeningContinues
+            case .watchArmed(let events):
+                return .watchArmed(events)
+            }
         }
 
         // Subscribe to the session's signals before listening becomes
@@ -503,8 +518,7 @@ public actor ConversationCallCoordinator {
         }
 
         guard
-            let turnEnd = await awaitTurnEnd(
-                turnWait, seededStrong: seededStrong),
+            let turnEnd = await awaitTurnEnd(turnWait),
             generation == callGeneration, !Task.isCancelled
         else { return .ended }
         Log.debug("[Call] turn end: \(turnEnd)")
@@ -668,22 +682,24 @@ public actor ConversationCallCoordinator {
                 seeding: initialSeed)
         else { return .ended }
 
-        // A carried barge sentence is voice-level evidence already
-        // heard: the user's next pause sends it without new speech.
-        var sawStrongSpeech = initialSeed != nil
+        var sawStrongSpeech = false
         var pendingPause = false
+
+        /// Whether the most recent reopen carried a barge seed.
+        var reopenWasSeeded = false
 
         /// Reopen the microphone after a narration and reset the
         /// endpoint state for the fresh session.
         func reopen() async -> Bool {
             let seed = takePendingBargeText()
+            reopenWasSeeded = seed != nil
             guard
                 let fresh = await openWaitingSession(
                     generation: generation, into: mergedContinuation,
                     seeding: seed)
             else { return false }
             session = fresh
-            sawStrongSpeech = seed != nil
+            sawStrongSpeech = false
             pendingPause = false
             return true
         }
@@ -730,6 +746,12 @@ public actor ConversationCallCoordinator {
                 }
                 return nil
             }
+        }
+
+        // An interruption is the message: a carried sentence sends
+        // the moment its session opens.
+        if initialSeed != nil, let outcome = await resolveSend() {
+            return outcome
         }
 
         var iterator = merged.makeAsyncIterator()
@@ -832,6 +854,13 @@ public actor ConversationCallCoordinator {
                     case .finished:
                         guard await reopen() else {
                             return .ended
+                        }
+                        // An interruption is the message: a carried
+                        // sentence sends the moment its session opens.
+                        if reopenWasSeeded,
+                            let outcome = await resolveSend()
+                        {
+                            return outcome
                         }
                     }
                 case .response(let markdown):
@@ -1033,15 +1062,10 @@ public actor ConversationCallCoordinator {
     /// late-arriving transcript sends the turn, unless speech audio
     /// resumed first, which re-arms the endpoint. Returns nil when
     /// the call was hung up mid-listen.
-    private func awaitTurnEnd(
-        _ wait: TurnWait,
-        seededStrong: Bool = false
-    ) async -> TurnEnd? {
+    private func awaitTurnEnd(_ wait: TurnWait) async -> TurnEnd? {
         defer { endTurnWait(wait) }
 
-        // A seeded barge sentence is speech already heard: the next
-        // pause sends it even if the user adds nothing.
-        var sawStrongSpeech = seededStrong
+        var sawStrongSpeech = false
         var pendingPause = false
         for await event in wait.events {
             guard !Task.isCancelled else { return nil }
@@ -1194,9 +1218,9 @@ public actor ConversationCallCoordinator {
             case .signal(.pause):
                 if absorbingBarge {
                     Log.debug("[Call] barge sentence absorbed")
-                    // The cue tells the user the floor is now theirs;
-                    // the absorbed words ride along as carried audio.
-                    cuePlayer.playBargeCue()
+                    // No cue here: the carried sentence sends
+                    // immediately, and the send cue at injection is
+                    // the confirmation the user was trained on.
                     let carrySeconds = min(
                         Date().timeIntervalSince(bargeStartedAt ?? Date())
                             + bargeCarryPreRollSeconds,

@@ -129,7 +129,4 @@ struct DictationSoundCallCues: CallCuePlaying, @unchecked Sendable {
         feedback.playStopSound()
     }
 
-    func playBargeCue() {
-        feedback.playStartSound()
-    }
 }

@@ -982,7 +982,6 @@ struct ConversationCallCoordinatorTests {
         }
         #expect(harness.pipeline.completedSessionIDs.count == 1)
         #expect(harness.submitter.submitCount == 1)
-        #expect(harness.cues.bargeCueCount == 1)
 
         // The next utterance, into the fresh session, is the message.
         harness.publish(.strongSpeech)
@@ -1016,21 +1015,14 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.emphaticSpeech)
         await eventually { harness.synthesizer.stopCount == 1 }
         harness.publish(.pause)
-        await waitForState(harness.coordinator, .listening)
-        #expect(harness.cues.bargeCueCount == 1)
+
+        // The interruption is the message: the carried sentence
+        // sends by itself the moment its fresh session opens.
+        await eventually { harness.submitter.submitCount == 2 }
         let request = harness.pipeline.transcribeRecentCaptureRequests.last
         #expect((request?.seconds ?? 0) >= 1.5)
-
-        // The carried text opens the fresh listening session.
-        await eventually { harness.pipeline.seededTranscripts.count == 1 }
         let seeded = harness.pipeline.seededTranscripts.last
         #expect(seeded?.text == bargeText)
-        #expect(seeded?.sessionID == harness.pipeline.activatedSessionIDs.last)
-
-        // The carried sentence is speech already heard: a bare pause
-        // sends it without any new strong evidence.
-        harness.publish(.pause)
-        await eventually { harness.submitter.submitCount == 2 }
         #expect(harness.watcher.armed.count == 2)
     }
 
@@ -1054,17 +1046,12 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.emphaticSpeech)
         await eventually { harness.synthesizer.stopCount == 1 }
         harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
 
-        // The reopened waiting session starts with the carried words.
-        await eventually { harness.pipeline.seededTranscripts.count == 1 }
+        // The interruption is the message: the reopened session
+        // seeds the carried words and sends immediately.
+        await eventually { harness.submitter.submitCount == 2 }
         let seeded = harness.pipeline.seededTranscripts.last
         #expect(seeded?.text == bargeText)
-        #expect(seeded?.sessionID == harness.pipeline.activatedSessionIDs.last)
-
-        // A bare pause sends the carried sentence to the agent.
-        harness.publish(.pause)
-        await eventually { harness.submitter.submitCount == 2 }
         #expect(harness.watcher.armed.count == 2)
     }
 
@@ -1200,7 +1187,6 @@ struct ConversationCallCoordinatorTests {
         }
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .listening)
-        #expect(harness.cues.bargeCueCount == 0)
     }
 
     @Test("A reply arriving mid-speech queues instead of talking over")

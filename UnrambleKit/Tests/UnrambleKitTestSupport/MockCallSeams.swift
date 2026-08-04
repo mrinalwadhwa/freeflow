@@ -183,15 +183,12 @@ public final class MockCallCuePlayer: CallCuePlaying, @unchecked Sendable {
     public var doneCueCount: Int { lock.withLock { _doneCueCount } }
     private var _doneCueCount = 0
 
-    public var bargeCueCount: Int { lock.withLock { _bargeCueCount } }
-    private var _bargeCueCount = 0
 
     public init() {}
 
     public func playSendCue() { lock.withLock { _sendCueCount += 1 } }
     public func playReplyCue() { lock.withLock { _replyCueCount += 1 } }
     public func playDoneCue() { lock.withLock { _doneCueCount += 1 } }
-    public func playBargeCue() { lock.withLock { _bargeCueCount += 1 } }
 }
 
 /// A mock `TurnSubmitting` that counts submissions.
