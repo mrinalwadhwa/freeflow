@@ -1891,6 +1891,10 @@ public actor DictationPipeline: PipelineProviding {
 
                     // Silence observer: bail after 200ms of confirmed silence
                     // without coupling the hard watchdog to wall-clock polling.
+                    // A seeded session never bails: its carried words are the
+                    // turn regardless of how silent the live audio stays.
+                    let seedExemptFromSilenceBail =
+                        pendingTranscriptSeed?.sessionID == session.id
                     Task.detached { [audioProvider, captureOwner, earlyThreshold] in
                         var silentTicks = 0
                         while true {
@@ -1898,7 +1902,8 @@ public actor DictationPipeline: PipelineProviding {
                             let alreadyDone = lock.withLock { resumed }
                             if alreadyDone { return }
 
-                            if let metrics = audioProvider.metrics(owner: captureOwner),
+                            if !seedExemptFromSilenceBail,
+                                let metrics = audioProvider.metrics(owner: captureOwner),
                                 metrics.peakRMS > 0,
                                 metrics.peakRMS <= earlyThreshold
                             {
@@ -2112,7 +2117,11 @@ public actor DictationPipeline: PipelineProviding {
                 sessionID: session.id)
 
             if let postRecordMetrics = audioProvider.metrics(owner: captureOwner),
-                postRecordMetrics.peakRMS <= postRecordThreshold
+                postRecordMetrics.peakRMS <= postRecordThreshold,
+                // A seeded session must always reach the provider: its
+                // carried words are the turn even when the live audio
+                // stayed silent.
+                pendingTranscriptSeed?.sessionID != session.id
             {
                 Log.debug(
                     "[Pipeline] Early silence gate: peak RMS \(postRecordMetrics.peakRMS) <= \(postRecordThreshold) (ambient: \(postRecordMetrics.ambientRMS)), skipping"
