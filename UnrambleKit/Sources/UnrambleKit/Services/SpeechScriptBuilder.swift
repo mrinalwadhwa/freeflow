@@ -21,8 +21,19 @@ public struct SpeechScriptBuilder: Sendable {
         }
         for segment in content.segments {
             switch segment.kind {
-            case .prose, .listItem, .quote, .metadata:
+            case .prose, .quote, .metadata:
                 lines.append(Self.normalizeForSpeech(segment.text))
+            case .listItem:
+                // A terminal period gives the voice a sentence break
+                // between items; agents rarely punctuate list items,
+                // and unbroken items run together as one rushed
+                // sentence.
+                let spoken = Self.normalizeForSpeech(segment.text)
+                let punctuated =
+                    spoken.hasSuffix(".") || spoken.hasSuffix("!")
+                        || spoken.hasSuffix("?") || spoken.hasSuffix(":")
+                    ? spoken : spoken + "."
+                lines.append(punctuated)
             case .heading:
                 lines.append("\(Self.normalizeForSpeech(segment.text)).")
             case .code:
@@ -73,9 +84,47 @@ public struct SpeechScriptBuilder: Sendable {
     /// Rewrite glyphs and label patterns into speakable words. A
     /// parenthesized single letter is an option label — "(a)" reads
     /// as "option a" — and key-symbol runs like ⌃⇧C become
-    /// "control-shift-C".
+    /// "control-shift-C". Markdown links speak their label, paths
+    /// collapse to their last component, and short file extensions
+    /// spell out as letters — agents write full absolute paths that
+    /// are unbearable read aloud.
     static func normalizeForSpeech(_ text: String) -> String {
         var result = text
+        // A markdown link's URL is for eyes; the label is the words.
+        result = result.replacing(#/\[([^\]]+)\]\(([^)]+)\)/#) { match in
+            String(match.output.1)
+        }
+        // A filesystem path reads as its last component; a trailing
+        // :N is a line reference. "~/a/b/file.rs:21" becomes
+        // "file.rs, line 21".
+        result = result.replacing(
+            #/(^|[^\w:])((?:~|\.\.?)?(?:\/[\w.@-]+){2,})(?::(\d+))?/#
+        ) { match in
+            let prefix = String(match.output.1)
+            let path = String(match.output.2)
+            let last = path.split(separator: "/").last.map(String.init)
+                ?? path
+            if let line = match.output.3 {
+                return "\(prefix)\(last), line \(line)"
+            }
+            return "\(prefix)\(last)"
+        }
+        // A short file extension is said letter by letter:
+        // "brief.md" reads as "brief dot em-dee". Latin-abbreviation
+        // dots and decimal numbers stay untouched.
+        result = result.replacing(
+            #/\b([\w-]+)\.([a-z]{1,3})\b(?!\w)(?!\.[a-z])/#
+        ) { match in
+            let name = String(match.output.1)
+            let ext = String(match.output.2)
+            let exclusions: Set<String> = ["e", "i", "etc", "vs", "al"]
+            guard !exclusions.contains(name.lowercased()),
+                !exclusions.contains(ext)
+            else { return String(match.output.0) }
+            let spelled = ext.map { letterNames[String($0)] ?? String($0) }
+                .joined(separator: "-")
+            return "\(name) dot \(spelled)"
+        }
         for (glyph, spoken) in spokenGlyphs {
             result = result.replacingOccurrences(of: glyph, with: spoken)
         }

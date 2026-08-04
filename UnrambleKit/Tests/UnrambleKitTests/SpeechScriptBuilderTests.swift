@@ -103,11 +103,60 @@ struct SpeechScriptBuilderTests {
             .init(kind: .heading, text: "What changed"),
             .init(kind: .listItem, text: "the resampler"),
         ])
-        #expect(builder.script(for: content) == "What changed.\nthe resampler")
+        #expect(builder.script(for: content) == "What changed.\nthe resampler.")
     }
 
     @Test("Empty content yields an empty script")
     func emptyContentYieldsEmptyScript() {
         #expect(builder.script(for: ReadableContent(segments: [])) == "")
+    }
+}
+
+@Suite("Agent text speech shaping")
+struct AgentTextSpeechShapingTests {
+
+    @Test("A markdown link speaks its label, not its URL")
+    func linkSpeaksLabel() {
+        let spoken = SpeechScriptBuilder.normalizeForSpeech(
+            "The draft is ready: [brief.md](/Users/m/Workspace/f/.fluent/drafts/x/brief.md).")
+        #expect(spoken.contains("brief dot em-dee"))
+        #expect(!spoken.contains("/Users"))
+        #expect(!spoken.contains("drafts"))
+    }
+
+    @Test("A path collapses to its last component with a line reference")
+    func pathCollapsesToLastComponent() {
+        let spoken = SpeechScriptBuilder.normalizeForSpeech(
+            "Today's dashboard is /Users/m/Workspace/factory/main/src/dashboard.rs:21 basically.")
+        #expect(spoken.contains("dashboard dot arr-ess, line 21"))
+        #expect(!spoken.contains("/Users"))
+        #expect(!spoken.contains("Workspace"))
+    }
+
+    @Test("A short file extension spells out as letters")
+    func extensionSpellsOut() {
+        let spoken = SpeechScriptBuilder.normalizeForSpeech(
+            "Open document.rs and notes.md now.")
+        #expect(spoken.contains("document dot arr-ess"))
+        #expect(spoken.contains("notes dot em-dee"))
+    }
+
+    @Test("Decimal numbers and abbreviations stay intact")
+    func numbersAndAbbreviationsUntouched() {
+        let spoken = SpeechScriptBuilder.normalizeForSpeech(
+            "Version 0.1.5 works, e.g. the build.")
+        #expect(spoken.contains("0.1.5"))
+        #expect(spoken.contains("e.g."))
+    }
+
+    @Test("List items end with a sentence break")
+    func listItemsGetSentenceBreaks() {
+        let content = ReadableContent(segments: [
+            .init(kind: .listItem, text: "run-tab selection"),
+            .init(kind: .listItem, text: "polling cadence"),
+        ])
+        let script = SpeechScriptBuilder().script(for: content)
+        #expect(script.contains("run-tab selection."))
+        #expect(script.contains("polling cadence."))
     }
 }
