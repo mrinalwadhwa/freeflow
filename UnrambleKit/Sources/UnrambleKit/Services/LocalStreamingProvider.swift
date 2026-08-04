@@ -123,6 +123,12 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         let session: (any LocalRecognitionSession)?
         let newAudio: Data
         let fedEnd: Int
+
+        /// Whether the un-fed tail contains anything above the feed
+        /// gate. A wholly silent tail never reaches the recognizer:
+        /// the cycles skipped it for the same reason, and feeding it
+        /// at finish hallucinates a closing sentence out of nothing.
+        let hasAudibleTail: Bool
     }
 
     private var finishing = false
@@ -515,7 +521,8 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 recognitionError: recognitionError,
                 session: recognitionSession,
                 newAudio: accumulatedAudio.subdata(in: start..<end),
-                fedEnd: end)
+                fedEnd: end,
+                hasAudibleTail: lastAudibleByte > start)
         }
         guard let snapshot else { throw CancellationError() }
         if let error = snapshot.recognitionError { throw error }
@@ -530,9 +537,10 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         }
 
         // Feed audio received since the last cycle, then flush the pending
-        // recognition tail.
+        // recognition tail. A wholly silent tail stays out of the
+        // recognizer, exactly as the cycles kept it out.
         let sttStart = CFAbsoluteTimeGetCurrent()
-        if !snapshot.newAudio.isEmpty {
+        if !snapshot.newAudio.isEmpty, snapshot.hasAudibleTail {
             do {
                 try session.feed(Self.pcmToFloat(snapshot.newAudio))
             } catch {

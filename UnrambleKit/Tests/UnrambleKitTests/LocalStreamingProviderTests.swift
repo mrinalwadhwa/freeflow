@@ -1251,9 +1251,14 @@ struct LocalStreamingSilenceGatingTests {
 
         await provider.seedTranscript(
             "Let's start planning the release.", sessionID: sessionID)
+        // The user stays quiet after the chime: the silent live audio
+        // must never reach the recognizer, even at finish.
+        try await provider.sendAudio(
+            makeSilence(bytes: 32_000), sessionID: sessionID)
         let result = try await provider.finishStreaming(sessionID: sessionID)
 
         #expect(result == "Let's start planning the release.")
+        #expect(engine.feedCallCount == 0)
     }
 
     @Test("Live speech appends after a seeded transcript")
