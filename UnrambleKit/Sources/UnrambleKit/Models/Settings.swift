@@ -39,6 +39,7 @@ public final class Settings: @unchecked Sendable {
         case hasShownConversationIntro = "hasShownConversationIntro"
         case voiceProcessedCaptureEnabled = "voiceProcessedCaptureEnabled"
         case halVadProbeEnabled = "halVadProbeEnabled"
+        case selectedInputDeviceUID = "selectedInputDeviceUID"
     }
 
     // MARK: - Init
@@ -377,6 +378,25 @@ public final class Settings: @unchecked Sendable {
         }
         set {
             defaults.set(newValue, forKey: Key.halVadProbeEnabled.rawValue)
+        }
+    }
+
+    /// The CoreAudio device UID of the explicitly selected input
+    /// device, or nil for auto-detect. Numeric device IDs churn every
+    /// time Bluetooth renegotiates or the app relaunches; the UID is
+    /// the stable identity a selection re-attaches to.
+    public var selectedInputDeviceUID: String? {
+        get {
+            defaults.string(forKey: Key.selectedInputDeviceUID.rawValue)
+        }
+        set {
+            if let newValue {
+                defaults.set(
+                    newValue, forKey: Key.selectedInputDeviceUID.rawValue)
+            } else {
+                defaults.removeObject(
+                    forKey: Key.selectedInputDeviceUID.rawValue)
+            }
         }
     }
 

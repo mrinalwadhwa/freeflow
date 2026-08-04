@@ -21,6 +21,7 @@ ci AudioPreviewPreRollPublicationTests
 ci AudioProviderForceResetContractTests
 ci AudioResamplerTests
 ci AudioStartReservationTests
+ci BluetoothTwinCollapsingTests
 ci BrowserURLReaderTests
 ci BufferedPasteOwnershipTests
 ci BuildUserPromptTests

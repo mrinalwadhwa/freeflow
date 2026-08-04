@@ -18,9 +18,47 @@ import Foundation
 /// Listens for hardware device list changes (connect/disconnect) and
 /// default device changes so `availableDevices()` always reflects the
 /// current state.
+/// Reads and writes the persisted input-selection UID. Injectable so
+/// tests never touch the user's real defaults.
+public struct InputSelectionStore: Sendable {
+    public let readUID: @Sendable () -> String?
+    public let writeUID: @Sendable (String?) -> Void
+
+    public init(
+        readUID: @escaping @Sendable () -> String?,
+        writeUID: @escaping @Sendable (String?) -> Void
+    ) {
+        self.readUID = readUID
+        self.writeUID = writeUID
+    }
+
+    /// The production store, backed by app settings.
+    public static var settings: InputSelectionStore {
+        InputSelectionStore(
+            readUID: { Settings.shared.selectedInputDeviceUID },
+            writeUID: { Settings.shared.selectedInputDeviceUID = $0 })
+    }
+
+    /// An in-memory store for tests.
+    public static func ephemeral() -> InputSelectionStore {
+        final class Box: @unchecked Sendable {
+            let lock = NSLock()
+            var uid: String?
+        }
+        let box = Box()
+        return InputSelectionStore(
+            readUID: { box.lock.withLock { box.uid } },
+            writeUID: { newValue in box.lock.withLock { box.uid = newValue } })
+    }
+}
+
 public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sendable {
 
     private let lock = NSLock()
+
+    /// Persists the explicit selection's device UID across relaunches
+    /// and Bluetooth renegotiation.
+    private let selectionStore: InputSelectionStore
 
     /// Explicitly selected device ID, or nil to use the system default.
     private var _selectedDeviceID: UInt32?
@@ -54,7 +92,8 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
     private let transitionGate = AudioInputDeviceTransitionGate()
     private var lastDeviceChangeUptime: TimeInterval?
 
-    public init() {
+    public init(selectionStore: InputSelectionStore = .settings) {
+        self.selectionStore = selectionStore
         #if canImport(CoreAudio)
             registerListeners()
         #endif
@@ -87,7 +126,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
     public func currentDevice() async -> AudioDevice? {
         #if canImport(CoreAudio)
             let devices = listInputDevices()
-            let selectedID: UInt32? = lock.withLock { _selectedDeviceID }
+            let selectedID = resolveSelection(in: devices)
 
             if let selectedID {
                 // Return the selected device if it still exists.
@@ -120,6 +159,9 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 _selectedDeviceID = id
                 return _audioCaptureProvider
             }
+            // The numeric ID dies with the next Bluetooth renegotiation
+            // or relaunch; the UID is what the selection re-attaches to.
+            selectionStore.writeUID(getDeviceUID(deviceID: id))
             noteDeviceTransition()
             captureProvider?.markNeedsRebuild()
             Log.debug("[CoreAudioDeviceProvider] Selected device id=\(id)")
@@ -145,7 +187,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
     public var captureDeviceID: UInt32? {
         #if canImport(CoreAudio)
             let devices = listInputDevices()
-            let selected = lock.withLock { _selectedDeviceID }
+            let selected = resolveSelection(in: devices)
             let preferred = Self.preferredCaptureDeviceID(
                 devices: devices, selectedDeviceID: selected)
             if selected == nil,
@@ -161,6 +203,34 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         #else
             return selectedDeviceID
         #endif
+    }
+
+    /// Collapse Bluetooth zombie twins. A Bluetooth profile
+    /// transition briefly leaves a dead duplicate of a headset
+    /// enumerating beside the live device under the same name; a menu
+    /// that lists both invites selecting the corpse. Keep the system
+    /// default, else the newest object — CoreAudio object IDs grow as
+    /// devices are created, so the highest ID is the survivor. Wired
+    /// transports never collapse: identically named USB or display
+    /// devices are legitimately distinct hardware.
+    static func collapsingBluetoothTwins(
+        _ devices: [AudioDevice]
+    ) -> [AudioDevice] {
+        var bestTwin: [String: AudioDevice] = [:]
+        for device in devices where device.transportType == .bluetooth {
+            if let current = bestTwin[device.name] {
+                let keepCurrent =
+                    current.isDefault
+                    || (!device.isDefault && current.id > device.id)
+                if !keepCurrent { bestTwin[device.name] = device }
+            } else {
+                bestTwin[device.name] = device
+            }
+        }
+        return devices.filter { device in
+            guard device.transportType == .bluetooth else { return true }
+            return bestTwin[device.name]?.id == device.id
+        }
     }
 
     static func preferredCaptureDeviceID(
@@ -210,6 +280,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
             _selectedDeviceID = nil
             return _audioCaptureProvider
         }
+        selectionStore.writeUID(nil)
         noteDeviceTransition()
         captureProvider?.markNeedsRebuild()
         Log.debug("[CoreAudioDeviceProvider] Cleared selection, using auto-detect")
@@ -217,6 +288,9 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
 
     public func clearUnavailableCaptureSelection() {
         lock.withLock { _selectedDeviceID = nil }
+        // Capture failed on this device; re-attaching to it by UID
+        // would loop straight back into the failure.
+        selectionStore.writeUID(nil)
         Log.debug(
             "[CoreAudioDeviceProvider] Cleared unavailable capture device, using system default"
         )
@@ -322,6 +396,7 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
 
             for deviceID in allDeviceIDs {
                 guard hasInputStreams(deviceID: deviceID) else { continue }
+                guard isDeviceAlive(deviceID: deviceID) else { continue }
                 guard let name = getDeviceName(deviceID: deviceID) else { continue }
 
                 let transport = getTransportType(deviceID: deviceID)
@@ -346,7 +421,40 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
                 inputDevices.append(device)
             }
 
-            return inputDevices
+            return Self.collapsingBluetoothTwins(inputDevices)
+        }
+
+        /// Resolve the explicit selection against the current device
+        /// list. A stale numeric ID re-attaches through the persisted
+        /// device UID — the identity that survives Bluetooth
+        /// renegotiation and relaunches. Auto-detect stays nil.
+        private func resolveSelection(in devices: [AudioDevice]) -> UInt32? {
+            let numeric = lock.withLock { _selectedDeviceID }
+            if let numeric, devices.contains(where: { $0.id == numeric }) {
+                return numeric
+            }
+            guard let storedUID = selectionStore.readUID()
+            else {
+                if numeric != nil {
+                    lock.withLock { _selectedDeviceID = nil }
+                }
+                return nil
+            }
+            guard
+                let match = devices.first(where: {
+                    getDeviceUID(deviceID: $0.id) == storedUID
+                })
+            else {
+                if numeric != nil {
+                    lock.withLock { _selectedDeviceID = nil }
+                }
+                return nil
+            }
+            lock.withLock { _selectedDeviceID = match.id }
+            Log.debug(
+                "[CoreAudioDeviceProvider] Selection re-attached to "
+                    + "\"\(match.name)\" id=\(match.id)")
+            return match.id
         }
 
         /// Get all audio device IDs on the system.
@@ -478,6 +586,39 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
         }
 
         /// Get the human-readable name of a device.
+        /// Whether the device object is still alive. A Bluetooth
+        /// zombie can keep enumerating with streams after its link
+        /// died; a missing property is treated as alive.
+        private func isDeviceAlive(deviceID: AudioObjectID) -> Bool {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceIsAlive,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var alive: UInt32 = 1
+            var dataSize = UInt32(MemoryLayout<UInt32>.size)
+            let status = AudioObjectGetPropertyData(
+                deviceID, &address, 0, nil, &dataSize, &alive)
+            guard status == noErr else { return true }
+            return alive != 0
+        }
+
+        /// The device's stable CoreAudio UID, or nil when unreadable.
+        private func getDeviceUID(deviceID: AudioObjectID) -> String? {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var uid: CFString = "" as CFString
+            var dataSize = UInt32(MemoryLayout<CFString>.size)
+            let status = AudioObjectGetPropertyData(
+                deviceID, &address, 0, nil, &dataSize, &uid)
+            guard status == noErr else { return nil }
+            let value = uid as String
+            return value.isEmpty ? nil : value
+        }
+
         private func getDeviceName(deviceID: AudioObjectID) -> String? {
             var address = AudioObjectPropertyAddress(
                 mSelector: kAudioObjectPropertyName,
@@ -570,26 +711,33 @@ public final class CoreAudioDeviceProvider: AudioDeviceProviding, @unchecked Sen
             }
         }
 
-        /// Act on a settled device change. If an explicitly selected device is
-        /// gone, revert to auto-detect and rebuild; in auto-detect, rebuild to
-        /// pick up the new default. Runs once per settled burst.
+        /// Act on a settled device change. A selection whose numeric ID
+        /// died re-attaches through its persisted UID — the same
+        /// headset back under a fresh ID keeps its chosen status. Only
+        /// a selection with no surviving device reverts to auto-detect,
+        /// and the UID stays stored so the device is re-adopted when it
+        /// returns. Runs once per settled burst.
         private func handleDeviceChangeSettled() {
-            let (selectedID, captureProvider):
+            let (before, captureProvider):
                 (UInt32?, (any AudioCaptureRebuildSink)?) = lock.withLock {
                     (self._selectedDeviceID, self._audioCaptureProvider)
                 }
-            if let selectedID {
-                let devices = listInputDevices()
-                if !devices.contains(where: { $0.id == selectedID }) {
-                    lock.withLock { self._selectedDeviceID = nil }
-                    Log.debug(
-                        "[CoreAudioDeviceProvider] Selected device \(selectedID) disconnected, reverting to default"
-                    )
+            let devices = listInputDevices()
+            let resolved = resolveSelection(in: devices)
+            if let before {
+                if resolved == before {
+                    // Selected device still present — skip rebuild.
+                } else {
+                    if resolved == nil {
+                        Log.debug(
+                            "[CoreAudioDeviceProvider] Selected device \(before) disconnected, reverting to default"
+                        )
+                    }
                     captureProvider?.markNeedsRebuild()
                 }
-                // Selected device still present — skip rebuild.
             } else {
-                // Using system default — rebuild to pick up changes.
+                // Auto-detect, or a stored selection whose device just
+                // returned — rebuild to pick up the change.
                 captureProvider?.markNeedsRebuild()
             }
         }

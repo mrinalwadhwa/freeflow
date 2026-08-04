@@ -361,3 +361,64 @@ struct MockAudioDeviceProviderTests {
         let _: any AudioDeviceProviding = provider
     }
 }
+
+@Suite("Bluetooth twin collapsing")
+struct BluetoothTwinCollapsingTests {
+
+    @Test("A zombie twin collapses to the system default")
+    func twinCollapsesToDefault() {
+        let devices = [
+            AudioDevice(
+                id: 155, name: "airpods", transportType: .bluetooth),
+            AudioDevice(
+                id: 161, name: "airpods", isDefault: true,
+                transportType: .bluetooth),
+        ]
+
+        let collapsed = CoreAudioDeviceProvider.collapsingBluetoothTwins(
+            devices)
+        #expect(collapsed.map(\.id) == [161])
+    }
+
+    @Test("Without a default, the newest twin survives")
+    func newestTwinSurvivesWithoutDefault() {
+        let devices = [
+            AudioDevice(
+                id: 155, name: "airpods", transportType: .bluetooth),
+            AudioDevice(
+                id: 161, name: "airpods", transportType: .bluetooth),
+        ]
+
+        let collapsed = CoreAudioDeviceProvider.collapsingBluetoothTwins(
+            devices)
+        #expect(collapsed.map(\.id) == [161])
+    }
+
+    @Test("Identically named wired devices never collapse")
+    func wiredDuplicatesAreDistinctHardware() {
+        let devices = [
+            AudioDevice(id: 98, name: "Acer H276HL", transportType: .other),
+            AudioDevice(id: 121, name: "Acer H276HL", transportType: .other),
+            AudioDevice(id: 136, name: "Acer H276HL", transportType: .other),
+        ]
+
+        let collapsed = CoreAudioDeviceProvider.collapsingBluetoothTwins(
+            devices)
+        #expect(collapsed.count == 3)
+    }
+
+    @Test("Distinct Bluetooth headsets both survive")
+    func distinctBluetoothHeadsetsSurvive() {
+        let devices = [
+            AudioDevice(
+                id: 155, name: "airpods", isDefault: true,
+                transportType: .bluetooth),
+            AudioDevice(
+                id: 161, name: "WH-1000XM5", transportType: .bluetooth),
+        ]
+
+        let collapsed = CoreAudioDeviceProvider.collapsingBluetoothTwins(
+            devices)
+        #expect(collapsed.count == 2)
+    }
+}

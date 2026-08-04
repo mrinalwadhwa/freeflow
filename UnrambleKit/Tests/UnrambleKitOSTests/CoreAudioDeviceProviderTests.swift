@@ -8,13 +8,13 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Conforms to AudioDeviceProviding")
     func protocolConformance() {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let _: any AudioDeviceProviding = provider
     }
 
     @Test("Available devices have valid names and IDs")
     func availableDevices() async {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let devices = await provider.availableDevices()
 
         // Headless machines and VMs may have no input devices.
@@ -28,7 +28,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Exactly one device is marked as default when devices exist")
     func exactlyOneDefault() async {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let devices = await provider.availableDevices()
 
         guard !devices.isEmpty else { return }
@@ -40,7 +40,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Current device follows the automatic capture policy")
     func currentDeviceAutoDetect() async {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let devices = await provider.availableDevices()
 
         guard !devices.isEmpty else { return }
@@ -56,7 +56,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Select device changes current device")
     func selectDevice() async throws {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let devices = await provider.availableDevices()
 
         guard let target = devices.first else { return }
@@ -69,7 +69,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Select non-existent device throws deviceNotFound")
     func selectNonExistentDevice() async {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
 
         do {
             try await provider.selectDevice(id: 999_999)
@@ -87,7 +87,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Clear selection restores the automatic capture policy")
     func clearSelection() async throws {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let devices = await provider.availableDevices()
 
         guard let nonDefault = devices.first(where: { !$0.isDefault }) else {
@@ -111,7 +111,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("selectedDeviceID reflects selection state")
     func selectedDeviceIDProperty() async throws {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         #expect(provider.selectedDeviceID == nil, "Initially no device should be selected")
 
         let devices = await provider.availableDevices()
@@ -128,7 +128,7 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Device IDs are unique")
     func uniqueDeviceIDs() async {
-        let provider = CoreAudioDeviceProvider()
+        let provider = CoreAudioDeviceProvider(selectionStore: .ephemeral())
         let devices = await provider.availableDevices()
 
         let ids = devices.map { $0.id }
@@ -138,8 +138,8 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Multiple providers see the same devices")
     func multipleProviders() async {
-        let providerA = CoreAudioDeviceProvider()
-        let providerB = CoreAudioDeviceProvider()
+        let providerA = CoreAudioDeviceProvider(selectionStore: .ephemeral())
+        let providerB = CoreAudioDeviceProvider(selectionStore: .ephemeral())
 
         let devicesA = await providerA.availableDevices()
         let devicesB = await providerB.availableDevices()
@@ -149,8 +149,8 @@ struct CoreAudioDeviceProviderTests {
 
     @Test("Selecting a device on one provider does not affect another")
     func selectionIsolation() async throws {
-        let providerA = CoreAudioDeviceProvider()
-        let providerB = CoreAudioDeviceProvider()
+        let providerA = CoreAudioDeviceProvider(selectionStore: .ephemeral())
+        let providerB = CoreAudioDeviceProvider(selectionStore: .ephemeral())
 
         let devices = await providerA.availableDevices()
         // Pick a non-default device so selectDevice doesn't clear
