@@ -38,6 +38,7 @@ public final class Settings: @unchecked Sendable {
         case interimNarrationEnabled = "interimNarrationEnabled"
         case hasShownConversationIntro = "hasShownConversationIntro"
         case voiceProcessedCaptureEnabled = "voiceProcessedCaptureEnabled"
+        case halVadProbeEnabled = "halVadProbeEnabled"
     }
 
     // MARK: - Init
@@ -360,6 +361,22 @@ public final class Settings: @unchecked Sendable {
         set {
             defaults.set(
                 newValue, forKey: Key.voiceProcessedCaptureEnabled.rawValue)
+        }
+    }
+
+    /// Whether the HAL voice-activity shadow probe runs during
+    /// capture. Off by default: enabling the detection property made
+    /// the device gate its input stream during silence, which failed
+    /// capture integrity at timestampCoverage and lost the turn.
+    /// Enable deliberately for a probe round:
+    /// `defaults write computer.unramble halVadProbeEnabled -bool YES`.
+    public var halVadProbeEnabled: Bool {
+        get {
+            defaults.object(forKey: Key.halVadProbeEnabled.rawValue)
+                as? Bool ?? false
+        }
+        set {
+            defaults.set(newValue, forKey: Key.halVadProbeEnabled.rawValue)
         }
     }
 

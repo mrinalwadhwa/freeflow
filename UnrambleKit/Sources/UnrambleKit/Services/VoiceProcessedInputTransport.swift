@@ -30,6 +30,7 @@ import Foundation
         private let farEndHub: FarEndPlaybackHub?
         private let farEndChannel: FarEndPlaybackChannel?
         private let renderState: FarEndRenderState
+        private let voiceActivityProbe: VoiceActivityShadowProbe
         private let stateLock = NSLock()
         private var isStarted = false
 
@@ -39,6 +40,8 @@ import Foundation
         ) throws {
             self.deviceID = deviceID
             self.farEndHub = farEndHub
+            self.voiceActivityProbe = VoiceActivityShadowProbe(
+                deviceID: deviceID)
 
             var description = AudioComponentDescription(
                 componentType: kAudioUnitType_Output,
@@ -339,9 +342,11 @@ import Foundation
             if let farEndHub, let farEndChannel {
                 farEndHub.activate(farEndChannel)
             }
+            voiceActivityProbe.start()
         }
 
         func stop() {
+            voiceActivityProbe.stop()
             if let farEndHub, let farEndChannel {
                 farEndHub.deactivate(farEndChannel)
             }
