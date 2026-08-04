@@ -28,6 +28,13 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
     }
     private var _activatedSessionIDs: [DictationSessionID] = []
 
+    /// The `playsCaptureCues` value of each activation, in order.
+    /// Plain `activate()` records true.
+    public var activationCaptureCues: [Bool] {
+        lock.withLock { _activationCaptureCues }
+    }
+    private var _activationCaptureCues: [Bool] = []
+
     /// Session IDs passed to `complete(sessionID:)`, in order.
     public var completedSessionIDs: [DictationSessionID] {
         lock.withLock { _completedSessionIDs }
@@ -55,6 +62,19 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
 
     @discardableResult
     public func activate() async -> DictationSessionID? {
+        activateRecording(playsCaptureCues: true)
+    }
+
+    @discardableResult
+    public func activate(
+        playsCaptureCues: Bool
+    ) async -> DictationSessionID? {
+        activateRecording(playsCaptureCues: playsCaptureCues)
+    }
+
+    private func activateRecording(
+        playsCaptureCues: Bool
+    ) -> DictationSessionID? {
         lock.withLock {
             guard !_nextActivateFails else {
                 _nextActivateFails = false
@@ -62,6 +82,7 @@ public final class MockPipelineProvider: PipelineProviding, @unchecked Sendable
             }
             let sessionID = DictationSessionID()
             _activatedSessionIDs.append(sessionID)
+            _activationCaptureCues.append(playsCaptureCues)
             _state = .recording
             _currentSessionID = sessionID
             return sessionID

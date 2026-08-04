@@ -91,6 +91,7 @@ ci MicDiagnosticStoreTests
 ci MicrophoneCaptureCoordinatorTests
 ci MicrophonePreviewClientTests
 ci MicrophoneWAVCollectorTests
+ci MidClauseHeuristicsTests
 ci MockAudioDeviceProviderTests
 ci MockBatchProviderTests
 ci MockStreamingProviderContractTests

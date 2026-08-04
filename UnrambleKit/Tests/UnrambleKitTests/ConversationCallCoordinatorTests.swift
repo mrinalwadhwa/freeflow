@@ -52,6 +52,7 @@ struct ConversationCallCoordinatorTests {
         session: ResolvedAgentSession?,
         injectedText: String? = "Fix the failing resampler test.",
         dictationActive: Bool = false,
+        idleTimeout: TimeInterval = 180,
         readSessionStops: ReadSessionStopCounter = ReadSessionStopCounter()
     ) -> Harness {
         let resolver = StubAgentSessionResolver(session: session)
@@ -75,7 +76,8 @@ struct ConversationCallCoordinatorTests {
             cuePlayer: cues,
             synthesizer: synthesizer,
             isDictationActive: { dictationActive },
-            stopReadSession: { readSessionStops.increment() })
+            stopReadSession: { readSessionStops.increment() },
+            idleTimeout: idleTimeout)
         return Harness(
             coordinator: coordinator,
             resolver: resolver,
@@ -296,6 +298,44 @@ struct ConversationCallCoordinatorTests {
         #expect(harness.cues.doneCueCount == 1)
     }
 
+    @Test("A silent call ends itself audibly after the idle window")
+    func idleCallEndsAudibly() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            idleTimeout: 0.05)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        await harness.coordinator.waitForCall()
+
+        #expect(await harness.coordinator.isCallActive == false)
+        #expect(harness.cues.doneCueCount == 1)
+        #expect(
+            harness.pipeline.cancelledSessionIDs
+                == harness.pipeline.activatedSessionIDs)
+    }
+
+    @Test("Speech in the turn stands the idle deadline down")
+    func speechStandsIdleDeadlineDown() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            idleTimeout: 0.05)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+
+        // Let the deadline pass with speech already heard, then
+        // endpoint normally: the turn still sends.
+        await settle()
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        #expect(harness.pipeline.completedSessionIDs.count == 1)
+        #expect(harness.submitter.submitCount == 1)
+        #expect(harness.cues.doneCueCount == 0)
+    }
+
     // MARK: - Turn loop
 
     @Test("The call captures speech with no key held")
@@ -308,6 +348,19 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .listening)
 
         #expect(harness.pipeline.state == .recording)
+    }
+
+    @Test("Call captures start and stop without dictation cues")
+    func callCapturesAreSilent() async {
+        let harness = makeHarness(session: agentSession())
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        #expect(harness.pipeline.activationCaptureCues == [false])
     }
 
     @Test("Transcribed speech followed by the pause sends the turn")
@@ -389,6 +442,26 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .waiting)
 
         #expect(harness.cues.sendCueCount == 1)
+    }
+
+    @Test("A noise turn that injects nothing plays no send cue")
+    func noiseTurnPlaysNoCue() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            injectedText: nil)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.transcribedSpeech)
+        harness.publish(.pause)
+
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 2
+        }
+
+        #expect(harness.pipeline.completedSessionIDs.count == 1)
+        #expect(harness.cues.sendCueCount == 0)
+        #expect(harness.submitter.submitCount == 0)
     }
 
     @Test("A pause with no transcribed speech sends nothing")
@@ -475,8 +548,8 @@ struct ConversationCallCoordinatorTests {
         #expect(harness.pipeline.activatedSessionIDs.count == 2)
     }
 
-    @Test("A tool-only turn plays the done cue and relistens")
-    func playsDoneCueOnToolOnlyTurn() async {
+    @Test("A tool-only turn relistens quietly")
+    func toolOnlyTurnRelistensQuietly() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -488,7 +561,7 @@ struct ConversationCallCoordinatorTests {
         harness.watcher.emit(.toolOnly)
         await waitForState(harness.coordinator, .listening)
 
-        #expect(harness.cues.doneCueCount == 1)
+        #expect(harness.cues.doneCueCount == 0)
         #expect(harness.synthesizer.spokenTexts.isEmpty)
         #expect(harness.pipeline.activatedSessionIDs.count == 2)
     }
@@ -871,6 +944,7 @@ struct ConversationCallCoordinatorTests {
         #expect(await harness.coordinator.isCallActive == false)
         #expect(harness.commandGate.resetCount == 1)
         #expect(harness.submitter.submitCount == 0)
+        #expect(harness.cues.sendCueCount == 0)
         #expect(harness.watcher.armed.isEmpty)
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .idle)

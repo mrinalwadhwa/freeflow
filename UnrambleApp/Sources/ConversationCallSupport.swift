@@ -47,6 +47,13 @@ final class CurrentPipelineProxy: PipelineProviding, @unchecked Sendable {
         await current()?.activate(releaseBoundary: releaseBoundary)
     }
 
+    @discardableResult
+    func activate(
+        playsCaptureCues: Bool
+    ) async -> DictationSessionID? {
+        await current()?.activate(playsCaptureCues: playsCaptureCues)
+    }
+
     func complete() async {
         await current()?.complete()
     }

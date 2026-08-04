@@ -31,6 +31,10 @@ public actor ConversationCallCoordinator {
         /// A barge-in turn heard nothing at all; the mic closes and
         /// the call resumes waiting.
         case abandoned
+
+        /// Nobody spoke for the whole idle window; the call ends
+        /// rather than holding an open microphone forever.
+        case idleTimedOut
     }
 
     /// How one capture turn resolved.
@@ -64,6 +68,7 @@ public actor ConversationCallCoordinator {
     private enum TurnEvent: Sendable {
         case signal(TurnSignal)
         case force
+        case idleTimeout
     }
 
     /// The subscription backing one turn's endpoint wait. Created
@@ -73,6 +78,7 @@ public actor ConversationCallCoordinator {
         let events: AsyncStream<TurnEvent>
         let continuation: AsyncStream<TurnEvent>.Continuation
         let forwarder: Task<Void, Never>
+        let idleTimer: Task<Void, Never>?
     }
 
     private let contextProvider: any AppContextProviding
@@ -88,6 +94,12 @@ public actor ConversationCallCoordinator {
     private let synthesizer: any SpeechSynthesizing
     private let isDictationActive: @Sendable () async -> Bool
     private let stopReadSession: @Sendable () async -> Void
+
+    /// How long full listening may go without any transcribed speech
+    /// before the call ends itself. An unattended open microphone is
+    /// a privacy and cost hazard; open-mic turns over a watch close
+    /// themselves on the pause and are not subject to this window.
+    private let idleTimeout: TimeInterval
 
     private var callTask: Task<Void, Never>?
 
@@ -141,7 +153,8 @@ public actor ConversationCallCoordinator {
         scriptBuilder: SpeechScriptBuilder = SpeechScriptBuilder(),
         synthesizer: any SpeechSynthesizing,
         isDictationActive: @escaping @Sendable () async -> Bool,
-        stopReadSession: @escaping @Sendable () async -> Void = {}
+        stopReadSession: @escaping @Sendable () async -> Void = {},
+        idleTimeout: TimeInterval = 180
     ) {
         self.contextProvider = contextProvider
         self.sessionResolver = sessionResolver
@@ -156,6 +169,7 @@ public actor ConversationCallCoordinator {
         self.synthesizer = synthesizer
         self.isDictationActive = isDictationActive
         self.stopReadSession = stopReadSession
+        self.idleTimeout = idleTimeout
     }
 
     /// Whether a call is active in any phase. The app ignores the
@@ -361,7 +375,8 @@ public actor ConversationCallCoordinator {
         generation: Int,
         abandonsOnEmptyPause: Bool
     ) async -> TurnOutcome {
-        guard let sessionID = await pipeline.activate() else {
+        guard let sessionID = await pipeline.activate(playsCaptureCues: false)
+        else {
             // The pipeline refused capture — e.g. a failed dictation
             // session holds admission for an explicit retry. End the
             // call audibly instead of vanishing mid-conversation.
@@ -373,8 +388,11 @@ public actor ConversationCallCoordinator {
         }
 
         // Subscribe to the session's signals before listening becomes
-        // visible, so no early signal is dropped.
-        let turnWait = beginTurnWait(sessionID: sessionID)
+        // visible, so no early signal is dropped. Only full listening
+        // carries the idle window; open-mic turns close themselves.
+        let turnWait = beginTurnWait(
+            sessionID: sessionID,
+            idleTimeout: abandonsOnEmptyPause ? nil : idleTimeout)
 
         // A hangup that raced activation must not leak the capture.
         guard adoptCapture(generation: generation, sessionID: sessionID)
@@ -393,6 +411,15 @@ public actor ConversationCallCoordinator {
         Log.debug("[Call] turn end: \(turnEnd)")
 
         switch turnEnd {
+        case .idleTimedOut:
+            // Nobody spoke for the whole idle window; end the call
+            // audibly instead of holding an open microphone forever.
+            if generation == callGeneration, !Task.isCancelled {
+                cuePlayer.playDoneCue()
+            }
+            hangUp()
+            return .ended
+
         case .abandoned:
             clearCapture(generation: generation, sessionID: sessionID)
             await pipeline.cancel(sessionID: sessionID)
@@ -401,13 +428,7 @@ public actor ConversationCallCoordinator {
             }
             return .listeningContinues
 
-        case .send(let sawTranscribedSpeech):
-            // The cue marks the moment the turn goes; skip it when no
-            // speech was transcribed, because nothing will be sent.
-            if sawTranscribedSpeech {
-                cuePlayer.playSendCue()
-            }
-
+        case .send:
             await injectionObserver.reset()
             await commandGate.reset()
             await pipeline.complete(sessionID: sessionID)
@@ -422,10 +443,14 @@ public actor ConversationCallCoordinator {
                 return perform(command)
             }
 
-            // An empty turn injected nothing; keep listening.
+            // An empty turn injected nothing; keep listening. Noise
+            // can endpoint as a sendable turn whose transcript turns
+            // out empty, so the send cue waits for delivered text —
+            // an honest cue over an early one.
             guard let injected = await injectionObserver.lastInjectedText(),
                 !injected.isEmpty
             else { return .listeningContinues }
+            cuePlayer.playSendCue()
 
             let sendContext = await contextProvider.readContext()
             guard generation == callGeneration, !Task.isCancelled else {
@@ -538,7 +563,10 @@ public actor ConversationCallCoordinator {
                     return .relisten
                 case .toolOnly:
                     guard !bargeInRequested else { continue }
-                    cuePlayer.playDoneCue()
+                    // No cue: with tool-heavy agents the window
+                    // expires constantly, and the pill's return to
+                    // listening already shows it. The done cue is
+                    // reserved for the call itself ending.
                     return .relisten
                 }
             case .bargeIn:
@@ -588,8 +616,13 @@ public actor ConversationCallCoordinator {
     }
 
     /// Subscribe to the capture session's signals and install the
-    /// force-send trigger.
-    private func beginTurnWait(sessionID: DictationSessionID) -> TurnWait {
+    /// force-send trigger. A non-nil idle timeout schedules the
+    /// turn's idle deadline; the endpoint ignores it once any speech
+    /// was heard.
+    private func beginTurnWait(
+        sessionID: DictationSessionID,
+        idleTimeout: TimeInterval?
+    ) -> TurnWait {
         let (events, continuation) = AsyncStream<TurnEvent>.makeStream()
         let signals = signalHub.signals(for: sessionID)
         let forwarder = Task {
@@ -598,15 +631,25 @@ public actor ConversationCallCoordinator {
             }
         }
         forceSendTrigger = { continuation.yield(.force) }
+        let idleTimer = idleTimeout.map { timeout in
+            Task {
+                try? await Task.sleep(
+                    nanoseconds: UInt64(timeout * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                continuation.yield(.idleTimeout)
+            }
+        }
         return TurnWait(
             events: events,
             continuation: continuation,
-            forwarder: forwarder)
+            forwarder: forwarder,
+            idleTimer: idleTimer)
     }
 
     private func endTurnWait(_ wait: TurnWait) {
         forceSendTrigger = nil
         wait.forwarder.cancel()
+        wait.idleTimer?.cancel()
         wait.continuation.finish()
     }
 
@@ -649,6 +692,13 @@ public actor ConversationCallCoordinator {
                 pendingPause = true
             case .force:
                 return .send(sawTranscribedSpeech: sawTranscribedSpeech)
+            case .idleTimeout:
+                // Speech anywhere in the turn means the user is
+                // present; the endpoint will come, so the deadline
+                // stands down.
+                if !sawTranscribedSpeech, !sawAudibleSpeech {
+                    return .idleTimedOut
+                }
             }
         }
         return nil

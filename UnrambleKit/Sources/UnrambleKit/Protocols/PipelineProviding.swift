@@ -20,6 +20,14 @@ public protocol PipelineProviding: Sendable {
         releaseBoundary: AudioCaptureReleaseBoundary
     ) async -> DictationSessionID?
 
+    /// Start a session that chooses whether capture start and stop play the
+    /// dictation sound cues. A conversation call captures with its own cue
+    /// language, so its sessions start and stop silently.
+    @discardableResult
+    func activate(
+        playsCaptureCues: Bool
+    ) async -> DictationSessionID?
+
     /// Called when the hotkey is released. Stops recording, sends audio
     /// and context through the processing pipeline, and injects the
     /// resulting text into the active app.
@@ -54,6 +62,13 @@ public protocol PipelineProviding: Sendable {
 extension PipelineProviding {
     public func activate(
         releaseBoundary: AudioCaptureReleaseBoundary
+    ) async -> DictationSessionID? {
+        await activate()
+    }
+
+    @discardableResult
+    public func activate(
+        playsCaptureCues: Bool
     ) async -> DictationSessionID? {
         await activate()
     }

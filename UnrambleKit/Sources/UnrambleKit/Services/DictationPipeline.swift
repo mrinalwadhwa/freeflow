@@ -283,6 +283,7 @@ public actor DictationPipeline: PipelineProviding {
         let language: String?
         let startedAt: Date
         let releaseBoundary: AudioCaptureReleaseBoundary?
+        var playsCaptureCues: Bool = true
     }
 
     private enum DictationSource: String {
@@ -990,18 +991,28 @@ public actor DictationPipeline: PipelineProviding {
 
     @discardableResult
     public func activate() async -> DictationSessionID? {
-        await activateOwned(releaseBoundary: nil)
+        await activateOwned(releaseBoundary: nil, playsCaptureCues: true)
     }
 
     @discardableResult
     public func activate(
         releaseBoundary: AudioCaptureReleaseBoundary
     ) async -> DictationSessionID? {
-        await activateOwned(releaseBoundary: releaseBoundary)
+        await activateOwned(
+            releaseBoundary: releaseBoundary, playsCaptureCues: true)
+    }
+
+    @discardableResult
+    public func activate(
+        playsCaptureCues: Bool
+    ) async -> DictationSessionID? {
+        await activateOwned(
+            releaseBoundary: nil, playsCaptureCues: playsCaptureCues)
     }
 
     private func activateOwned(
-        releaseBoundary: AudioCaptureReleaseBoundary?
+        releaseBoundary: AudioCaptureReleaseBoundary?,
+        playsCaptureCues: Bool
     ) async -> DictationSessionID? {
         guard beginOperation() else {
             Log.debug("[Pipeline] activate() ignored - pipeline is retired")
@@ -1025,7 +1036,8 @@ public actor DictationPipeline: PipelineProviding {
             id: DictationSessionID(),
             language: language,
             startedAt: Date(),
-            releaseBoundary: releaseBoundary)
+            releaseBoundary: releaseBoundary,
+            playsCaptureCues: playsCaptureCues)
         activationReservation = session
         defer {
             if ownsActivationReservation(session.id) {
@@ -1203,7 +1215,11 @@ public actor DictationPipeline: PipelineProviding {
                 }
                 try await audioProviderRef.startRecording(
                     owner: captureOwner,
-                    configuration: .dictation,
+                    // A conversation call speaks its own cue language;
+                    // its capture sessions start and stop silently.
+                    configuration: AudioCaptureConfiguration(
+                        retainsPCM: true,
+                        playsSoundFeedback: session.playsCaptureCues),
                     releaseBoundary: session.releaseBoundary,
                     onCaptureReady: onCaptureReady)
                 return .success(())

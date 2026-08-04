@@ -15,10 +15,14 @@ struct LiveTurnPauseDetectorTests {
     }
 
     private func speech(_ bytes: Int) -> Data {
+        tone(bytes, amplitude: 0x4000)
+    }
+
+    private func tone(_ bytes: Int, amplitude: Int16) -> Data {
         let sampleCount = bytes / 2
         var data = Data(capacity: bytes)
         for _ in 0..<sampleCount {
-            withUnsafeBytes(of: Int16(0x4000).littleEndian) {
+            withUnsafeBytes(of: amplitude.littleEndian) {
                 data.append(contentsOf: $0)
             }
         }
@@ -27,7 +31,8 @@ struct LiveTurnPauseDetectorTests {
 
     @Test("Silence crossing the pause emits one pause signal")
     func silenceCrossingPauseEmitsOnce() {
-        var detector = LiveTurnPauseDetector(pauseSeconds: 0.1)
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0)
 
         #expect(detector.observe(chunk: silence(1600), threshold: threshold)
             .isEmpty)
@@ -39,7 +44,8 @@ struct LiveTurnPauseDetectorTests {
 
     @Test("Speech after a fired pause re-arms and signals audible speech")
     func speechAfterPauseRearms() {
-        var detector = LiveTurnPauseDetector(pauseSeconds: 0.1)
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0)
 
         #expect(detector.observe(chunk: silence(3200), threshold: threshold)
             == [.pause])
@@ -51,7 +57,8 @@ struct LiveTurnPauseDetectorTests {
 
     @Test("The start of a speech run signals audible speech once")
     func speechRunStartSignalsOnce() {
-        var detector = LiveTurnPauseDetector(pauseSeconds: 0.1)
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0)
 
         #expect(detector.observe(chunk: speech(640), threshold: threshold)
             == [.audibleSpeech])
@@ -65,7 +72,8 @@ struct LiveTurnPauseDetectorTests {
 
     @Test("A chunk containing speech resets the pause window")
     func mixedChunkResetsPauseWindow() {
-        var detector = LiveTurnPauseDetector(pauseSeconds: 0.1)
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0)
 
         // Nearly a full pause of silence, then speech resets the run.
         #expect(detector.observe(chunk: silence(3000), threshold: threshold)
@@ -84,15 +92,116 @@ struct LiveTurnPauseDetectorTests {
             == [.pause])
     }
 
+    @Test("An impulsive burst never signals audible speech")
+    func impulsiveBurstStaysSilent() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0.1)
+
+        // A knock: 20 ms of energy between stretches of silence. It
+        // resets the pause window but never sustains into speech.
+        #expect(detector.observe(chunk: silence(1600), threshold: threshold)
+            .isEmpty)
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            .isEmpty)
+        #expect(detector.observe(chunk: silence(1600), threshold: threshold)
+            .isEmpty)
+        #expect(detector.observe(chunk: silence(1600), threshold: threshold)
+            == [.pause])
+    }
+
+    @Test("A sustained speech run signals once at the crossing")
+    func sustainedRunSignalsAtCrossing() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0.04)
+
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            .isEmpty)
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            == [.audibleSpeech])
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            .isEmpty)
+    }
+
+    @Test("Silence between bursts resets the sustain accumulation")
+    func silenceResetsSustainAccumulation() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0.04)
+
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            .isEmpty)
+        #expect(detector.observe(chunk: silence(320), threshold: threshold)
+            .isEmpty)
+        // Two separate bursts never add up; only a continuous run
+        // crosses the sustain window.
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            .isEmpty)
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            == [.audibleSpeech])
+    }
+
+    @Test("An ambient dip does not reclassify room tone as speech")
+    func ambientDipKeepsRoomToneSilent() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 10, sustainSeconds: 0.04)
+
+        // Steady room tone becomes the floor.
+        for _ in 0..<5 {
+            #expect(
+                detector.observe(
+                    chunk: tone(1280, amplitude: 655),
+                    threshold: threshold
+                ).isEmpty)
+        }
+        // One anomalous quiet chunk must not redefine the room…
+        #expect(
+            detector.observe(
+                chunk: tone(1280, amplitude: 33),
+                threshold: threshold
+            ).isEmpty)
+        // …so the tone that follows is still ambience, not speech.
+        for _ in 0..<5 {
+            #expect(
+                detector.observe(
+                    chunk: tone(1280, amplitude: 655),
+                    threshold: threshold
+                ).isEmpty)
+        }
+        // Real speech still crosses immediately.
+        #expect(
+            detector.observe(chunk: speech(1280), threshold: threshold)
+                == [.audibleSpeech])
+    }
+
+    @Test("A configured final pause re-fires once after the hold window")
+    func finalPauseRefiresOnce() {
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.05, sustainSeconds: 0, finalPauseSeconds: 0.1)
+
+        #expect(detector.observe(chunk: silence(1600), threshold: threshold)
+            == [.pause])
+        #expect(detector.observe(chunk: silence(1600), threshold: threshold)
+            == [.pause])
+        #expect(detector.observe(chunk: silence(1600), threshold: threshold)
+            .isEmpty)
+
+        // Speech re-arms both crossings.
+        #expect(detector.observe(chunk: speech(640), threshold: threshold)
+            == [.audibleSpeech])
+        #expect(detector.observe(chunk: silence(3200), threshold: threshold)
+            == [.pause, .pause])
+    }
+
     @Test("An empty chunk emits nothing")
     func emptyChunkEmitsNothing() {
-        var detector = LiveTurnPauseDetector(pauseSeconds: 0.1)
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0)
         #expect(detector.observe(chunk: Data(), threshold: threshold).isEmpty)
     }
 
     @Test("Reset forgets accumulated silence")
     func resetForgetsSilence() {
-        var detector = LiveTurnPauseDetector(pauseSeconds: 0.1)
+        var detector = LiveTurnPauseDetector(
+            pauseSeconds: 0.1, sustainSeconds: 0)
 
         #expect(detector.observe(chunk: silence(3000), threshold: threshold)
             .isEmpty)

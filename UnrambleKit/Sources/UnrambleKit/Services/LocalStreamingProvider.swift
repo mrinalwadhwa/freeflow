@@ -73,6 +73,11 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
     /// so each cycle signals only real progress.
     private var lastSignaledTranscript = ""
 
+    /// Whether the current silence run's first pause was held because
+    /// the cycle transcript ended mid-clause. The detector's final
+    /// pause closes the turn regardless.
+    private var pauseHeldForClause = false
+
     /// Counts audio chunks while a hub is attached, to pace probes.
     private var turnAudioChunkCount = 0
 
@@ -138,8 +143,11 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             ?? AudioLevelAnalyzer.minimumAcceptedSpeechRMS
         self.turnSignals = turnSignals
         self.turnPauseSeconds = turnPauseSeconds
+        // The final pause backs the mid-clause hold: a reflective
+        // pause gets 1.5 extra seconds before the turn closes.
         self.turnPauseDetector = LiveTurnPauseDetector(
-            pauseSeconds: turnPauseSeconds)
+            pauseSeconds: turnPauseSeconds,
+            finalPauseSeconds: turnPauseSeconds + 1.5)
     }
 
     // MARK: - StreamingDictationProviding
@@ -213,6 +221,28 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         if let probe { Log.debug(probe) }
         if let turnSignals {
             for signal in signals {
+                // The first pause holds when the cycle transcript so
+                // far stops mid-clause — the speaker is thinking, not
+                // done — and the detector's final pause closes the
+                // turn regardless. An empty transcript cannot be
+                // judged and keeps ordinary timing.
+                if signal == .pause {
+                    let held = lock.withLock { () -> Bool in
+                        if !pauseHeldForClause,
+                            MidClauseHeuristics.endsMidClause(
+                                lastSignaledTranscript)
+                        {
+                            pauseHeldForClause = true
+                            return true
+                        }
+                        pauseHeldForClause = false
+                        return false
+                    }
+                    if held {
+                        Log.debug("[TurnHold] mid-clause tail; holding pause")
+                        continue
+                    }
+                }
                 turnSignals.publish(signal, for: sessionID)
                 // The on-device recognizer yields its text at finish,
                 // not per cycle, so audible speech doubles as the
@@ -220,6 +250,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 // send completes to an empty transcript and injects
                 // nothing.
                 if signal == .audibleSpeech {
+                    lock.withLock { pauseHeldForClause = false }
                     turnSignals.publish(.transcribedSpeech, for: sessionID)
                 }
             }
@@ -717,6 +748,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         fedBytes = 0
         turnPauseDetector.reset()
         lastSignaledTranscript = ""
+        pauseHeldForClause = false
     }
 
     /// Publish transcript progress for a conversation call observing
