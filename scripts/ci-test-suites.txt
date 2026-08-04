@@ -50,6 +50,7 @@ ci ConvertOrdinalDatesTests
 ci ConvertScaledNumbersTests
 ci ConvertSpokenTimeTests
 ci CopySelectionContentSourceTests
+ci DegenerateTranscriptDetectorTests
 ci DetachedPipelineGenerationTests
 ci DiagnosticsPrivacyTests
 ci DictatedPunctuationTests
@@ -123,6 +124,7 @@ ci OpenAISpeechSynthesizerTests
 ci PCMConverterLifecycleTests
 ci PhraseMetaCommandInterpreterTests
 ci PinnedFocusInjectorTests
+ci PinnedFocusSubmitterTests
 ci PipelineDeadlineTests
 ci PipelineDictationTests
 ci PipelineIntegrationTests

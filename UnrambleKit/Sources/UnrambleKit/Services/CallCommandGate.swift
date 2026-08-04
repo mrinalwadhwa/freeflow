@@ -1,14 +1,18 @@
 import Foundation
 
-/// Intercept spoken meta-commands before they inject.
+/// Intercept spoken meta-commands and recognizer noise before they
+/// inject.
 ///
 /// Decorates the pipeline's `TextInjecting` the way `InjectionRecorder`
 /// does, one layer further out: while a call turn is completing, the
 /// finished utterance is interpreted first, and a meta-command is held
 /// for the call coordinator instead of being injected — so "hang up"
-/// never lands as text in the agent's prompt. Outside calls every
-/// injection passes straight through, so ordinary dictation never
-/// pays for interpretation and can never trigger a command.
+/// never lands as text in the agent's prompt. A degenerate transcript —
+/// the looping sentences a recognizer invents from minutes of marginal
+/// audio — is vetoed the same way; the coordinator sees an empty
+/// injection and keeps listening. Outside calls every injection passes
+/// straight through, so ordinary dictation never pays for
+/// interpretation and can never trigger a command or a veto.
 public final class CallCommandGate: TextInjecting, CallCommandGating,
     @unchecked Sendable
 {
@@ -36,6 +40,10 @@ public final class CallCommandGate: TextInjecting, CallCommandGating,
         }
         if let command = await interpreter.interpret(text) {
             lock.withLock { pending = command }
+            return
+        }
+        if DegenerateTranscriptDetector.isDegenerate(text) {
+            Log.debug("[Call] degenerate transcript vetoed")
             return
         }
         try await wrapped.inject(text: text, into: context)

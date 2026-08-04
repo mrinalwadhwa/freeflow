@@ -15,7 +15,8 @@ public enum ConversationCallState: Sendable, Equatable {
     case listening
 
     /// A turn was sent; the call watches the agent session for its
-    /// response.
+    /// response while the microphone stays open — speech during the
+    /// wait endpoints normally and supersedes the watch.
     case waiting
 
     /// The call speaks a response or an interim message.

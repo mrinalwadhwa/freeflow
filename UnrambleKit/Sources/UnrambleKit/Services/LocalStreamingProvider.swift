@@ -256,7 +256,9 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                 // residual and noise, so text alone can never stand
                 // in for a voice.
                 turnSignals.publish(signal, for: sessionID)
-                if signal == .audibleSpeech || signal == .strongSpeech {
+                if signal == .audibleSpeech || signal == .strongSpeech
+                    || signal == .emphaticSpeech
+                {
                     lock.withLock { pauseHeldForClause = false }
                 }
             }

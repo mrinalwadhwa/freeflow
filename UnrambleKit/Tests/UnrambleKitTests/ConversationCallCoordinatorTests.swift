@@ -343,7 +343,7 @@ struct ConversationCallCoordinatorTests {
     func speechStandsIdleDeadlineDown() async {
         let harness = makeHarness(
             session: agentSession(),
-            idleTimeout: 0.05)
+            idleTimeout: 0.2)
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
@@ -351,13 +351,93 @@ struct ConversationCallCoordinatorTests {
 
         // Let the deadline pass with speech already heard, then
         // endpoint normally: the turn still sends.
-        await settle()
+        try? await Task.sleep(nanoseconds: 300_000_000)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
+
+        // Hang up before the waiting phase's own short deadline can
+        // fire; this test is about the listening turn's window.
+        await harness.coordinator.hangUp()
 
         #expect(harness.pipeline.completedSessionIDs.count == 1)
         #expect(harness.submitter.submitCount == 1)
         #expect(harness.cues.doneCueCount == 0)
+    }
+
+    @Test("A silent waiting phase ends the call after the idle window")
+    func idleWaitingEndsCallAudibly() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            idleTimeout: 0.25)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.strongSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        // The watch stays silent and so does the user; the waiting
+        // phase's open microphone must not persist forever.
+        await eventually {
+            await harness.coordinator.isCallActive == false
+        }
+        #expect(await harness.coordinator.isCallActive == false)
+        #expect(harness.cues.doneCueCount == 1)
+    }
+
+    @Test("Strong speech during waiting stands the idle deadline down")
+    func speechInWaitingStandsIdleDeadlineDown() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            idleTimeout: 0.3)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.strongSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 2
+        }
+
+        harness.publish(.strongSpeech)
+        try? await Task.sleep(nanoseconds: 450_000_000)
+
+        #expect(await harness.coordinator.isCallActive == true)
+        #expect(harness.cues.doneCueCount == 0)
+        await harness.coordinator.hangUp()
+    }
+
+    @Test("A visibly working agent holds the idle window open")
+    func agentActivityHoldsIdleWindowOpen() async {
+        let harness = makeHarness(
+            session: agentSession(),
+            idleTimeout: 0.3)
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.strongSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 2
+        }
+
+        // The user is silent, but tool records keep landing; the
+        // deadline re-arms instead of hanging up under the agent.
+        for _ in 0..<4 {
+            harness.watcher.emit(.stillWorking)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        #expect(await harness.coordinator.isCallActive == true)
+        #expect(harness.cues.doneCueCount == 0)
+
+        // Silence on both sides still closes the call.
+        await eventually {
+            await harness.coordinator.isCallActive == false
+        }
+        #expect(await harness.coordinator.isCallActive == false)
+        #expect(harness.cues.doneCueCount == 1)
     }
 
     // MARK: - Turn loop
@@ -384,7 +464,11 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
 
-        #expect(harness.pipeline.activationCaptureCues == [false])
+        // Every call session is cueless, including the waiting
+        // phase's open microphone racing this assertion.
+        #expect(
+            harness.pipeline.activationCaptureCues.allSatisfy { $0 == false })
+        #expect(harness.pipeline.activationCaptureCues.isEmpty == false)
     }
 
     @Test("Transcribed speech followed by the pause sends the turn")
@@ -568,10 +652,12 @@ struct ConversationCallCoordinatorTests {
         #expect(
             harness.synthesizer.spokenTexts.first?.contains("All tests pass")
                 == true)
-        // The narration's watch-only session plus the fresh opening.
+        // The waiting mic, the narration's watch-only session, and
+        // the fresh opening after it.
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
+        #expect(harness.pipeline.cancelledSessionIDs.count == 2)
     }
 
     @Test("A tool-only turn relistens quietly")
@@ -589,10 +675,15 @@ struct ConversationCallCoordinatorTests {
 
         #expect(harness.cues.doneCueCount == 0)
         #expect(harness.synthesizer.spokenTexts.isEmpty)
-        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        // The waiting mic is discarded and a full listening turn
+        // opens in its place.
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 3
+        }
+        #expect(harness.pipeline.cancelledSessionIDs.count == 1)
     }
 
-    @Test("An interim narration reopens the mic over the armed watch")
+    @Test("An interim narration returns the call to an open waiting mic")
     func narratesInterimAndReopensMic() async {
         let harness = makeHarness(session: agentSession())
 
@@ -605,16 +696,19 @@ struct ConversationCallCoordinatorTests {
         harness.watcher.emit(
             .interimMessage(markdown: "Checking the resampler."))
         await eventually { harness.synthesizer.spokenTexts.count == 1 }
-        await waitForState(harness.coordinator, .listening)
 
+        // The waiting mic was discarded for the narration; a fresh
+        // one opens under the same armed watch.
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
         #expect(harness.watcher.armed.count == 1)
+        let state = await harness.coordinator.stateStream.first { _ in true }
+        #expect(state == .waiting)
     }
 
-    @Test("An unused open mic closes on the pause and resumes waiting")
-    func emptyOpenMicPauseReturnsToWaiting() async {
+    @Test("An empty pause keeps the waiting mic open")
+    func emptyPauseKeepsWaitingMicOpen() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -622,25 +716,24 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        harness.watcher.emit(.interimMessage(markdown: "Working on it."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 2
         }
-        let openMicSession = harness.pipeline.activatedSessionIDs.last
 
+        // Silence while the agent works is not a "never mind": the
+        // pause re-arms and the same session keeps listening.
         harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
+        await settle()
 
-        // The discarded narration session and the unused opening.
-        #expect(harness.pipeline.cancelledSessionIDs.count == 2)
-        #expect(harness.pipeline.cancelledSessionIDs.last == openMicSession)
+        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        #expect(harness.pipeline.cancelledSessionIDs.isEmpty)
         #expect(harness.pipeline.completedSessionIDs.count == 1)
-        #expect(harness.watcher.armed.count == 1)
+        let state = await harness.coordinator.stateStream.first { _ in true }
+        #expect(state == .waiting)
     }
 
-    @Test("Speech into the reopened mic sends and re-arms the watch")
-    func spokenOpenMicTurnSendsAndRearms() async {
+    @Test("Speech into the waiting mic sends and re-arms the watch")
+    func speechInWaitingSendsAndRearms() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -648,10 +741,8 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        harness.watcher.emit(.interimMessage(markdown: "Working on it."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 2
         }
 
         harness.publish(.strongSpeech)
@@ -662,9 +753,10 @@ struct ConversationCallCoordinatorTests {
         #expect(harness.submitter.submitCount == 2)
     }
 
-    @Test("Interim messages arriving at the reopened mic are dropped")
-    func dropsInterimsArrivingDuringOpenMic() async {
+    @Test("A stale interim buffered under a narration is dropped")
+    func dropsInterimsBufferedUnderNarration() async {
         let harness = makeHarness(session: agentSession())
+        harness.synthesizer.blocksUntilStopped = true
 
         await harness.coordinator.toggle()
         await waitForState(harness.coordinator, .listening)
@@ -673,24 +765,28 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .waiting)
 
         harness.watcher.emit(.interimMessage(markdown: "First update."))
-        await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
-        }
+        await harness.synthesizer.waitUntilSpeaking()
 
-        // Stale progress arrives while the mic is open; the empty
-        // pause closes the mic and the message drops.
+        // Progress that arrives while its predecessor still plays is
+        // stale by the time the voice ends; the transcript is the
+        // source of truth.
         harness.watcher.emit(.interimMessage(markdown: "Stale progress."))
-        harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
+        harness.synthesizer.stopSpeaking()
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 4
+        }
         await settle()
         #expect(harness.synthesizer.spokenTexts.count == 1)
 
+        // A fresh final response still speaks.
         harness.watcher.emit(.response(markdown: "Fresh answer."))
         await eventually { harness.synthesizer.spokenTexts.count == 2 }
+        harness.synthesizer.stopSpeaking()
+        await waitForState(harness.coordinator, .listening)
     }
 
-    @Test("Completion arriving at the reopened mic resolves the watch")
-    func completionDuringOpenMicResolvesWatch() async {
+    @Test("A completion of already-played text resolves the watch quietly")
+    func playedCompletionResolvesWatch() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -701,25 +797,25 @@ struct ConversationCallCoordinatorTests {
 
         harness.watcher.emit(.interimMessage(markdown: "The answer."))
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
 
-        // The turn completes while the reopened mic hears nothing.
-        // The empty pause closes the mic, and the queued completion —
-        // its text already narrated — resolves into a full relisten.
+        // The turn completes with the text the interim narration
+        // already offered; the watch resolves into a full relisten
+        // without replaying it.
         harness.watcher.emit(.completed(markdown: "The answer."))
-        harness.publish(.pause)
+        await waitForState(harness.coordinator, .listening)
 
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 4
+            harness.pipeline.activatedSessionIDs.count == 5
         }
         #expect(harness.synthesizer.spokenTexts.count == 1)
         #expect(harness.cues.doneCueCount == 0)
         #expect(harness.watcher.armed.count == 1)
     }
 
-    @Test("A response whose narration was dropped speaks at completion")
-    func completedAfterDroppedNarrationSpeaks() async {
+    @Test("A queued completion speaks after the user's turn sends")
+    func queuedCompletionSpeaksAfterSend() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -727,24 +823,26 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        // Barge in; the narration arrives while the mic is open and
-        // is dropped.
-        await harness.coordinator.dictationKeyPressed()
         await eventually {
             harness.pipeline.activatedSessionIDs.count == 2
         }
-        harness.watcher.emit(.interimMessage(markdown: "The answer."))
-        harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
 
-        // The completed response was never actually played here, so
-        // completion speaks it.
+        // The user is mid-utterance when the response lands: progress
+        // drops, but the answer itself queues — it must not vanish
+        // behind the send.
+        harness.publish(.strongSpeech)
+        harness.watcher.emit(.interimMessage(markdown: "Progress."))
         harness.watcher.emit(.completed(markdown: "The answer."))
+        await settle()
+        #expect(harness.synthesizer.spokenTexts.isEmpty)
+
+        harness.publish(.pause)
+        await eventually { harness.watcher.armed.count == 2 }
         await eventually { harness.synthesizer.spokenTexts.count == 1 }
         #expect(
             harness.synthesizer.spokenTexts.first?.contains("The answer")
                 == true)
+        #expect(harness.submitter.submitCount == 2)
     }
 
     @Test("The watched agent is exposed for presentation until hangup")
@@ -778,7 +876,10 @@ struct ConversationCallCoordinatorTests {
 
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .waiting)
-        #expect(harness.pipeline.activatedSessionIDs.count == 1)
+        // Waiting is not deaf: exactly one open microphone runs
+        // through it, alongside the completed listening turn.
+        #expect(harness.pipeline.activatedSessionIDs.count == 2)
+        #expect(harness.pipeline.state == .recording)
     }
 
     // MARK: - Speaking and barge-in
@@ -803,13 +904,13 @@ struct ConversationCallCoordinatorTests {
 
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
-        // The narration's capture is discarded; a fresh clean turn
-        // opens in its place.
+        // The waiting mic and the narration's capture are both
+        // discarded; a fresh clean turn opens in their place.
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
                 && harness.pipeline.state == .recording
         }
-        #expect(harness.pipeline.cancelledSessionIDs.count == 1)
+        #expect(harness.pipeline.cancelledSessionIDs.count == 2)
     }
 
     @Test("Strong speech during narration stops the voice and sends")
@@ -827,18 +928,65 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
-        // The user talks over the voice; the voice yields and a
-        // fresh clean turn opens for their words.
-        harness.publish(.strongSpeech)
+        // The user talks over the voice; the voice yields, their
+        // barging sentence is absorbed through its pause, and a
+        // fresh clean turn opens after it.
+        harness.publish(.emphaticSpeech)
+        await eventually { harness.synthesizer.stopCount == 1 }
+        harness.publish(.pause)
         await waitForState(harness.coordinator, .listening)
         #expect(harness.synthesizer.stopCount == 1)
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
 
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
+        await eventually { harness.submitter.submitCount == 2 }
+        #expect(harness.watcher.armed.count == 2)
+    }
+
+    @Test("A voice barge is a stop signal; its sentence never sends")
+    func bargeSentenceIsAbsorbed() async {
+        let harness = makeHarness(session: agentSession())
+        harness.synthesizer.blocksUntilStopped = true
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.strongSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        harness.watcher.emit(.response(markdown: "Speaking now."))
+        await waitForState(harness.coordinator, .speaking)
+        await harness.synthesizer.waitUntilSpeaking()
+
+        // The barge stops the voice, but the mic does not recycle:
+        // the discarded session keeps absorbing the barging sentence.
+        harness.publish(.emphaticSpeech)
+        await eventually { harness.synthesizer.stopCount == 1 }
+        harness.publish(.audibleSpeech)
+        harness.publish(.transcribedSpeech)
+        await settle()
+        #expect(harness.pipeline.activatedSessionIDs.count == 3)
+
+        // The sentence's own pause closes the absorb; the whole
+        // utterance dies with the discarded session — nothing new
+        // was completed or submitted — and the barge cue hands the
+        // floor back audibly.
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .listening)
+        await eventually {
+            harness.pipeline.activatedSessionIDs.count == 4
+        }
+        #expect(harness.pipeline.completedSessionIDs.count == 1)
+        #expect(harness.submitter.submitCount == 1)
+        #expect(harness.cues.bargeCueCount == 1)
+
+        // The next utterance, into the fresh session, is the message.
+        harness.publish(.strongSpeech)
+        harness.publish(.pause)
         await eventually { harness.submitter.submitCount == 2 }
         #expect(harness.watcher.armed.count == 2)
     }
@@ -858,9 +1006,11 @@ struct ConversationCallCoordinatorTests {
         await waitForState(harness.coordinator, .speaking)
         await harness.synthesizer.waitUntilSpeaking()
 
-        // Reverberant residual is audible but never voice-strong; it
-        // must not take the floor from the narration.
+        // Reverberant residual is audible — and can even cross the
+        // open-session strong bar — but it never reaches emphatic;
+        // it must not take the floor from the narration.
         harness.publish(.audibleSpeech)
+        harness.publish(.strongSpeech)
         harness.publish(.pause)
         await settle()
         #expect(harness.synthesizer.stopCount == 0)
@@ -894,15 +1044,14 @@ struct ConversationCallCoordinatorTests {
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
-        }
-
-        // The fresh opening hears nothing: the response's turn
-        // resolves to relistening, never to a send.
-        harness.publish(.pause)
-        await eventually {
             harness.pipeline.activatedSessionIDs.count == 4
         }
+
+        // The fresh opening hears nothing: an empty pause re-arms
+        // listening and nothing ever sends.
+        harness.publish(.pause)
+        await settle()
+        #expect(harness.pipeline.activatedSessionIDs.count == 4)
         #expect(harness.submitter.submitCount == 1)
         #expect(harness.watcher.armed.count == 1)
     }
@@ -925,10 +1074,10 @@ struct ConversationCallCoordinatorTests {
         await harness.synthesizer.waitUntilSpeaking()
 
         // The canceller leaks the voice's own onset as speech-shaped
-        // audio; inside the guard even strong signals must not stop
-        // the voice.
-        harness.publish(.strongSpeech)
-        harness.publish(.strongSpeech)
+        // audio; inside the guard even emphatic signals must not
+        // stop the voice.
+        harness.publish(.emphaticSpeech)
+        harness.publish(.emphaticSpeech)
         await settle()
         #expect(harness.synthesizer.stopCount == 0)
         let speaking = await harness.coordinator.stateStream.first { _ in
@@ -941,7 +1090,7 @@ struct ConversationCallCoordinatorTests {
         harness.synthesizer.stopSpeaking()
         await waitForState(harness.coordinator, .listening)
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
         #expect(harness.submitter.submitCount == 1)
         #expect(harness.watcher.armed.count == 1)
@@ -965,18 +1114,20 @@ struct ConversationCallCoordinatorTests {
         await harness.coordinator.dictationKeyPressed()
 
         // Stopping the voice is the whole barge; the discarded
-        // narration capture is replaced by a fresh open turn.
+        // narration capture is replaced by a fresh open turn. The
+        // button is explicit, so no handoff cue plays.
         #expect(harness.synthesizer.stopCount == 1)
         await waitForState(harness.coordinator, .listening)
         await eventually {
-            harness.pipeline.activatedSessionIDs.count == 3
+            harness.pipeline.activatedSessionIDs.count == 4
         }
         let state = await harness.coordinator.stateStream.first { _ in true }
         #expect(state == .listening)
+        #expect(harness.cues.bargeCueCount == 0)
     }
 
-    @Test("No call speech starts while the barge-in mic is open")
-    func suppressesSpeechDuringBargeIn() async {
+    @Test("A reply arriving mid-speech queues instead of talking over")
+    func replyQueuesBehindActiveSpeech() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -984,20 +1135,28 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        await harness.coordinator.dictationKeyPressed()
         await eventually {
             harness.pipeline.activatedSessionIDs.count == 2
         }
 
+        // The user is mid-utterance in the waiting mic; the reply
+        // must not take the floor from them.
+        harness.publish(.strongSpeech)
         harness.watcher.emit(.response(markdown: "Held back."))
         await settle()
-
         #expect(harness.synthesizer.spokenTexts.isEmpty)
+
+        // Their endpoint sends, and the held answer plays after it.
+        harness.publish(.pause)
+        await eventually { harness.watcher.armed.count == 2 }
+        await eventually { harness.synthesizer.spokenTexts.count == 1 }
+        #expect(
+            harness.synthesizer.spokenTexts.first?.contains("Held back")
+                == true)
     }
 
-    @Test("Messages arriving during a barge-in are dropped from narration")
-    func dropsMessagesArrivingDuringBargeIn() async {
+    @Test("Progress arriving mid-speech drops instead of queueing")
+    func progressDropsBehindActiveSpeech() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -1005,20 +1164,18 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        await harness.coordinator.dictationKeyPressed()
         await eventually {
             harness.pipeline.activatedSessionIDs.count == 2
         }
-        harness.watcher.emit(.interimMessage(markdown: "Stale progress."))
 
-        // The empty pause ends the barge-in; the stale message drops.
+        harness.publish(.strongSpeech)
+        harness.watcher.emit(.interimMessage(markdown: "Stale progress."))
         harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
+        await eventually { harness.watcher.armed.count == 2 }
         await settle()
         #expect(harness.synthesizer.spokenTexts.isEmpty)
 
-        // Fresh events after the barge-in still speak.
+        // Fresh events on the re-armed watch still speak.
         harness.watcher.emit(.response(markdown: "Fresh answer."))
         await eventually { harness.synthesizer.spokenTexts.count == 1 }
         #expect(
@@ -1026,8 +1183,8 @@ struct ConversationCallCoordinatorTests {
                 == true)
     }
 
-    @Test("A response arriving during an empty barge-in still speaks")
-    func responseDuringEmptyBargeInSpeaks() async {
+    @Test("A queued reply still plays when the turn injects nothing")
+    func queuedReplyPlaysWhenTurnInjectsNothing() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -1035,15 +1192,15 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        await harness.coordinator.dictationKeyPressed()
         await eventually {
             harness.pipeline.activatedSessionIDs.count == 2
         }
 
-        // The final response lands while the barge-in mic is open.
-        // The "never mind" never redirected the agent, so the answer
-        // is spoken once the mic closes.
+        // The reply lands mid-utterance, but the utterance turns out
+        // to inject nothing. The agent was never redirected, so the
+        // answer still plays and the watch resolves.
+        harness.observer.stubbedText = nil
+        harness.publish(.strongSpeech)
         harness.watcher.emit(.response(markdown: "The final answer."))
         harness.publish(.pause)
 
@@ -1051,34 +1208,13 @@ struct ConversationCallCoordinatorTests {
         #expect(
             harness.synthesizer.spokenTexts.first?.contains(
                 "The final answer") == true)
-    }
-
-    @Test("An empty barge-in closes the mic and returns to waiting")
-    func emptyBargeInReturnsToWaiting() async {
-        let harness = makeHarness(session: agentSession())
-
-        await harness.coordinator.toggle()
-        await waitForState(harness.coordinator, .listening)
-        harness.publish(.strongSpeech)
-        harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
-
-        await harness.coordinator.dictationKeyPressed()
-        await eventually {
-            harness.pipeline.activatedSessionIDs.count == 2
-        }
-        let bargeInSession = harness.pipeline.activatedSessionIDs.last
-
-        harness.publish(.pause)
-        await waitForState(harness.coordinator, .waiting)
-
-        #expect(harness.pipeline.cancelledSessionIDs == [bargeInSession])
-        #expect(harness.pipeline.completedSessionIDs.count == 1)
         #expect(harness.watcher.armed.count == 1)
+        #expect(harness.submitter.submitCount == 1)
+        await waitForState(harness.coordinator, .listening)
     }
 
-    @Test("A spoken barge-in turn sends and re-arms the watch")
-    func spokenBargeInSendsAndRearms() async {
+    @Test("The dictation key during waiting sends the open turn")
+    func dictationKeyDuringWaitingSends() async {
         let harness = makeHarness(session: agentSession())
 
         await harness.coordinator.toggle()
@@ -1086,14 +1222,12 @@ struct ConversationCallCoordinatorTests {
         harness.publish(.strongSpeech)
         harness.publish(.pause)
         await waitForState(harness.coordinator, .waiting)
-
-        await harness.coordinator.dictationKeyPressed()
         await eventually {
             harness.pipeline.activatedSessionIDs.count == 2
         }
 
-        harness.publish(.strongSpeech)
-        harness.publish(.pause)
+        // The mic is already open; the key is a send, not a barge.
+        await harness.coordinator.dictationKeyPressed()
         await eventually { harness.watcher.armed.count == 2 }
 
         #expect(harness.pipeline.completedSessionIDs.count == 2)

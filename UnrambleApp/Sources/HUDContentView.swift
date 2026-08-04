@@ -63,44 +63,38 @@ struct HUDContentView: View {
             return 8
         case .ready:
             return 10
-        case .callWaiting:
-            return 32
         case .processingCollapsing, .processingBreathing, .readingProcessing:
             return 8
         case .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
             .dictationFailed, .readingSpeaking, .readingNoContent,
-            .callListening, .callSpeaking, .callNoAgent:
+            .callListening, .callWaiting, .callSpeaking, .callNoAgent:
             return 32
         }
     }
 
     private var pillFillOpacity: Double {
         switch viewModel.visualState {
-        case .callWaiting:
-            return 0.5
         case .minimized, .processingCollapsing, .processingBreathing,
             .readingProcessing:
             return 0.3
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
             .dictationFailed, .readingSpeaking, .readingNoContent,
-            .callListening, .callSpeaking, .callNoAgent:
+            .callListening, .callWaiting, .callSpeaking, .callNoAgent:
             return 0.5
         }
     }
 
     private var pillBorderOpacity: Double {
         switch viewModel.visualState {
-        case .callWaiting:
-            return 0.7
         case .minimized, .processingCollapsing, .processingBreathing,
             .readingProcessing:
             return 0.45
         case .ready, .listeningHeld, .listeningHandsFree,
             .processingSlow, .noTarget, .sessionExpired,
             .dictationFailed, .readingSpeaking, .readingNoContent,
-            .callListening, .callSpeaking, .callNoAgent:
+            .callListening, .callWaiting, .callSpeaking, .callNoAgent:
             return 0.7
         }
     }
@@ -336,10 +330,10 @@ struct HUDContentView: View {
         .padding(.horizontal, 6)
     }
 
-    /// The agent is working: the duet with the agent's side alive —
-    /// the blue ripple drifts while the user's side idles in white.
-    /// The trailing slot stays as an empty placeholder so all three
-    /// call states share one geometry and transitions do not morph.
+    /// The agent is working and the mic is still open: the duet with
+    /// both sides alive — the blue ripple drifts while the white bars
+    /// keep moving with the user's voice, which can send at any
+    /// moment. The checkmark sends immediately, as while listening.
     private var callWaitingContent: some View {
         HStack(spacing: 10) {
             endCallButton
@@ -348,20 +342,29 @@ struct HUDContentView: View {
 
             HStack(spacing: 6) {
                 WaitingDotsView()
-                IdleWaveDots(color: .white)
+                WaveformBarsView(audioLevel: viewModel.audioLevel)
             }
 
             Spacer(minLength: 0)
 
-            Color.clear
-                .frame(width: 20, height: 20)
+            Button(action: { viewModel.onSendCallTurn?() }) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.green.opacity(0.85))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send now")
+            .help("Send now")
         }
         .padding(.horizontal, 6)
     }
 
-    /// A response is being spoken: the agent's side moves in blue
-    /// cadence while the user's side idles. ■ stops the narration
-    /// and opens the mic, like Right Option.
+    /// A response is being spoken over the open, echo-cancelled mic:
+    /// the agent's side moves in blue cadence while the white bars
+    /// stay live — talking over the voice takes the floor. ■ stops
+    /// the narration, like Right Option.
     private var callSpeakingContent: some View {
         HStack(spacing: 10) {
             endCallButton
@@ -370,7 +373,7 @@ struct HUDContentView: View {
 
             HStack(spacing: 6) {
                 ReplyWaveformView()
-                IdleWaveDots(color: .white)
+                WaveformBarsView(audioLevel: viewModel.audioLevel)
             }
 
             Spacer(minLength: 0)

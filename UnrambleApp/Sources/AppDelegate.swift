@@ -42,7 +42,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             signalHub: turnSignalHub,
             injectionObserver: textInjector,
             commandGate: callCommandGate,
-            submitter: ReturnKeySubmitter(),
+            // The submit re-runs the pinned focus handshake: a user
+            // clicking around between transcription and delivery must
+            // not receive the Return in whatever window they reached.
+            submitter: PinnedFocusSubmitter(
+                focuser: AppleEventTerminalFocuser(),
+                pinnedDelivery: { [weak self] in
+                    let coordinator = await MainActor.run {
+                        self?.conversationCallCoordinator
+                    }
+                    return await coordinator?.pinnedDelivery
+                },
+                wrapping: ReturnKeySubmitter()),
             watcher: TranscriptResponseWatcher(
                 narratesInterimMessages: {
                     Settings.shared.interimNarrationEnabled

@@ -91,8 +91,9 @@ final class CurrentPipelineProxy: PipelineProviding, @unchecked Sendable {
 
 /// The call's cues reuse the short dictation sounds; longer sounds
 /// measurably delayed feedback when previously tried. The send cue
-/// marks the moment a turn goes, the reply cue precedes speech, and
-/// the done cue marks a tool-only turn.
+/// marks the moment a turn goes, the reply cue precedes speech, the
+/// done cue marks a tool-only turn, and the barge cue hands the
+/// floor back after an absorbed voice barge.
 struct DictationSoundCallCues: CallCuePlaying, @unchecked Sendable {
 
     let feedback: SoundFeedbackProvider
@@ -107,5 +108,9 @@ struct DictationSoundCallCues: CallCuePlaying, @unchecked Sendable {
 
     func playDoneCue() {
         feedback.playStopSound()
+    }
+
+    func playBargeCue() {
+        feedback.playStartSound()
     }
 }

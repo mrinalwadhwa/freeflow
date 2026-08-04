@@ -9,9 +9,12 @@ import Foundation
 /// fresher than the watch delivers the response; stillness past the
 /// extended window with no such text is a tool-only outcome, which
 /// also covers dead or unreadable transcripts and turns that landed
-/// elsewhere. Freshness is judged by record timestamps against the
-/// arm time — the sent turn's own transcript record resets stillness
-/// the moment it lands, so the previous response is never re-spoken.
+/// elsewhere. Every observed change without a resolution emits a
+/// throttled still-working notice, so a long tool-heavy turn keeps
+/// the call visibly alive without ever narrating. Freshness is judged
+/// by record timestamps against the arm time — the sent turn's own
+/// transcript record resets stillness the moment it lands, so the
+/// previous response is never re-spoken.
 public actor TranscriptResponseWatcher: ResponseWatching {
 
     private struct FileFingerprint: Equatable {
@@ -24,19 +27,27 @@ public actor TranscriptResponseWatcher: ResponseWatching {
     private let extendedWindow: TimeInterval
     private let pollInterval: TimeInterval
     private let interimParseInterval: TimeInterval
+    private let activityNoticeInterval: TimeInterval
     private let narratesInterimMessages: @Sendable () -> Bool
 
     private var watchTask: Task<Void, Never>?
 
+    /// The extended window bounds only a completely still transcript.
+    /// An agent composing a long reply writes nothing for stretches of
+    /// a minute or more, and the call's microphone stays open through
+    /// the whole wait, so patience here costs nothing — while an
+    /// early tool-only resolution silently killed the narration of
+    /// every slow response.
     public init(
         locators: [any AgentTranscriptLocating] = [
             ClaudeCodeTranscriptLocator(),
             CodexTranscriptLocator(),
         ],
         quiescenceWindow: TimeInterval = 1.5,
-        extendedWindow: TimeInterval = 60,
+        extendedWindow: TimeInterval = 600,
         pollInterval: TimeInterval = 0.25,
         interimParseInterval: TimeInterval = 1.0,
+        activityNoticeInterval: TimeInterval = 5.0,
         narratesInterimMessages: @escaping @Sendable () -> Bool = { true }
     ) {
         self.locators = locators
@@ -44,6 +55,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
         self.extendedWindow = extendedWindow
         self.pollInterval = pollInterval
         self.interimParseInterval = interimParseInterval
+        self.activityNoticeInterval = activityNoticeInterval
         self.narratesInterimMessages = narratesInterimMessages
     }
 
@@ -68,6 +80,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
         let extendedWindow = extendedWindow
         let pollInterval = pollInterval
         let interimParseInterval = interimParseInterval
+        let activityNoticeInterval = activityNoticeInterval
         let narrationEnabled = narratesInterimMessages()
         watchTask = Task {
             defer { continuation.finish() }
@@ -78,6 +91,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
                 extendedWindow: extendedWindow,
                 pollInterval: pollInterval,
                 interimParseInterval: interimParseInterval,
+                activityNoticeInterval: activityNoticeInterval,
                 narrationEnabled: narrationEnabled,
                 continuation: continuation)
         }
@@ -105,6 +119,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
         extendedWindow: TimeInterval,
         pollInterval: TimeInterval,
         interimParseInterval: TimeInterval,
+        activityNoticeInterval: TimeInterval,
         narrationEnabled: Bool,
         continuation: AsyncStream<ResponseWatchEvent>.Continuation
     ) async {
@@ -114,6 +129,7 @@ public actor TranscriptResponseWatcher: ResponseWatching {
         var parsedFingerprint: FileFingerprint?
         var interimParsedFingerprint: FileFingerprint?
         var lastInterimParse = Date.distantPast
+        var lastActivityNotice = Date.distantPast
         var narrated: Set<String> = []
         var stillSince = Date()
 
@@ -126,6 +142,17 @@ public actor TranscriptResponseWatcher: ResponseWatching {
             }
             let fingerprint = sessionFile.flatMap(Self.fingerprint(of:))
             if fingerprint != lastFingerprint {
+                // Discovering the file is not activity; only a change
+                // to an already-observed transcript is the agent
+                // visibly at work. The throttled notice holds the
+                // call's idle window open without narrating anything.
+                if lastFingerprint != nil,
+                    Date().timeIntervalSince(lastActivityNotice)
+                        >= activityNoticeInterval
+                {
+                    lastActivityNotice = Date()
+                    continuation.yield(.stillWorking)
+                }
                 lastFingerprint = fingerprint
                 stillSince = Date()
             }

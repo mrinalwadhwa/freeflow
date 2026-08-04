@@ -25,6 +25,12 @@ public enum TurnSignal: Sendable, Equatable {
     /// recognizer handed marginal audio invents words.
     case strongSpeech
 
+    /// A strong run whose peak also cleared the level that
+    /// echo-cancelled narration residual can reach. Only this
+    /// evidence may take the floor from a playing voice; a quieter
+    /// voice is indistinguishable from the residual on level alone.
+    case emphaticSpeech
+
     /// Trailing silence in the live audio crossed the send pause.
     case pause
 }

@@ -16,4 +16,9 @@ public protocol CallCuePlaying: Sendable {
 
     /// Mark a turn that completed without response text.
     func playDoneCue()
+
+    /// Hand the floor to the user after a voice barge: their barging
+    /// sentence was absorbed by design, and without a cue the
+    /// silence reads as breakage instead of an open microphone.
+    func playBargeCue()
 }

@@ -81,4 +81,31 @@ struct CallCommandGateTests {
 
         #expect(await harness.gate.takePendingCommand() == nil)
     }
+
+    @Test("During a call, a hallucination loop is vetoed from injection")
+    func vetoesDegenerateTranscriptDuringCall() async throws {
+        let harness = makeHarness(callActive: true)
+        let loop = Array(
+            repeating: "I'm not sure if I'm going to be able to do it.",
+            count: 5
+        ).joined(separator: " ")
+
+        try await harness.gate.inject(text: loop, into: .stub)
+
+        #expect(harness.injector.injectionCount == 0)
+        #expect(await harness.gate.takePendingCommand() == nil)
+    }
+
+    @Test("Outside a call, a repetitive text still passes through")
+    func repetitiveTextPassesThroughOutsideCalls() async throws {
+        let harness = makeHarness(callActive: false)
+        let loop = Array(
+            repeating: "I'm not sure if I'm going to be able to do it.",
+            count: 5
+        ).joined(separator: " ")
+
+        try await harness.gate.inject(text: loop, into: .stub)
+
+        #expect(harness.injector.injectionCount == 1)
+    }
 }

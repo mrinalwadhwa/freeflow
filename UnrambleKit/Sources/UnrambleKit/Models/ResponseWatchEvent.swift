@@ -16,8 +16,14 @@ public enum ResponseWatchEvent: Sendable, Equatable {
     /// the narration — a barge-in window — can still speak it.
     case completed(markdown: String)
 
-    /// The turn produced no new assistant text within the extended
-    /// window — tool output only, a dead transcript, or a turn that
-    /// landed elsewhere.
+    /// The transcript changed without narratable prose at its edge —
+    /// tool records landing while the agent works. Not a resolution:
+    /// the watch continues, and the call holds its idle window open
+    /// because the conversation is visibly alive.
+    case stillWorking
+
+    /// The turn produced no new assistant text and the transcript
+    /// went completely still for the extended window — a dead
+    /// transcript, or a turn that landed elsewhere.
     case toolOnly
 }

@@ -31,10 +31,20 @@ public struct LiveTurnPauseDetector: Sendable {
 
     /// A strong run's peak must also clear this absolute level in
     /// the raw microphone scale, so a near-silent room cannot make
-    /// whispers of its own noise. Measured live: echo-cancelled
-    /// narration residual peaks at or below 0.019 raw while actual
-    /// speech at the same microphone peaks 0.04 and above.
-    private static let minimumStrongRMS: Float = 0.03
+    /// whispers of its own noise. Measured live: a quiet far-field
+    /// voice can run as low as 0.009 raw; the sustained-run and
+    /// floor-multiple gates, not this minimum, carry the burden of
+    /// separating speech from noise in a session with nothing
+    /// playing.
+    private static let minimumStrongRMS: Float = 0.008
+
+    /// An emphatic run additionally clears the level that
+    /// echo-cancelled narration residual can reach — measured live
+    /// at or below 0.019 raw — so only emphatic runs may take the
+    /// floor from a playing voice. A voice quieter than the
+    /// residual is physically indistinguishable from it on level
+    /// alone; the buttons remain the barge for such a voice.
+    private static let minimumEmphaticRMS: Float = 0.03
 
     /// The floor's ceiling in the raw scale: long loud speech drifts
     /// the floor upward one percent per chunk, and this cap keeps
@@ -52,6 +62,7 @@ public struct LiveTurnPauseDetector: Sendable {
     private var finalPauseFired = false
     private var speechSignaled = false
     private var strongSignaled = false
+    private var emphaticSignaled = false
     private var noiseFloor: Float?
 
     public init(
@@ -116,6 +127,9 @@ public struct LiveTurnPauseDetector: Sendable {
         let strongCeiling = max(
             (noiseFloor ?? 0) * Self.strongFloorMultiple,
             Self.minimumStrongRMS)
+        let emphaticCeiling = max(
+            (noiseFloor ?? 0) * Self.strongFloorMultiple,
+            Self.minimumEmphaticRMS)
         if rms < silenceCeiling {
             if runAudibleBytes > 0 {
                 Log.debug(
@@ -129,6 +143,7 @@ public struct LiveTurnPauseDetector: Sendable {
             runStrongBytes = 0
             speechSignaled = false
             strongSignaled = false
+            emphaticSignaled = false
         } else {
             if runAudibleBytes == 0 {
                 Log.debug(
@@ -157,6 +172,13 @@ public struct LiveTurnPauseDetector: Sendable {
                         + "aboveStrongBytes=\(runStrongBytes)")
                 signals.append(.strongSpeech)
             }
+            if speechSignaled, !emphaticSignaled, runPeak >= emphaticCeiling {
+                emphaticSignaled = true
+                Log.debug(
+                    "[TurnRun] emphatic bytes=\(runAudibleBytes) "
+                        + "peak=\(runPeak)")
+                signals.append(.emphaticSpeech)
+            }
         }
         if trailingSilenceBytes >= pauseByteCount, !pauseFired {
             pauseFired = true
@@ -181,6 +203,7 @@ public struct LiveTurnPauseDetector: Sendable {
         finalPauseFired = false
         speechSignaled = false
         strongSignaled = false
+        emphaticSignaled = false
         noiseFloor = nil
     }
 }

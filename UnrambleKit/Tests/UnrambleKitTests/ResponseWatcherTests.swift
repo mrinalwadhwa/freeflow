@@ -152,8 +152,12 @@ struct ResponseWatcherTests {
         let events = await watcher.arm(session: agentSession(), anchor: "Go.")
         let collector = Task { () -> (ResponseWatchEvent?, Date) in
             var iterator = events.makeAsyncIterator()
-            let event = await iterator.next()
-            return (event, Date())
+            // Appends surface as still-working notices; the test
+            // waits for the resolution behind them.
+            while let event = await iterator.next() {
+                if event != .stillWorking { return (event, Date()) }
+            }
+            return (nil, Date())
         }
 
         // Keep the file changing well past the quiescence window.
@@ -169,6 +173,35 @@ struct ResponseWatcherTests {
         let (event, arrivedAt) = await collector.value
         #expect(event == .response(markdown: "Done."))
         #expect(arrivedAt >= appendsEnded)
+    }
+
+    @Test("A changing transcript emits throttled still-working notices")
+    func changingTranscriptEmitsStillWorking() async throws {
+        let locator = makeLocator()
+        let file = try makeTranscriptFile()
+        defer { try? FileManager.default.removeItem(at: file) }
+        locator.stubbedSessionFile = file
+        locator.stubbedEdge = AgentTranscriptEdge(
+            endsWithAssistantText: false,
+            latestResponse: nil)
+        let watcher = makeWatcher(locator: locator, extendedWindow: 5)
+
+        let events = await watcher.arm(session: agentSession(), anchor: "Go.")
+        let collector = Task { () -> ResponseWatchEvent? in
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        // One append to an already-observed file is the agent at
+        // work; the notice arrives without any resolution.
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("tool record\n".utf8))
+
+        #expect(await collector.value == .stillWorking)
+        await watcher.cancelWatch()
     }
 
     @Test("Interim narration speaks a fresh mostly-prose message on arrival")
