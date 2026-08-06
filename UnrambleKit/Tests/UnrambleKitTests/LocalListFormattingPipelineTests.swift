@@ -298,7 +298,7 @@ struct LocalListFormattingPipelineTests {
 
         let accepted = await LocalListFormattingPipeline.formatIfSafe(
             source, chatClient: client, model: "test",
-            tone: nil, precedingText: nil)
+            precedingText: nil)
 
         #expect(accepted?.contains("\n1. Review the security report") == true)
     }
@@ -365,10 +365,10 @@ struct LocalListFormattingPipelineTests {
 
         let accepted = await LocalListFormattingPipeline.formatIfSafe(
             source, chatClient: safe, model: "test",
-            tone: nil, precedingText: nil)
+            precedingText: nil)
         let rejected = await LocalListFormattingPipeline.formatIfSafe(
             source, chatClient: unsafe, model: "test",
-            tone: nil, precedingText: nil)
+            precedingText: nil)
 
         #expect(accepted?.contains("\n- 5 monitors") == true)
         #expect(rejected == nil)

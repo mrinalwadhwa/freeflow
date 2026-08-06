@@ -20,6 +20,26 @@ import Testing
 @Suite("PolishPipeline – substituteDictatedPunctuation")
 struct DictatedPunctuationTests {
 
+    @Test("first letter capitalizes without preceding text")
+    func capitalizesFreshUtterance() {
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "let's meet tomorrow") == "Let's meet tomorrow")
+    }
+
+    @Test("continuing a sentence mid-stream stays lowercase")
+    func midSentenceContinuationStaysLowercase() {
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "And also the tests", precedingText: "Run the build")
+            == "and also the tests")
+    }
+
+    @Test("preceding text ending a sentence capitalizes the next")
+    func boundaryPrecedingCapitalizes() {
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "then run the tests", precedingText: "The build passed.")
+            == "Then run the tests")
+    }
+
     // --"comma" --
     @Test("comma")
     func comma() {
@@ -1266,8 +1286,8 @@ struct SystemPromptLanguageTests {
         #expect(prompt == PolishPipeline.systemPromptTamil)
     }
 
-    @Test("casual English prompt requires explicit English")
-    func casualPromptRequiresExplicitEnglish() {
+    @Test("chat apps get the same prompts as everything else")
+    func chatAppsGetStandardPrompts() {
         let context = AppContext(
             bundleID: "com.tinyspeck.slackmacgap",
             appName: "Slack",
@@ -1277,7 +1297,7 @@ struct SystemPromptLanguageTests {
         #expect(
             PolishPipeline.buildCloudSystemPrompt(
                 context: context,
-                language: "en") == PolishPipeline.systemPromptCasual)
+                language: "en") == PolishPipeline.systemPrompt(forLanguage: "en"))
         let autoPrompt = PolishPipeline.buildCloudSystemPrompt(
             context: context,
             language: nil)
@@ -2181,53 +2201,46 @@ struct EnsureTerminalPunctuationTests {
     @Test("Adds a period when prose ends without one")
     func addsPeriod() {
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "we agreed to ship on Friday", casual: false)
+            "we agreed to ship on Friday")
             == "we agreed to ship on Friday.")
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "let's regroup Friday at 9:30", casual: false)
+            "let's regroup Friday at 9:30")
             == "let's regroup Friday at 9:30.")
     }
 
     @Test("Leaves existing terminal punctuation alone")
     func keepsExisting() {
         for ending in ["Done.", "Really?", "Stop!", "wait\u{2026}"] {
-            #expect(PolishPipeline.ensureTerminalPunctuation(ending, casual: false)
+            #expect(PolishPipeline.ensureTerminalPunctuation(ending)
                 == ending)
         }
-    }
-
-    @Test("Skips casual tone")
-    func skipsCasual() {
-        #expect(PolishPipeline.ensureTerminalPunctuation(
-            "hey wanna grab dinner", casual: true)
-            == "hey wanna grab dinner")
     }
 
     @Test("Leaves a trailing list item and a lead-in colon alone")
     func skipsListAndColon() {
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "Groceries:\n- milk\n- eggs", casual: false)
+            "Groceries:\n- milk\n- eggs")
             == "Groceries:\n- milk\n- eggs")
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "The action items are:", casual: false)
+            "The action items are:")
             == "The action items are:")
     }
 
     @Test("Leaves a trailing numbered list item alone")
     func skipsNumberedList() {
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "Steps:\n1. Clone the repo\n2. Run tests\n3. Deploy", casual: false)
+            "Steps:\n1. Clone the repo\n2. Run tests\n3. Deploy")
             == "Steps:\n1. Clone the repo\n2. Run tests\n3. Deploy")
         // A decimal that starts a prose line is not a numbered item.
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "3.2 is the release", casual: false)
+            "3.2 is the release")
             == "3.2 is the release.")
     }
 
     @Test("Adds a period to the last line of multi-line prose")
     func multiLineProse() {
         #expect(PolishPipeline.ensureTerminalPunctuation(
-            "First, we ship.\nSecond, we measure", casual: false)
+            "First, we ship.\nSecond, we measure")
             == "First, we ship.\nSecond, we measure.")
     }
 }

@@ -95,7 +95,6 @@ private func runMLXDump(
             let polished = await PolishPipeline.polish(
                 s.input,
                 chatClient: client,
-                tone: s.style,
                 precedingText: s.precedingText,
                 breakMode: breakMode)
             let result = PolishPipeline.stripTrailingFiller(polished)

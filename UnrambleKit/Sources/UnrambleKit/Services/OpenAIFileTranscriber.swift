@@ -199,13 +199,10 @@ public struct OpenAIFileTranscriber: BatchDictationProviding {
         guard language == "en" else {
             return raw
         }
-        let casual = PolishPipeline.toneLabel(for: context.bundleID) == "casual"
         let substituted = PolishPipeline.substituteDictatedPunctuation(
-            raw, casual: casual,
-            precedingText: context.focusedFieldContent)
-        let stripped = PolishPipeline.stripKeepTags(
-            substituted, casual: casual)
-        return PolishPipeline.normalizeFormatting(stripped, casual: casual)
+            raw, precedingText: context.focusedFieldContent)
+        let stripped = PolishPipeline.stripKeepTags(substituted)
+        return PolishPipeline.normalizeFormatting(stripped)
     }
 }
 

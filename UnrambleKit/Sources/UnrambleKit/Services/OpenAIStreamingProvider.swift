@@ -109,11 +109,6 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
     private var currentTimingSessionID: DictationSessionID?
     private var chunkReaderSessionID: DictationSessionID?
 
-    /// Whether the active session's target app uses a casual tone. Captured
-    /// from the context at `startStreaming` so `finishStreaming` can run the
-    /// shared `normalizeFormatting` with the same tone the local path uses.
-    private var activeCasual: Bool = false
-
     /// The target field's existing text at `startStreaming`, used as preceding
     /// context when converting dictated commands so a command word at the very
     /// start ("comma") is judged against what precedes it.
@@ -308,7 +303,6 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
 
         // Checking and reserving ownership are one atomic operation so two
         // concurrent starts cannot both observe an idle provider.
-        let casual = PolishPipeline.toneLabel(for: context.bundleID) == "casual"
         let precedingText = context.focusedFieldContent
         let claimed = lock.withLock {
             guard activeSessionID == nil else { return false }
@@ -318,7 +312,6 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
             self.currentTimingSessionID = sessionID
             self.currentTiming = SessionTiming(id: id, startedAt: Date())
             self.commitSession = commitSession
-            self.activeCasual = casual
             self.activePrecedingText = precedingText
             self.turnPauseDetector.reset()
             return true
@@ -613,9 +606,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
             return self.currentTiming?.audioBytesSent ?? 0
         }
         let transcriptTimeout = Self.transcriptTimeout(forAudioBytes: bytesSent)
-        let (finishCasual, finishPreceding) = lock.withLock {
-            (self.activeCasual, self.activePrecedingText)
-        }
+        let finishPreceding = lock.withLock { self.activePrecedingText }
         let finishResult: RealtimeFinishResult
         do {
             finishResult = try await OpenAIRealtimeSessionDriver.withRealtimeSessionTimeout(
@@ -632,8 +623,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
                         includeEvidence: evidenceObserver != nil,
                         prepareTranscript: {
                             PolishPipeline.substituteDictatedPunctuation(
-                                $0, casual: finishCasual,
-                                precedingText: finishPreceding)
+                                $0, precedingText: finishPreceding)
                         },
                         onAppendSent: { [self] _, submittedBytes in
                             lock.withLock {
@@ -674,7 +664,6 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
         // expand the [PAR]/[NL] break tokens, then normalize numbers, currency,
         // percent, decimals, punctuation, capitalization, and bullets. Both
         // steps are idempotent, so a downstream pass is a no-op.
-        let casual = lock.withLock { self.activeCasual }
         let trimmed = finishResult.response.trimmingCharacters(
             in: .whitespacesAndNewlines)
         let polished = trimmed.isEmpty
@@ -682,9 +671,7 @@ public final class OpenAIStreamingProvider: StreamingDictationProviding, @unchec
             : PolishPipeline.ensureTerminalPunctuation(
                 PolishPipeline.insertVocativeComma(
                     PolishPipeline.normalizeFormatting(
-                        PolishPipeline.stripKeepTags(trimmed, casual: casual),
-                        casual: casual)),
-                casual: casual)
+                        PolishPipeline.stripKeepTags(trimmed))))
         if polished.isEmpty {
             lock.withLock {
                 guard self.currentTimingSessionID == sessionID else { return }

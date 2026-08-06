@@ -112,15 +112,12 @@ enum LocalListFormattingPipeline {
         _ source: String,
         chatClient: any PolishChatClient,
         model: String,
-        tone: String?,
         precedingText: String?
     ) async -> String? {
         let validationSource = PolishPipeline.stripKeepTags(
             PolishPipeline.substituteDictatedPunctuation(
                 source,
-                casual: tone == "casual",
-                precedingText: precedingText),
-            casual: tone == "casual")
+                precedingText: precedingText))
         guard isCandidate(validationSource) else { return nil }
 
         if let deterministic = deterministicFormatIfSafe(validationSource) {
@@ -132,7 +129,6 @@ enum LocalListFormattingPipeline {
             source,
             chatClient: chatClient,
             model: model,
-            tone: tone,
             precedingText: precedingText,
             breakMode: .expandBeforeModel,
             maxResamples: 0)

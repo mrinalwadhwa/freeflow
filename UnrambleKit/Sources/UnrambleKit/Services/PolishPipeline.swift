@@ -12,7 +12,7 @@ import Foundation
 ///    when the transcript is already well-formed.
 ///
 /// 3. **LLM refinement** — send to a small model that removes fillers,
-///    fixes repetitions, formats lists/numbers, and adjusts tone.
+///    fixes repetitions, and formats lists/numbers.
 public enum PolishPipeline {
 
     // MARK: - Configuration
@@ -139,7 +139,7 @@ public enum PolishPipeline {
     /// Protected symbols are wrapped in `<keep>` tags so the LLM
     /// preserves them verbatim.
     public static func substituteDictatedPunctuation(
-        _ text: String, casual: Bool = false, precedingText: String? = nil
+        _ text: String, precedingText: String? = nil
     ) -> String {
         var result = text
 
@@ -227,67 +227,52 @@ public enum PolishPipeline {
             with: "\n",
             options: .regularExpression)
 
-        if casual {
-            // Casual: lowercase the first character unless the first
-            // word is an abbreviation (all-uppercase like "API", "AWS")
-            // or the pronoun "I".
-            if let first = result.first, first.isLetter, first.isUppercase {
-                let firstWord = result.prefix(while: { $0.isLetter })
-                let isAbbreviation = firstWord.count > 1
-                    && firstWord.allSatisfy({ $0.isUppercase })
-                let isPronounI = firstWord == "I"
-                if !isAbbreviation && !isPronounI {
-                    result = first.lowercased() + result.dropFirst()
-                }
-            }
-        } else {
-            // Normalize a.m./p.m. to AM/PM before split-word rejoin,
-            // so the trailing period in "p.m." isn't eaten by the
-            // split-word regex matching "\.\s+([a-z])".
-            // Day/month names first — no sentence boundary period.
-            result = result.replacingOccurrences(
-                of: #"\ba\.m\.(?= (?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day)"#,
-                with: "AM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\bp\.m\.(?= (?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day)"#,
-                with: "PM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\ba\.m\.(?= (?:January|February|March|April|May|June|July|August|September|October|November|December))"#,
-                with: "AM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\bp\.m\.(?= (?:January|February|March|April|May|June|July|August|September|October|November|December))"#,
-                with: "PM", options: .regularExpression)
-            // General uppercase — sentence boundary, preserve period.
-            result = result.replacingOccurrences(
-                of: #"\ba\.m\.(?= [A-Z])"#, with: "AM.", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\bp\.m\.(?= [A-Z])"#, with: "PM.", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\ba\.m\.(?= )"#, with: "AM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\bp\.m\.(?= )"#, with: "PM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\ba\.m\.(?=[,;])"#, with: "AM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\bp\.m\.(?=[,;])"#, with: "PM", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\ba\.m\.(?=$|\n)"#, with: "AM.", options: .regularExpression)
-            result = result.replacingOccurrences(
-                of: #"\bp\.m\.(?=$|\n)"#, with: "PM.", options: .regularExpression)
+        // Normalize a.m./p.m. to AM/PM before split-word rejoin,
+        // so the trailing period in "p.m." isn't eaten by the
+        // split-word regex matching "\.\s+([a-z])".
+        // Day/month names first — no sentence boundary period.
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= (?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day)"#,
+            with: "AM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= (?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day)"#,
+            with: "PM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= (?:January|February|March|April|May|June|July|August|September|October|November|December))"#,
+            with: "AM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= (?:January|February|March|April|May|June|July|August|September|October|November|December))"#,
+            with: "PM", options: .regularExpression)
+        // General uppercase — sentence boundary, preserve period.
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= [A-Z])"#, with: "AM.", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= [A-Z])"#, with: "PM.", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= )"#, with: "AM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= )"#, with: "PM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?=[,;])"#, with: "AM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?=[,;])"#, with: "PM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?=$|\n)"#, with: "AM.", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?=$|\n)"#, with: "PM.", options: .regularExpression)
 
-            // Capitalize first letter after sentence-ending punctuation + space.
-            result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
+        // Capitalize first letter after sentence-ending punctuation + space.
+        result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
 
-            // Capitalize very first character — unless we're continuing
-            // mid-sentence from preceding text.
-            let midSentence = precedingText.map {
-                !$0.isEmpty && !endsAtSentenceBoundary($0)
-            } ?? false
-            if midSentence, let first = result.first, first.isUppercase {
-                result = first.lowercased() + result.dropFirst()
-            } else if !midSentence, let first = result.first, first.isLetter {
-                result = first.uppercased() + result.dropFirst()
-            }
+        // Capitalize very first character — unless we're continuing
+        // mid-sentence from preceding text.
+        let midSentence = precedingText.map {
+            !$0.isEmpty && !endsAtSentenceBoundary($0)
+        } ?? false
+        if midSentence, let first = result.first, first.isUppercase {
+            result = first.lowercased() + result.dropFirst()
+        } else if !midSentence, let first = result.first, first.isLetter {
+            result = first.uppercased() + result.dropFirst()
         }
 
         // Strip multi-word noise phrases (uh huh, mm hmm) as units
@@ -1098,12 +1083,10 @@ public enum PolishPipeline {
 
     /// Add a sentence-ending period when the final line is prose that stops
     /// without terminal punctuation, so a dictation never ends mid-air. Skips
-    /// casual tone (texting omits the final period), a list item (its trailing
-    /// period is stripped by house style), and a lead-in colon. Only a line
-    /// ending in a letter or digit gets a period, so quotes and brackets are
-    /// left untouched.
-    static func ensureTerminalPunctuation(_ text: String, casual: Bool) -> String {
-        guard !casual else { return text }
+    /// a list item (its trailing period is stripped by house style) and a
+    /// lead-in colon. Only a line ending in a letter or digit gets a period,
+    /// so quotes and brackets are left untouched.
+    static func ensureTerminalPunctuation(_ text: String) -> String {
         var end = text.endIndex
         while end > text.startIndex {
             let prev = text.index(before: end)
@@ -1449,17 +1432,13 @@ public enum PolishPipeline {
     /// Build a dynamic system prompt for cloud polish models.
     ///
     /// Start with the language-appropriate cloud prompt and append
-    /// optional context lines for casual mode and preceding text.
+    /// an optional context line for preceding text.
     /// Cloud models (GPT) follow instructions natively — no training
     /// needed, just clear instructions.
     public static func buildCloudSystemPrompt(
         context: AppContext, language: String?
     ) -> String {
-        let usesCasualEnglish = language == "en"
-            && toneLabel(for: context.bundleID) == "casual"
-        var prompt = usesCasualEnglish
-            ? systemPromptCasual
-            : systemPrompt(forLanguage: language)
+        var prompt = systemPrompt(forLanguage: language)
 
         if let content = context.focusedFieldContent,
            !content.isEmpty
@@ -1489,7 +1468,7 @@ public enum PolishPipeline {
     /// Expand `[PAR]` and `[NL]` placeholders to real line breaks.
     /// Clean up whitespace around revealed symbols.
     public static func stripKeepTags(
-        _ text: String, casual: Bool = false, expandBreaks: Bool = true
+        _ text: String, expandBreaks: Bool = true
     ) -> String {
         var result = text
 
@@ -1548,19 +1527,17 @@ public enum PolishPipeline {
         result = result.replacingOccurrences(
             of: " {2,}", with: " ", options: .regularExpression)
 
-        if !casual {
-            // Capitalize the first letter after a sentence terminator, as the
-            // input preprocessing does: the model often leaves a sentence it
-            // split (or one that starts at a unit seam) lowercase.
-            result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
-            // Capitalize first letter after paragraph/line breaks.
-            result = capitalizeAfterPattern(result, pattern: "(\\n)(\\w)")
-            // Capitalize the standalone pronoun "i" ("i think" -> "I think",
-            // "i'll" -> "I'll"), which the model sometimes leaves lowercase.
-            result = result.replacingOccurrences(
-                of: "(?<![A-Za-z])i(?![A-Za-z])", with: "I",
-                options: .regularExpression)
-        }
+        // Capitalize the first letter after a sentence terminator, as the
+        // input preprocessing does: the model often leaves a sentence it
+        // split (or one that starts at a unit seam) lowercase.
+        result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
+        // Capitalize first letter after paragraph/line breaks.
+        result = capitalizeAfterPattern(result, pattern: "(\\n)(\\w)")
+        // Capitalize the standalone pronoun "i" ("i think" -> "I think",
+        // "i'll" -> "I'll"), which the model sometimes leaves lowercase.
+        result = result.replacingOccurrences(
+            of: "(?<![A-Za-z])i(?![A-Za-z])", with: "I",
+            options: .regularExpression)
 
         return result
     }
@@ -1576,9 +1553,7 @@ public enum PolishPipeline {
     // MARK: - Normalize Formatting
 
     /// Fix common LLM formatting inconsistencies.
-    public static func normalizeFormatting(
-        _ text: String, casual: Bool = false
-    ) -> String {
+    public static func normalizeFormatting(_ text: String) -> String {
         var result = text
 
         // Safety net for leaked placeholders.
@@ -1714,20 +1689,18 @@ public enum PolishPipeline {
         result = result.replacingOccurrences(
             of: #"(\n[ \t]*){3,}"#, with: "\n\n", options: .regularExpression)
 
-        if !casual {
-            // Fix capitalization of known tech terms. These are product
-            // names that should always be capitalized the same way. This
-            // is additive only — never removes or transforms content.
-            result = capitalizeKnownTerms(result)
+        // Fix capitalization of known tech terms. These are product
+        // names that should always be capitalized the same way. This
+        // is additive only — never removes or transforms content.
+        result = capitalizeKnownTerms(result)
 
-            // Capitalize the first letter after a sentence terminator or a
-            // line break. The model frequently lowercases its output and
-            // leaves a sentence it kept mid-string (or one that begins at a
-            // unit seam) uncapitalized. The input preprocessing already does
-            // this, so mirror it on the output.
-            result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
-            result = capitalizeAfterPattern(result, pattern: "(\\n)(\\w)")
-        }
+        // Capitalize the first letter after a sentence terminator or a
+        // line break. The model frequently lowercases its output and
+        // leaves a sentence it kept mid-string (or one that begins at a
+        // unit seam) uncapitalized. The input preprocessing already does
+        // this, so mirror it on the output.
+        result = capitalizeAfterPattern(result, pattern: "([.!?]\\s+)(\\w)")
+        result = capitalizeAfterPattern(result, pattern: "(\\n)(\\w)")
 
         return result
     }
@@ -2143,23 +2116,21 @@ public enum PolishPipeline {
         _ raw: String,
         chatClient: (any PolishChatClient)?,
         model: String = polishModel,
-        tone: String? = nil,
         precedingText: String? = nil,
         breakMode: BreakMode = .expandBeforeModel,
         finalFlush: Bool = false,
         maxResamples: Int? = nil
     ) async -> String {
-        let casual = tone == "casual"
         let substituted = substituteDictatedPunctuation(
-            raw, casual: casual, precedingText: precedingText)
+            raw, precedingText: precedingText)
 
         // Whole-transcript polish: expand commanded breaks before the
         // model and keep the model's own paragraphing.
         if breakMode == .expandBeforeModel {
             return await polishUnit(
                 substituted: substituted, chatClient: chatClient,
-                model: model, tone: tone, precedingText: precedingText,
-                casual: casual, stripModelBreaks: false,
+                model: model, precedingText: precedingText,
+                stripModelBreaks: false,
                 maxResamples: maxResamples ?? 2).text
         }
 
@@ -2183,8 +2154,8 @@ public enum PolishPipeline {
             // retrying, so one segment is already bounded.
             return await polishUnit(
                 substituted: segments[0].text, chatClient: chatClient,
-                model: model, tone: tone, precedingText: precedingText,
-                casual: casual, stripModelBreaks: true,
+                model: model, precedingText: precedingText,
+                stripModelBreaks: true,
                 maxResamples: maxResamples ?? 2).text
         }
 
@@ -2210,8 +2181,8 @@ public enum PolishPipeline {
             if !text.isEmpty {
                 let (block, used) = await polishUnit(
                     substituted: text, chatClient: chatClient,
-                    model: model, tone: tone, precedingText: preceding,
-                    casual: casual, stripModelBreaks: true,
+                    model: model, precedingText: preceding,
+                    stripModelBreaks: true,
                     maxResamples: min(2, resampleBudget))
                 resampleBudget -= used
                 result += block.trimmingCharacters(in: .whitespaces)
@@ -2253,22 +2224,20 @@ public enum PolishPipeline {
         substituted: String,
         chatClient: (any PolishChatClient)?,
         model: String,
-        tone: String?,
         precedingText: String?,
-        casual: Bool,
         stripModelBreaks: Bool,
         maxResamples: Int = 2
     ) async -> (text: String, resamplesUsed: Int) {
         let stripped = stripKeepTags(
-            substituted, casual: casual, expandBreaks: !stripModelBreaks)
+            substituted, expandBreaks: !stripModelBreaks)
 
         let noPreceding = precedingText == nil || precedingText!.isEmpty
 
         guard let chatClient else {
             return (
                 adjustFirstCharCasing(
-                    normalizeFormatting(stripped, casual: casual),
-                    preprocessed: stripped, casual: casual,
+                    normalizeFormatting(stripped),
+                    preprocessed: stripped,
                     noPreceding: noPreceding),
                 0)
         }
@@ -2288,7 +2257,7 @@ public enum PolishPipeline {
             for (attempt, temperature) in temperatures.enumerated() {
                 let polished = try await polishThroughModel(
                     stripped, chatClient: chatClient, model: model,
-                    tone: tone, precedingText: precedingText,
+                    precedingText: precedingText,
                     temperature: temperature)
                 if polished.isEmpty { continue }
                 lastModelOut = polished
@@ -2338,8 +2307,8 @@ public enum PolishPipeline {
                         Log.debug("[POLISH_RESAMPLE_OK] attempt=\(attempt)")
                     }
                     let out = adjustFirstCharCasing(
-                        normalizeFormatting(cleaned, casual: casual),
-                        preprocessed: stripped, casual: casual,
+                        normalizeFormatting(cleaned),
+                        preprocessed: stripped,
                         noPreceding: noPreceding)
                     tracePolish(modelIn: stripped, modelOut: polished,
                         final: out, guardAction: attempt == 0 ? "ok"
@@ -2352,15 +2321,15 @@ public enum PolishPipeline {
             // nothing is dropped, invented, or truncated.
             Log.debug("[POLISH_RAW_FALLBACK] all attempts failed guards")
             let out = adjustFirstCharCasing(
-                normalizeFormatting(stripped, casual: casual),
-                preprocessed: stripped, casual: casual,
+                normalizeFormatting(stripped),
+                preprocessed: stripped,
                 noPreceding: noPreceding)
             tracePolish(modelIn: stripped, modelOut: lastModelOut,
                 final: out, guardAction: "RAW_FALLBACK")
             return (out, temperatures.count - 1)
         } catch {
             Log.debug("[PolishPipeline] Polish failed: \(error)")
-            return (normalizeFormatting(stripped, casual: casual), 0)
+            return (normalizeFormatting(stripped), 0)
         }
     }
 
@@ -2387,36 +2356,6 @@ public enum PolishPipeline {
         }
         segments.append((ns.substring(from: lastEnd), ""))
         return segments
-    }
-
-    // MARK: - Tone Mapping
-
-    /// Known casual app bundle IDs — chat and messaging apps where
-    /// users expect informal tone: lowercase starts, no trailing
-    /// periods, contractions preserved.
-    private static let casualBundleIDs: Set<String> = [
-        // Apple
-        "com.apple.MobileSMS",          // Messages
-        // Slack
-        "com.tinyspeck.slackmacgap",
-        // Discord
-        "com.hnc.Discord",
-        // Telegram
-        "ru.keepcoder.Telegram",
-        // WhatsApp
-        "net.whatsapp.WhatsApp",
-        // Signal
-        "org.whispersystems.signal-desktop",
-        // Microsoft Teams (chat context)
-        "com.microsoft.teams2",
-    ]
-
-    /// Return the tone label for a given bundle ID.
-    ///
-    /// Returns `"casual"` for chat/messaging apps, `nil` for everything
-    /// else (which uses the default formal behavior).
-    public static func toneLabel(for bundleID: String) -> String? {
-        casualBundleIDs.contains(bundleID) ? "casual" : nil
     }
 
     // MARK: - Context Formatting
@@ -2574,10 +2513,8 @@ public enum PolishPipeline {
     /// started uppercase and the model stripped a preamble leaving
     /// lowercase output, re-capitalize it.
     public static func matchInputCasing(
-        _ text: String, preprocessedInput: String,
-        casual: Bool
+        _ text: String, preprocessedInput: String
     ) -> String {
-        guard !casual else { return text }
         guard let outputFirst = text.first, outputFirst.isLetter,
               let inputFirst = preprocessedInput.first, inputFirst.isLetter
         else { return text }
@@ -2604,11 +2541,10 @@ public enum PolishPipeline {
     /// lowercase — but only when the first word is the same in both.
     /// If there's no preceding text and the model lowercased, capitalize.
     public static func adjustFirstCharCasing(
-        _ text: String, preprocessed: String, casual: Bool,
+        _ text: String, preprocessed: String,
         noPreceding: Bool
     ) -> String {
-        guard !casual,
-              let outFirst = text.first, outFirst.isLetter,
+        guard let outFirst = text.first, outFirst.isLetter,
               let inFirst = preprocessed.first, inFirst.isLetter
         else { return text }
 
@@ -3318,7 +3254,7 @@ public enum PolishPipeline {
     /// echo/hallucination/truncation guards.
     private static func polishThroughModel(
         _ stripped: String, chatClient: any PolishChatClient, model: String,
-        tone: String?, precedingText: String?, temperature: Double = 0
+        precedingText: String?, temperature: Double = 0
     ) async throws -> String {
         // A long, mostly-unpunctuated run makes the model summarize and
         // drop content — but only when it also has preceding context.
@@ -3327,21 +3263,18 @@ public enum PolishPipeline {
         let wordCount = stripped.split(separator: " ").count
         let longRun = wordCount > 30 && countSentences(stripped) <= 1
         let prompt = buildPolishPrompt(
-            tone: tone, precedingText: longRun ? nil : precedingText)
+            precedingText: longRun ? nil : precedingText)
         return try await chatClient.complete(
             model: model, systemPrompt: prompt, userPrompt: stripped,
             temperature: temperature)
     }
 
-    /// Build the model system prompt with optional style and preceding
-    /// context lines.
+    /// Build the model system prompt with an optional preceding
+    /// context line.
     private static func buildPolishPrompt(
-        tone: String?, precedingText: String?
+        precedingText: String?
     ) -> String {
         var prompt = systemPromptQwen
-        if let tone {
-            prompt += "\nStyle: \(tone)"
-        }
         if let preceding = precedingText, !preceding.isEmpty {
             let suffix = preceding.count > 80
                 ? String(preceding.suffix(80)) : preceding

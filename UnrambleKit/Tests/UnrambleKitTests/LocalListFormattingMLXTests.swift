@@ -33,7 +33,6 @@ struct LocalListFormattingMLXTests {
                 scenario.input,
                 chatClient: client,
                 model: "local",
-                tone: scenario.style,
                 precedingText: scenario.precedingText)
             records.append([
                 "index": index,

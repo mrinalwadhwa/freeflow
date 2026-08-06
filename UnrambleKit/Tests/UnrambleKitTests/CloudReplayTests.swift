@@ -188,7 +188,7 @@ struct CloudReplay {
         for entry in corpus.cases {
             let started = Date()
             let prepared = PolishPipeline.substituteDictatedPunctuation(
-                entry.input, casual: false, precedingText: nil)
+                entry.input, precedingText: nil)
             if let outcome = outcomesByPreparedInput[prepared] {
                 log.record(
                     entry: entry,
@@ -211,10 +211,7 @@ struct CloudReplay {
                     : PolishPipeline.ensureTerminalPunctuation(
                         PolishPipeline.insertVocativeComma(
                             PolishPipeline.normalizeFormatting(
-                                PolishPipeline.stripKeepTags(
-                                    guarded, casual: false),
-                                casual: false)),
-                        casual: false)
+                                PolishPipeline.stripKeepTags(guarded))))
                 let outcome = RealtimeTextAblationOutcome(
                     rawModel: rawModel,
                     guarded: guarded,

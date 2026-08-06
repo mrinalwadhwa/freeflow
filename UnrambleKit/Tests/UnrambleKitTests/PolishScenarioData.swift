@@ -64,7 +64,6 @@ let allScenarios: [PolishScenario] = loadScenarios(from: "polish-tests.json")
 /// Load scenarios from a JSON file, applying environment-based filters.
 ///
 /// - `UNRAMBLE_TEST_CATEGORIES=list,meeting` — run only these categories
-/// - `UNRAMBLE_TEST_NO_CASUAL=1` — exclude casual scenarios
 private func loadScenarios(from filename: String) -> [PolishScenario] {
     guard let url = findPrivateScenarioFile(filename) else { return [] }
     guard let data = try? Data(contentsOf: url),
@@ -83,10 +82,9 @@ private func loadScenarios(from filename: String) -> [PolishScenario] {
         scenarios = scenarios.filter { allowed.contains($0.category) }
     }
 
-    // Exclude casual if specified.
-    if ProcessInfo.processInfo.environment["UNRAMBLE_TEST_NO_CASUAL"] == "1" {
-        scenarios = scenarios.filter { $0.style != "casual" }
-    }
+    // Casual-style scenarios describe a per-app informal mode the
+    // product no longer has; every app now gets formal formatting.
+    scenarios = scenarios.filter { $0.style != "casual" }
 
     return scenarios
 }
@@ -119,13 +117,11 @@ private func flagFileOrEnv(_ envKey: String, flagPath: String) -> String? {
 }
 
 /// Build a PolishScenario from a JSON entry, constructing an AppContext
-/// that reflects the scenario's style and preceding text so that
-/// `buildCloudSystemPrompt` and `toneLabel` work correctly.
+/// that carries the scenario's preceding text so that
+/// `buildCloudSystemPrompt` works correctly.
 private func scenarioFromEntry(_ entry: ScenarioEntry) -> PolishScenario {
-    let bundleID = entry.style == "casual"
-        ? "com.tinyspeck.slackmacgap" : ""
     let context = AppContext(
-        bundleID: bundleID,
+        bundleID: "",
         appName: "",
         windowTitle: "",
         focusedFieldContent: entry.preceding_text)

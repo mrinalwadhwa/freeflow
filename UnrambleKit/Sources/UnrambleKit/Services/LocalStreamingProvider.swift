@@ -596,10 +596,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             // the next unit to complete) and there is no next unit to re-polish
             // it, so normalize casing/formatting before it is injected.
             combined = ""
-            let casual = PolishPipeline.toneLabel(
-                for: snapshot.context.bundleID) == "casual"
-            finalPolished = PolishPipeline.normalizeFormatting(
-                snapshot.carry, casual: casual)
+            finalPolished = PolishPipeline.normalizeFormatting(snapshot.carry)
         } else if snapshot.carry.isEmpty {
             combined = finalUnit
         } else {
@@ -617,8 +614,6 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         let polishElapsed = CFAbsoluteTimeGetCurrent() - polishStart
         // A lone "i" is always the pronoun "I"; guarantee it on the final text
         // regardless of which internal path produced each piece.
-        let casual = PolishPipeline.toneLabel(
-            for: snapshot.context.bundleID) == "casual"
         let full = PolishPipeline.ensureTerminalPunctuation(
             PolishPipeline.insertVocativeComma(
                 PolishPipeline.recombineSplitNumbers(
@@ -627,8 +622,7 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                             Self.joinPolished(
                                 snapshot.committed, finalPolished)),
                         raw: trimmed),
-                    raw: trimmed)),
-            casual: casual)
+                    raw: trimmed)))
 
         Log.debug("[LocalStreaming] Finish (stt=\(String(format: "%.2f", sttElapsed))s polish=\(String(format: "%.2f", polishElapsed))s)")
 
@@ -1618,7 +1612,6 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
                     batch.text,
                     chatClient: nil,
                     model: polishModel,
-                    tone: PolishPipeline.toneLabel(for: context.bundleID),
                     precedingText: batchPreceding.isEmpty
                         ? context.focusedFieldContent : batchPreceding,
                     breakMode: .commandsOnly,
@@ -1645,13 +1638,11 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
         let precedingText = preceding.isEmpty
             ? context.focusedFieldContent
             : preceding
-        let tone = PolishPipeline.toneLabel(for: context.bundleID)
         if let listFormattingChatClient,
             let formatted = await LocalListFormattingPipeline.formatIfSafe(
                 raw,
                 chatClient: listFormattingChatClient,
                 model: polishModel,
-                tone: tone,
                 precedingText: precedingText)
         {
             return formatted
@@ -1660,7 +1651,6 @@ public final class LocalStreamingProvider: LocalAudioReplayProviding,
             raw,
             chatClient: polishChatClient,
             model: polishModel,
-            tone: tone,
             precedingText: precedingText,
             breakMode: .commandsOnly,
             finalFlush: finalFlush,
