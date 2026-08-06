@@ -30,6 +30,7 @@ ci CallCommandGateTests
 ci CaptureTransportCacheTests
 ci CaptureTransportSelectionTests
 ci CarbonHotkeyProviderTests
+ci ChatMessageTreeTests
 ci ClaudeCodeTranscriptLocatorTests
 ci CloudDictationLiveHarnessTests
 ci CloudReplay

@@ -104,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 CodingAgentTranscriptSource(
                     processTable: LibprocProcessTable(),
                     terminalFocusReader: AppleEventTerminalFocusReader()),
+                ChatLastMessageContentSource(),
                 WebAreaContentSource(
                     webReader: AXWebContentReader()),
             ],
