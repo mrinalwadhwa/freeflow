@@ -163,8 +163,91 @@ struct ChatMessageTreeTests {
         #expect(
             ChatMessageTree.isTimestampShaped(
                 "Wednesday, August 5, 2026 at 8:17 PM"))
+        // Slack's forms: bracketed and bare clock times.
+        #expect(ChatMessageTree.isTimestampShaped("[1:21 PM]"))
+        #expect(ChatMessageTree.isTimestampShaped("1:21 PM"))
+        #expect(ChatMessageTree.isTimestampShaped("13:05"))
         #expect(!ChatMessageTree.isTimestampShaped("Meet me at the office"))
         #expect(!ChatMessageTree.isTimestampShaped("Glad you're here."))
+        #expect(!ChatMessageTree.isTimestampShaped("The ratio is 3:1 now"))
+    }
+
+    @Test("Slack timestamp and thread meta blocks are not spoken")
+    func slackMetaBlocksExcluded() {
+        // Live failure: a Slack read spoke "[1:21 PM]" and
+        // "replied to a thread:" before the message.
+        let item = group([
+            group([text("[1:21 PM]")]),
+            group([text("replied to a thread: The deploy plan for Friday")]),
+            group([text("Sounds good, let's ship it then.")]),
+        ])
+        let list = Node(
+            role: "AXList", axDescription: "Messages in channel general",
+            children: [item])
+        let last = ChatMessageTree.lastMessage(in: list)
+        #expect(last?.blocks == ["Sounds good, let's ship it then."])
+    }
+
+    @Test("A wrapper bundling thread meta with the body keeps the body")
+    func metaAndBodyInOneWrapperKeepsBody() {
+        // Live failure: Slack wraps "replied to a thread: <snippet>"
+        // and the message body in one container; the whole message
+        // was dropped as meta and the read fell back to the previous
+        // message.
+        let snippet = "replied to a thread: There are a couple of "
+            + "libraries I saw recently that I think are at the "
+            + "bleeding edge and have good open licenses...."
+        let body1 = "Did a POC."
+        let body2 = "Both good calls, both ultimately and sadly a no. "
+            + "Ran them against our real corpus with solid ground "
+            + "truth and the results were more than clear about it."
+        let wrapper = group([
+            group([text("[1:21 PM]")]),
+            group([text(snippet)]),
+            group([text(body1)]),
+            group([text(body2)]),
+        ])
+        let list = Node(
+            role: "AXList", axDescription: "Messages in channel general",
+            children: [group([wrapper])])
+        let last = ChatMessageTree.lastMessage(in: list)
+        #expect(last?.blocks == [body1, body2])
+    }
+
+    @Test("A thread panel's trailing composer item is not the message")
+    func composerItemSkipped() {
+        // Live failure: Slack's thread panel renders the reply
+        // composer as the list's last item; the read spoke its
+        // "Also send to the group" checkbox label.
+        let composerItem = group([
+            Node(role: "AXTextArea", axDescription: "Reply"),
+            Node(role: "AXCheckBox", children: []),
+            group([text("Also send to the group")]),
+        ])
+        let list = Node(
+            role: "AXList", axDescription: "Message thread",
+            children: [
+                message(id: "1", author: "Arijeet", paragraphs: ["Did a POC."]),
+                composerItem,
+            ])
+        let last = ChatMessageTree.lastMessage(in: list)
+        #expect(last?.attribution == "Arijeet")
+        #expect(last?.blocks == ["Did a POC."])
+    }
+
+    @Test("An inline bracketed timestamp is dropped from a block")
+    func inlineBracketTimestampDropped() {
+        let item = group([
+            group([
+                text("[1:21 PM]"),
+                text("Sounds good, let's ship it then."),
+            ])
+        ])
+        let list = Node(
+            role: "AXList", axDescription: "Messages in channel general",
+            children: [item])
+        let last = ChatMessageTree.lastMessage(in: list)
+        #expect(last?.blocks == ["Sounds good, let's ship it then."])
     }
 
     @Test("Items without content wrappers collect structurally")

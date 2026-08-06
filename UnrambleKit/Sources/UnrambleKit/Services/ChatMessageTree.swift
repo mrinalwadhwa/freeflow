@@ -82,8 +82,13 @@ enum ChatMessageTree {
         in list: Node
     ) -> LastMessage? {
         let items = list.children
+        // Slack's thread panel renders the reply composer as the
+        // list's last item; an item holding a text field is input
+        // chrome, not a message.
         guard
-            let index = items.lastIndex(where: { !textBlocks(in: $0).isEmpty })
+            let index = items.lastIndex(where: {
+                !containsComposer($0) && !textBlocks(in: $0).isEmpty
+            })
         else { return nil }
         let item = items[index]
         let reply = firstDescendant(of: item) {
@@ -120,11 +125,79 @@ enum ChatMessageTree {
             firstDescendant(of: item) {
                 $0.domIdentifier?.contains("message-content") == true
             } ?? item
-        return content.children.compactMap { child -> String? in
-            guard !isExcluded(child) else { return nil }
+        return collectBlocks(under: content, depth: 0)
+    }
+
+    /// Collect speakable blocks under a node, one per child subtree.
+    ///
+    /// A block that opens with thread meta ("replied to a thread:
+    /// <snippet>") is chrome, but Slack wraps the meta row and the
+    /// message body in one container, so the block's text alone
+    /// cannot say where the meta ends. Structure can: the meta row
+    /// is always the container's first text-bearing child, so a
+    /// meta-opening block descends and sheds exactly that first
+    /// child (recursively, in case the row is itself wrapped) while
+    /// everything after it is body.
+    private static func collectBlocks<Node: ChatAccessibilityNode>(
+        under node: Node, depth: Int
+    ) -> [String] {
+        guard depth <= findDepthLimit else { return [] }
+        var blocks: [String] = []
+        for child in node.children where !isExcluded(child) {
             let text = normalized(gatherText(under: child))
-            return text.isEmpty ? nil : text
+            guard !text.isEmpty, !isTimestampShaped(text) else { continue }
+            if opensWithThreadMeta(text) {
+                blocks.append(
+                    contentsOf: sheddingLeadingMeta(
+                        child, depth: depth + 1))
+                continue
+            }
+            blocks.append(text)
         }
+        return blocks
+    }
+
+    /// Drop the leading meta row inside a meta-opening container and
+    /// collect what follows as blocks. A meta-opening node with no
+    /// children is the meta text itself and yields nothing.
+    private static func sheddingLeadingMeta<Node: ChatAccessibilityNode>(
+        _ node: Node, depth: Int
+    ) -> [String] {
+        guard depth <= findDepthLimit, !node.children.isEmpty else {
+            return []
+        }
+        var blocks: [String] = []
+        var metaShed = false
+        for child in node.children where !isExcluded(child) {
+            let text = normalized(gatherText(under: child))
+            guard !text.isEmpty, !isTimestampShaped(text) else { continue }
+            if !metaShed {
+                metaShed = true
+                if opensWithThreadMeta(text) {
+                    // The first text under the container carries the
+                    // meta; shed it — descending further when it
+                    // still bundles body text of its own.
+                    blocks.append(
+                        contentsOf: sheddingLeadingMeta(
+                            child, depth: depth + 1))
+                    continue
+                }
+            }
+            blocks.append(text)
+        }
+        return blocks
+    }
+
+    /// Whether a collected block is message chrome rather than the
+    /// message: a bare timestamp or a thread-meta opening.
+    static func isMetaBlock(_ text: String) -> Bool {
+        isTimestampShaped(text) || opensWithThreadMeta(text)
+    }
+
+    private static func opensWithThreadMeta(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        return lowered.hasPrefix("replied to a thread")
+            || lowered.hasPrefix("started a thread")
     }
 
     /// Subtrees that decorate a message rather than say it: the author
@@ -144,7 +217,11 @@ enum ChatMessageTree {
         {
             return true
         }
-        if node.role == "AXButton" || node.role == "AXImage" { return true }
+        if node.role == "AXButton" || node.role == "AXImage"
+            || node.role == "AXCheckBox"
+        {
+            return true
+        }
         if let text = node.textValue ?? node.axDescription,
             isTimestampShaped(text)
         {
@@ -153,11 +230,25 @@ enum ChatMessageTree {
         return false
     }
 
-    /// Whether text is a bare timestamp line ("Yesterday at 8:17 PM",
-    /// "Wednesday, August 5, 2026 at 8:17 PM").
+    /// Whether an item's subtree holds a text input — the reply
+    /// composer that chat apps render inside the message list.
+    private static func containsComposer<Node: ChatAccessibilityNode>(
+        _ item: Node
+    ) -> Bool {
+        firstDescendant(of: item) {
+            $0.role == "AXTextArea" || $0.role == "AXTextField"
+        } != nil
+    }
+
+    /// Whether text is a bare timestamp line. Discord writes
+    /// "Yesterday at 8:17 PM" and "Wednesday, August 5, 2026 at
+    /// 8:17 PM"; Slack writes "[1:21 PM]" and bare "1:21 PM".
     static func isTimestampShaped(_ text: String) -> Bool {
-        text.trimmingCharacters(in: .whitespaces).contains(
-            #/^[\w, ]+ at \d{1,2}:\d{2}\s?(?:AM|PM)$/#)
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.contains(#/^[\w, ]+ at \d{1,2}:\d{2}\s?(?:AM|PM)$/#) {
+            return true
+        }
+        return trimmed.contains(#/^\[?\d{1,2}:\d{2}(?:\s?(?:AM|PM))?\]?$/#)
     }
 
     // MARK: - Traversal

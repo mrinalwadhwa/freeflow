@@ -86,6 +86,13 @@ public struct ChatLastMessageContentSource: ContentSourceProviding {
                     let message = ChatMessageTree.lastMessage(in: list),
                     !message.blocks.isEmpty
                 {
+                    #if DEBUG
+                        // Extraction forensics; logs read content, so
+                        // DEBUG only — like the capture-sample dump.
+                        Log.debug(
+                            "[ChatRead] attribution=\(message.attribution ?? "nil") blocks=\(message.blocks)"
+                        )
+                    #endif
                     return ReadableContent(
                         attribution: message.attribution,
                         segments: message.blocks.map {
