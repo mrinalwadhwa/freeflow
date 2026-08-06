@@ -1156,12 +1156,37 @@ public actor ConversationCallCoordinator {
             continuation.yield(.narrationEnded)
         }
 
-        let outcome = await watchNarration(turnWait, sessionID: sessionID)
+        let outcome = await watchNarration(
+            turnWait, sessionID: sessionID, narration: markdown)
         clearCapture(generation: generation, sessionID: sessionID)
         await pipeline.cancel(sessionID: sessionID)
         guard generation == callGeneration, !Task.isCancelled
         else { return .ended }
         return outcome
+    }
+
+    /// Whether a barge-carried sentence is the narration's own echo.
+    ///
+    /// Live failure: loud playback survived cancellation, tripped the
+    /// emphatic gate right at speak-end, and the carry transcribed
+    /// the voice's own words ("mode. In incognito...") — which then
+    /// sent as the user's turn. A real barge brings the user's own
+    /// words; an echo brings only the voice's. Judge by containment:
+    /// when nearly every carried word appears in the spoken script,
+    /// the carry is echo. A user genuinely quoting narration words
+    /// adds their own around them and stays under the bar.
+    static func isNarrationEcho(_ carried: String, spoken: String) -> Bool {
+        func words(_ text: String) -> [String] {
+            text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+        }
+        let carriedWords = words(carried)
+        guard !carriedWords.isEmpty else { return true }
+        let spokenWords = Set(words(spoken))
+        guard !spokenWords.isEmpty else { return false }
+        let contained = carriedWords.filter(spokenWords.contains).count
+        return Double(contained) / Double(carriedWords.count) >= 0.8
     }
 
     /// Watch a narration's capture for the voice's stopping
@@ -1176,9 +1201,15 @@ public actor ConversationCallCoordinator {
     /// that stopped the voice open the user's next message instead
     /// of vanishing. The watch session's own transcript still dies
     /// with it: everything before the onset is narration residual.
+    ///
+    /// A carried sentence whose words all come from the narration
+    /// itself is the voice's own echo — loud playback can survive
+    /// cancellation, trip the emphatic gate, and arrive here as a
+    /// "barge" — so it is rejected instead of sent as the user.
     private func watchNarration(
         _ wait: TurnWait,
-        sessionID: DictationSessionID
+        sessionID: DictationSessionID,
+        narration: String
     ) async -> NarrationOutcome {
         defer { endTurnWait(wait) }
 
@@ -1228,6 +1259,15 @@ public actor ConversationCallCoordinator {
                     let carried = await pipeline.transcribeRecentCapture(
                         sessionID: sessionID, seconds: carrySeconds)
                     if let carried {
+                        let spoken = scriptBuilder.script(
+                            for: ReadableContent(
+                                segments: MarkdownSegmenter.segments(
+                                    from: narration)))
+                        if Self.isNarrationEcho(carried, spoken: spoken) {
+                            Log.debug(
+                                "[Call] barge carry rejected as narration echo")
+                            return .finished(bargedText: nil)
+                        }
                         Log.debug(
                             "[Call] barge sentence carried: \(carried)")
                     }

@@ -1026,6 +1026,53 @@ struct ConversationCallCoordinatorTests {
         #expect(harness.watcher.armed.count == 2)
     }
 
+    @Test("A carried sentence of the narration's own words is rejected")
+    func bargeEchoOfNarrationIsRejected() async {
+        let harness = makeHarness(session: agentSession())
+        harness.synthesizer.blocksUntilStopped = true
+        // Live failure: loud playback echoed into the mic, tripped
+        // the emphatic gate, and the carry transcribed the voice's
+        // own tail — which then sent as the user's turn.
+        harness.pipeline.transcribeRecentCaptureStub = "incognito mode."
+
+        await harness.coordinator.toggle()
+        await waitForState(harness.coordinator, .listening)
+        harness.publish(.strongSpeech)
+        harness.publish(.pause)
+        await waitForState(harness.coordinator, .waiting)
+
+        harness.watcher.emit(.response(
+            markdown: "Open a window in incognito mode to browse."))
+        await waitForState(harness.coordinator, .speaking)
+        await harness.synthesizer.waitUntilSpeaking()
+
+        harness.publish(.emphaticSpeech)
+        await eventually { harness.synthesizer.stopCount == 1 }
+        harness.publish(.pause)
+
+        // The echo is rejected: the fresh session opens listening
+        // with no seed and nothing sends by itself.
+        await waitForState(harness.coordinator, .listening)
+        #expect(harness.submitter.submitCount == 1)
+        #expect(harness.pipeline.seededTranscripts.isEmpty)
+    }
+
+    @Test("Echo fragments of the spoken script are recognized")
+    func narrationEchoDetection() {
+        let spoken = """
+            To browse privately, open a window in incognito mode. \
+            In incognito, history is not saved.
+            """
+        #expect(ConversationCallCoordinator.isNarrationEcho(
+            "mode. In incognito...", spoken: spoken))
+        #expect(ConversationCallCoordinator.isNarrationEcho(
+            "incognito", spoken: spoken))
+        #expect(!ConversationCallCoordinator.isNarrationEcho(
+            "no stop use the regular window instead", spoken: spoken))
+        #expect(!ConversationCallCoordinator.isNarrationEcho(
+            "wait what about incognito mode on my phone", spoken: spoken))
+    }
+
     @Test("A barge over an interim reply carries into the waiting mic")
     func bargeOverInterimCarriesIntoWaiting() async {
         let harness = makeHarness(session: agentSession())
