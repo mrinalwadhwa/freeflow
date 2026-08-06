@@ -1819,8 +1819,12 @@ public enum PolishPipeline {
             ("amazon", "Amazon"),
             ("google", "Google"),
             ("microsoft", "Microsoft"),
+            // This app and tools spoken about in its dictations
+            ("unramble", "Unramble"),
+            ("firecrawl", "Firecrawl"),
             // Tech acronyms (3+ chars, unambiguous)
             ("api", "API"),
+            ("pdf", "PDF"),
             ("sql", "SQL"),
             ("css", "CSS"),
             ("html", "HTML"),
@@ -1889,6 +1893,12 @@ public enum PolishPipeline {
             ("1 on 1", "one-on-one"),
             ("1-on-1", "one-on-one"),
             ("2 to tango", "two to tango"),
+            // Product names the recognizer splits or mishears
+            ("llama index", "LlamaIndex"),
+            // The recognizer consistently hears "Claude Code" as
+            // "cloud code"; as an adjacent pair it is essentially
+            // always the product name.
+            ("cloud code", "Claude Code"),
             // Node.js variants
             ("node js", "Node.js"),
             ("node.js", "Node.js"),

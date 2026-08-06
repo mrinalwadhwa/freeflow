@@ -834,6 +834,32 @@ struct NormalizeFormattingTests {
         #expect(PolishPipeline.normalizeFormatting("https://example.com") == "https://example.com")
     }
 
+    @Test("corpus product names capitalize as known terms")
+    func corpusKnownTerms() {
+        // Live corpus misses: the app's own name (incl. possessive),
+        // PDF, and two product names the recognizer lowercases.
+        #expect(PolishPipeline.normalizeFormatting(
+            "describe how unramble's conversation mode works")
+            == "describe how Unramble's conversation mode works")
+        #expect(PolishPipeline.normalizeFormatting(
+            "teams are investing a lot into pdf parsing")
+            == "teams are investing a lot into PDF parsing")
+        #expect(PolishPipeline.normalizeFormatting(
+            "the llama index and the firecrawl teams")
+            == "the LlamaIndex and the Firecrawl teams")
+    }
+
+    @Test("cloud code is heard as the product Claude Code")
+    func cloudCodeIsClaudeCode() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "the conversation mode works with Codex and cloud code")
+            == "the conversation mode works with Codex and Claude Code")
+        // The bare word stays untouched.
+        #expect(PolishPipeline.normalizeFormatting(
+            "deploy the service to the cloud")
+            == "deploy the service to the cloud")
+    }
+
     @Test("ftp URL double slash preserved")
     func ftpSlashPreserved() {
         #expect(PolishPipeline.normalizeFormatting("ftp://files.example.com") == "ftp://files.example.com")
