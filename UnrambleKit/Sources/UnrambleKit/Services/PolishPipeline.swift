@@ -243,6 +243,15 @@ public enum PolishPipeline {
         result = result.replacingOccurrences(
             of: #"\bp\.m\.(?= (?:January|February|March|April|May|June|July|August|September|October|November|December))"#,
             with: "PM", options: .regularExpression)
+        // Timezone names continue the time expression ("11 a.m.
+        // Pacific") — capitalized like a sentence start, but never a
+        // boundary.
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= (?:Pacific|Eastern|Central|Mountain|Atlantic|Alaska|Hawaii|India|UTC|GMT|IST|[PECM][SD]?T)\b)"#,
+            with: "AM", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= (?:Pacific|Eastern|Central|Mountain|Atlantic|Alaska|Hawaii|India|UTC|GMT|IST|[PECM][SD]?T)\b)"#,
+            with: "PM", options: .regularExpression)
         // General uppercase — sentence boundary, preserve period.
         result = result.replacingOccurrences(
             of: #"\ba\.m\.(?= [A-Z])"#, with: "AM.", options: .regularExpression)
@@ -1579,12 +1588,20 @@ public enum PolishPipeline {
         // Primary conversion happens in substituteDictatedPunctuation
         // (before split-word rejoin). This is a safety net for any
         // a.m./p.m. that the model re-introduces in its output.
+        // Day, month, and timezone names continue the time expression
+        // ("11 a.m. Pacific") — capitalized, but never a boundary.
+        result = result.replacingOccurrences(
+            of: #"\ba\.m\.(?= (?:(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day|January|February|March|April|May|June|July|August|September|October|November|December|Pacific|Eastern|Central|Mountain|Atlantic|Alaska|Hawaii|India|UTC|GMT|IST|[PECM][SD]?T)\b)"#,
+            with: "AM", options: .regularExpression)
         result = result.replacingOccurrences(
             of: #"\ba\.m\.(?= [A-Z])"#, with: "AM.", options: .regularExpression)
         result = result.replacingOccurrences(
             of: #"\ba\.m\.(?= )"#, with: "AM", options: .regularExpression)
         result = result.replacingOccurrences(
             of: #"\ba\.m\.(?=$|\n)"#, with: "AM.", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: #"\bp\.m\.(?= (?:(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day|January|February|March|April|May|June|July|August|September|October|November|December|Pacific|Eastern|Central|Mountain|Atlantic|Alaska|Hawaii|India|UTC|GMT|IST|[PECM][SD]?T)\b)"#,
+            with: "PM", options: .regularExpression)
         result = result.replacingOccurrences(
             of: #"\bp\.m\.(?= [A-Z])"#, with: "PM.", options: .regularExpression)
         result = result.replacingOccurrences(

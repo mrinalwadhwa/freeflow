@@ -40,6 +40,18 @@ struct DictatedPunctuationTests {
             == "Then run the tests")
     }
 
+    @Test("a timezone after a.m. is not a sentence boundary")
+    func timezoneAfterMeridiem() {
+        // Live regression: "I said 11 a.m. Pacific" injected as
+        // "11 AM. Pacific".
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "look for one where I said 11 a.m. Pacific yesterday")
+            == "Look for one where I said 11 AM Pacific yesterday")
+        #expect(PolishPipeline.substituteDictatedPunctuation(
+            "The call is at 8 a.m. Then we deploy.")
+            == "The call is at 8 AM. Then we deploy.")
+    }
+
     // --"comma" --
     @Test("comma")
     func comma() {
@@ -859,6 +871,29 @@ struct NormalizeFormattingTests {
     func amPmBoth() {
         #expect(PolishPipeline.normalizeFormatting(
             "Open from 9 a.m. to 5 p.m.") == "Open from 9 AM to 5 PM.")
+    }
+
+    @Test("a timezone after a.m. does not split the sentence")
+    func amPmTimezoneContinues() {
+        // Live regression: "I said 11 a.m. Pacific" injected as
+        // "11 AM. Pacific" — the capitalized timezone was mistaken
+        // for a new sentence.
+        #expect(PolishPipeline.normalizeFormatting(
+            "I said 11 a.m. Pacific yesterday")
+            == "I said 11 AM Pacific yesterday")
+        #expect(PolishPipeline.normalizeFormatting(
+            "we meet at 4 p.m. Eastern time")
+            == "we meet at 4 PM Eastern time")
+        #expect(PolishPipeline.normalizeFormatting(
+            "the standup is at 9 a.m. PST every day")
+            == "the standup is at 9 AM PST every day")
+    }
+
+    @Test("a real sentence boundary after a.m. keeps its period")
+    func amPmBoundaryPreserved() {
+        #expect(PolishPipeline.normalizeFormatting(
+            "The call is at 8 a.m. Then we deploy.")
+            == "The call is at 8 AM. Then we deploy.")
     }
 
     @Test("AM/PM already uppercase passes through")
