@@ -56,7 +56,7 @@ enum ChatMessageTree {
         remaining -= 1
         if node.role == "AXList",
             let description = node.axDescription?.lowercased(),
-            description.contains("message")
+            describesMessageList(description)
         {
             return node
         }
@@ -70,6 +70,75 @@ enum ChatMessageTree {
         return nil
     }
 
+    /// Whether a list's ARIA label names a message region. Discord
+    /// labels "Messages in <channel>"; Slack labels by place and a
+    /// parenthesized kind — "all-scrappy-sessions (channel)",
+    /// "Thread in all-scrappy-sessions (channel, 1 reply)". A bare
+    /// sidebar list ("Channels") has neither shape.
+    private static func describesMessageList(_ description: String) -> Bool {
+        description.contains("message")
+            || description.contains("thread in")
+            || description.contains("(channel")
+            || description.contains("(dm")
+            || description.contains("(direct")
+            || description.contains("(group")
+    }
+
+    /// The prefix of Slack's Threads-view footer items, which hold a
+    /// thread's inline composer and nothing else. The id's remainder
+    /// keys every sibling item of the same thread.
+    static let threadsViewFooterPrefix = "threads_view_footer-"
+
+    /// The message rows of one Threads-view thread: the aggregate
+    /// list's items whose DOM ids carry the footer's thread key —
+    /// the flattened siblings of the composer footer — excluding the
+    /// footer itself.
+    static func threadRows<Node: ChatAccessibilityNode>(
+        inAggregate list: Node, footerID: String
+    ) -> [Node] {
+        guard footerID.hasPrefix(threadsViewFooterPrefix) else { return [] }
+        let key = String(footerID.dropFirst(threadsViewFooterPrefix.count))
+        guard !key.isEmpty else { return [] }
+        return list.children.filter { item in
+            guard let id = item.domIdentifier, id.contains(key) else {
+                return false
+            }
+            return !id.hasPrefix(threadsViewFooterPrefix)
+        }
+    }
+
+    /// Whether a node is Slack's aggregate Threads list ("Threads,
+    /// no new replies") — every thread on one surface. Its items are
+    /// whole thread sections, so the caller must scope to the
+    /// section it climbed out of, never search this list's
+    /// descendants.
+    static func isAggregateThreadList<Node: ChatAccessibilityNode>(
+        _ node: Node
+    ) -> Bool {
+        node.role == "AXList"
+            && node.axDescription?.lowercased()
+                .hasPrefix("threads") == true
+    }
+
+    /// Every list under a node, for miss diagnostics: names the
+    /// candidates the locator saw so live failures report anchors.
+    static func allLists<Node: ChatAccessibilityNode>(
+        under root: Node, limit: Int
+    ) -> [Node] {
+        var found: [Node] = []
+        var remaining = 1500
+        func walk(_ node: Node, depth: Int) {
+            guard found.count < limit, remaining > 0,
+                depth <= findDepthLimit
+            else { return }
+            remaining -= 1
+            if node.role == "AXList" { found.append(node) }
+            for child in node.children { walk(child, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return found
+    }
+
     // MARK: - Extract the last message
 
     /// The last message in the list with speakable text, with its
@@ -81,14 +150,19 @@ enum ChatMessageTree {
     static func lastMessage<Node: ChatAccessibilityNode>(
         in list: Node
     ) -> LastMessage? {
-        let items = list.children
-        // Slack's thread panel renders the reply composer as the
-        // list's last item; an item holding a text field is input
-        // chrome, not a message.
+        lastMessage(among: expandedRows(of: list, depth: 0))
+    }
+
+    /// The last message among explicit row candidates — used when the
+    /// rows were selected structurally rather than as one list's
+    /// children (Slack's Threads view scatters a thread across
+    /// sibling items).
+    static func lastMessage<Node: ChatAccessibilityNode>(
+        among rows: [Node]
+    ) -> LastMessage? {
+        let items = rows
         guard
-            let index = items.lastIndex(where: {
-                !containsComposer($0) && !textBlocks(in: $0).isEmpty
-            })
+            let index = items.lastIndex(where: { !textBlocks(in: $0).isEmpty })
         else { return nil }
         let item = items[index]
         let reply = firstDescendant(of: item) {
@@ -238,6 +312,30 @@ enum ChatMessageTree {
         firstDescendant(of: item) {
             $0.role == "AXTextArea" || $0.role == "AXTextField"
         } != nil
+    }
+
+    /// The message rows of a container, seen through composer
+    /// wrappers. Chat apps render the reply composer inside the
+    /// message region — sometimes as its own trailing item, and in
+    /// Slack's Threads view as one wrapper bundling the rows AND
+    /// the composer. A composer-free child is a row as it stands; a
+    /// composer-bearing child is opened and the walk stops at the
+    /// composer, because messages always precede it and everything
+    /// after is send controls ("Also send to…").
+    private static func expandedRows<Node: ChatAccessibilityNode>(
+        of node: Node, depth: Int
+    ) -> [Node] {
+        guard depth <= 6 else { return [] }
+        var rows: [Node] = []
+        for child in node.children {
+            if containsComposer(child) {
+                rows.append(
+                    contentsOf: expandedRows(of: child, depth: depth + 1))
+                break
+            }
+            rows.append(child)
+        }
+        return rows
     }
 
     /// Whether text is a bare timestamp line. Discord writes

@@ -67,6 +67,118 @@ struct ChatMessageTreeTests {
         #expect(found?.axDescription == "Messages in general")
     }
 
+    @Test("Slack's place-and-kind list labels are matched")
+    func slackListLabelsMatch() {
+        // Live anchors from Slack's Threads view: no "message" word
+        // at all — a "Thread in ..." prefix or a parenthesized kind.
+        for desc in [
+            "Thread in all-scrappy-sessions (channel, 1 reply)",
+            "all-scrappy-sessions (channel)",
+        ] {
+            let list = Node(role: "AXList", axDescription: desc, children: [])
+            #expect(
+                ChatMessageTree.messageList(under: window(list: list))?
+                    .axDescription == desc)
+        }
+    }
+
+    @Test("The aggregate Threads list is recognized but never searched")
+    func aggregateThreadsList() {
+        let aggregate = Node(
+            role: "AXList", axDescription: "Threads, no new replies",
+            children: [])
+        #expect(ChatMessageTree.isAggregateThreadList(aggregate))
+        // Not a message list: matching it would read another
+        // thread's messages.
+        #expect(
+            ChatMessageTree.messageList(under: window(list: aggregate)) == nil)
+        let section = Node(
+            role: "AXGroup", axDescription: "Thread in channel demos")
+        #expect(!ChatMessageTree.isAggregateThreadList(section))
+    }
+
+    @Test("One wrapper bundling rows and composer still yields the rows")
+    func wrapperBundlingRowsAndComposer() {
+        // Live failure: a Threads-view section wraps its message
+        // rows AND the inline composer in a single child; skipping
+        // composer-bearing items wholesale discarded the messages.
+        let wrapper = group([
+            message(id: "1", author: "Keerthi", paragraphs: ["Here's the link!"]),
+            message(id: "2", author: "mrinal", paragraphs: ["Just RSVP'd."]),
+            group([
+                Node(role: "AXTextArea", axDescription: "Reply"),
+                group([text("Also send to #all-scrappy-sessions")]),
+            ]),
+        ])
+        let section = group([wrapper])
+        let last = ChatMessageTree.lastMessage(in: section)
+        #expect(last?.attribution == "mrinal")
+        #expect(last?.blocks == ["Just RSVP'd."])
+    }
+
+    @Test("A footer-keyed thread selects its sibling rows")
+    func footerKeyedThreadRows() {
+        // Live shape: Slack's Threads view flattens a thread into
+        // sibling list items — heading, message rows, and a footer
+        // (id threads_view_footer-<channel>-<ts>) holding only the
+        // composer. The footer's key selects the thread's rows.
+        let aggregate = Node(
+            role: "AXList", axDescription: "Threads, no new replies",
+            children: [
+                group(dom: "threads_view_heading-C0AAA-111", [
+                    group([text("Thread in #demos")])
+                ]),
+                group(dom: "threads_view_row-C0AAA-111", [
+                    group([text("Other thread's message.")])
+                ]),
+                group(dom: "threads_view_footer-C0AAA-111", [
+                    Node(role: "AXTextArea", axDescription: "Reply")
+                ]),
+                group(dom: "threads_view_heading-C0BG02-178", [
+                    group([text("Thread in #all-scrappy-sessions")])
+                ]),
+                group(dom: "threads_view_row-C0BG02-178", [
+                    group([text("helloooo wanted to share an event.")])
+                ]),
+                group(dom: "threads_view_row-C0BG02-178-2", [
+                    group([text("Just RSVP'd, would love to attend.")])
+                ]),
+                group(dom: "threads_view_footer-C0BG02-178", [
+                    Node(role: "AXTextArea", axDescription: "Reply")
+                ]),
+            ])
+        let rows = ChatMessageTree.threadRows(
+            inAggregate: aggregate, footerID: "threads_view_footer-C0BG02-178")
+        let last = ChatMessageTree.lastMessage(among: rows)
+        #expect(last?.blocks == ["Just RSVP'd, would love to attend."])
+        // The other thread's footer selects only its own rows.
+        let other = ChatMessageTree.threadRows(
+            inAggregate: aggregate, footerID: "threads_view_footer-C0AAA-111")
+        #expect(ChatMessageTree.lastMessage(among: other)?.blocks
+            == ["Other thread's message."])
+        // A non-footer id selects nothing.
+        #expect(ChatMessageTree.threadRows(
+            inAggregate: aggregate, footerID: "composer").isEmpty)
+    }
+
+    @Test("A thread section without its own list reads as an item")
+    func sectionWithoutListReadsRows() {
+        // Live failure: some Threads-view sections carry no inner
+        // AXList; the section's rows are the messages and its last
+        // row is the inline composer.
+        let section = group([
+            message(id: "1", author: "Keerthi", paragraphs: ["Here's the link!"]),
+            message(id: "2", author: "mrinal", paragraphs: ["Just RSVP'd."]),
+            group([
+                Node(role: "AXTextArea", axDescription: "Reply"),
+                group([text("Also send to #all-scrappy-sessions")]),
+            ]),
+        ])
+        let last = ChatMessageTree.lastMessage(in: section)
+        #expect(last?.attribution == "mrinal")
+        #expect(last?.blocks == ["Just RSVP'd."])
+    }
+
     @Test("An undescribed list is not the message list")
     func ignoresOtherLists() {
         let channels = Node(
