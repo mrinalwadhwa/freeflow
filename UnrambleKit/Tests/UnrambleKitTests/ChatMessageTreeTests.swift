@@ -116,6 +116,76 @@ struct ChatMessageTreeTests {
         #expect(last?.blocks == ["Just RSVP'd."])
     }
 
+    @Test("A role badge is stripped from the spoken author")
+    func authorBadgeStripped() {
+        // Live: Discord tags the thread starter "Original Poster";
+        // reading it as the name says "Original Poster" before the
+        // message.
+        #expect(ChatMessageTree.cleanedAuthor("Keerthi Original Poster")
+            == "Keerthi")
+        #expect(ChatMessageTree.cleanedAuthor("velgrim BOT") == "velgrim")
+        // A badge with no name behind it is not an author.
+        #expect(ChatMessageTree.cleanedAuthor("Original Poster") == nil)
+        #expect(ChatMessageTree.cleanedAuthor("") == nil)
+        // A real name that merely contains a badge word is untouched.
+        #expect(ChatMessageTree.cleanedAuthor("Moderator Jones")
+            == "Moderator Jones")
+    }
+
+    @Test("The Original Poster badge does not become the author")
+    func opBadgeMessageAttribution() {
+        let list = Node(
+            role: "AXList", axDescription: "Messages in general",
+            children: [
+                Node(
+                    role: "AXGroup",
+                    domIdentifier: "chat-messages-1-100",
+                    children: [
+                        group(dom: "message-username-100", [
+                            text("Keerthi"), text("Original Poster"),
+                        ]),
+                        group(dom: "message-content-100", [
+                            group([text("Here's the link!")])
+                        ]),
+                    ]),
+            ])
+        let last = ChatMessageTree.lastMessage(in: list)
+        #expect(last?.attribution == "Keerthi")
+        #expect(last?.blocks == ["Here's the link!"])
+    }
+
+    @Test("An empty thread's placeholder is not a message")
+    func emptyThreadPlaceholderExcluded() {
+        // Live failure: Discord's empty-thread panel read "Start the
+        // conversation!" with attribution "Original Poster". A list
+        // whose real messages carry chat-messages ids treats
+        // unmarked rows as chrome.
+        let list = Node(
+            role: "AXList", axDescription: "Messages in build-help",
+            children: [
+                message(id: "1", author: "arthur360", paragraphs: ["Real one."]),
+                group([
+                    group([text("Start the conversation!")]),
+                    group([text("Be the first to share what you think!")]),
+                ]),
+            ])
+        let last = ChatMessageTree.lastMessage(in: list)
+        #expect(last?.blocks == ["Real one."])
+        // A fully empty thread reads nothing at all.
+        let empty = Node(
+            role: "AXList", axDescription: "Messages in fresh-thread",
+            children: [
+                group([
+                    group([text("Start the conversation!")]),
+                ])
+            ])
+        // No marked rows: structural fallback still reads — Slack
+        // needs it — so the placeholder list is Discord's to filter
+        // by its marked sibling, as above.
+        #expect(ChatMessageTree.lastMessage(in: empty)?.blocks
+            == ["Start the conversation!"])
+    }
+
     @Test("A footer-keyed thread selects its sibling rows")
     func footerKeyedThreadRows() {
         // Live shape: Slack's Threads view flattens a thread into

@@ -160,7 +160,15 @@ enum ChatMessageTree {
     static func lastMessage<Node: ChatAccessibilityNode>(
         among rows: [Node]
     ) -> LastMessage? {
-        let items = rows
+        // Discord marks real messages with chat-messages DOM ids;
+        // when any row carries one, unmarked rows are chrome — the
+        // empty-thread placeholder ("Start the conversation!") reads
+        // as a row otherwise. Slack rows carry no ids, so a list
+        // without any marked row keeps every row.
+        let marked = rows.filter {
+            $0.domIdentifier?.hasPrefix("chat-messages") == true
+        }
+        let items = marked.isEmpty ? rows : marked
         guard
             let index = items.lastIndex(where: { !textBlocks(in: $0).isEmpty })
         else { return nil }
@@ -168,16 +176,17 @@ enum ChatMessageTree {
         let reply = firstDescendant(of: item) {
             $0.domIdentifier?.contains("message-reply-context") == true
         }?.axDescription
-        var author = collectedText(
-            under: firstDescendant(of: item) {
-                $0.domIdentifier?.contains("message-username") == true
-            })
+        var author = cleanedAuthor(
+            collectedText(
+                under: firstDescendant(of: item) {
+                    $0.domIdentifier?.contains("message-username") == true
+                }))
         if author == nil {
             for earlier in items[..<index].reversed() {
                 if let named = firstDescendant(of: earlier, where: {
                     $0.domIdentifier?.contains("message-username") == true
-                }) {
-                    author = collectedText(under: named)
+                }), let cleaned = cleanedAuthor(collectedText(under: named)) {
+                    author = cleaned
                     break
                 }
             }
@@ -391,6 +400,34 @@ enum ChatMessageTree {
         guard let node else { return nil }
         let text = normalized(gatherText(under: node))
         return text.isEmpty ? nil : text
+    }
+
+    /// Role badges Discord and Slack render inside the username, which
+    /// are not part of the author's name.
+    private static let authorBadges: Set<String> = [
+        "original poster", "op", "bot", "app", "server owner",
+        "moderator", "mod", "admin",
+    ]
+
+    /// Strip a trailing role badge from a collected author and drop
+    /// the result when nothing but a badge remains — a message whose
+    /// only "name" is "Original Poster" has no readable author, so
+    /// attribution falls back to an earlier sibling.
+    static func cleanedAuthor(_ author: String?) -> String? {
+        guard let author else { return nil }
+        var name = author
+        for badge in authorBadges
+        where name.lowercased().hasSuffix(badge)
+            && name.count > badge.count
+        {
+            name = String(name.dropLast(badge.count))
+            name = normalized(name)
+        }
+        name = normalized(name)
+        if name.isEmpty || authorBadges.contains(name.lowercased()) {
+            return nil
+        }
+        return name
     }
 
     private static func normalized(_ text: String) -> String {

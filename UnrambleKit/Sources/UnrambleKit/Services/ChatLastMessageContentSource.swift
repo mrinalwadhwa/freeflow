@@ -121,6 +121,11 @@ public struct ChatLastMessageContentSource: ContentSourceProviding {
                     let message = ChatMessageTree.lastMessage(in: list),
                     !message.blocks.isEmpty
                 {
+                    #if DEBUG
+                        Log.debug(
+                            "[ChatRead] matched list hop\(hops) desc=\"\(list.axDescription ?? "")\""
+                        )
+                    #endif
                     return deliver(message)
                 }
                 previous = current
