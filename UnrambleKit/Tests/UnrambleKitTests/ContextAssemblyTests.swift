@@ -7,6 +7,48 @@ import UnrambleKitTestSupport
 @Suite("Context assembly")
 struct ContextAssemblyTests {
 
+    // MARK: - Effective field content (placeholder / caret gating)
+
+    @Test("A placeholder shown as the value is not preceding text")
+    func placeholderValueDropped() {
+        // Live bug: dictating into an empty Twitter reply box lowercased
+        // the first word because "Post your reply" was read as existing
+        // text with no terminal punctuation.
+        #expect(AXAppContextProvider.effectiveFieldContent(
+            rawContent: "Post your reply",
+            placeholder: "Post your reply",
+            cursorPosition: nil) == nil)
+    }
+
+    @Test("A caret at the start means nothing precedes the dictation")
+    func caretAtStartDropped() {
+        #expect(AXAppContextProvider.effectiveFieldContent(
+            rawContent: "some text",
+            placeholder: nil,
+            cursorPosition: 0) == nil)
+    }
+
+    @Test("Real text before a caret is kept as preceding")
+    func realPrecedingKept() {
+        #expect(AXAppContextProvider.effectiveFieldContent(
+            rawContent: "We agreed to ship",
+            placeholder: "Post your reply",
+            cursorPosition: 17) == "We agreed to ship")
+        // Unknown caret leaves real content untouched.
+        #expect(AXAppContextProvider.effectiveFieldContent(
+            rawContent: "We agreed to ship",
+            placeholder: nil,
+            cursorPosition: nil) == "We agreed to ship")
+    }
+
+    @Test("An empty field yields no preceding text")
+    func emptyFieldNil() {
+        #expect(AXAppContextProvider.effectiveFieldContent(
+            rawContent: nil, placeholder: nil, cursorPosition: nil) == nil)
+        #expect(AXAppContextProvider.effectiveFieldContent(
+            rawContent: "", placeholder: nil, cursorPosition: 5) == nil)
+    }
+
     // MARK: - AppContext Population
 
     @Test("Context with all fields populated")

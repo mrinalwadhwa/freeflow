@@ -124,9 +124,14 @@ public final class AXAppContextProvider: AppContextProviding, @unchecked Sendabl
                 return FocusedFieldInfo.empty
             }
 
-            let content = AXElementHelper.textContent(of: focused)
+            let rawContent = AXElementHelper.textContent(of: focused)
+            let placeholder = AXElementHelper.placeholderValue(of: focused)
             let selectedText = AXElementHelper.selectedText(of: focused)
             let cursorPosition = AXElementHelper.cursorPosition(of: focused)
+            let content = Self.effectiveFieldContent(
+                rawContent: rawContent,
+                placeholder: placeholder,
+                cursorPosition: cursorPosition)
 
             return FocusedFieldInfo(
                 content: content,
@@ -135,6 +140,33 @@ public final class AXAppContextProvider: AppContextProviding, @unchecked Sendabl
             )
         }
         return result ?? .empty
+    }
+
+    /// The focused field's content as *text the user wrote before the
+    /// caret* — the only thing dictation should treat as a sentence to
+    /// continue. Two cases must not count as such and are dropped to nil:
+    ///
+    /// - **A placeholder shown as the value.** An empty web composer
+    ///   (contenteditable) reports its placeholder — "Post your reply",
+    ///   "Add a comment" — as `AXValue`. With no terminal punctuation the
+    ///   continuation heuristic would wrongly lowercase the first word of a
+    ///   fresh dictation.
+    /// - **A caret at the start.** Position 0 means nothing precedes the
+    ///   dictation, so there is no sentence to continue.
+    ///
+    /// A caret reported as absent (`nil`) leaves real content untouched, so
+    /// legitimate mid-field continuation is unaffected.
+    static func effectiveFieldContent(
+        rawContent: String?,
+        placeholder: String?,
+        cursorPosition: Int?
+    ) -> String? {
+        guard let rawContent, !rawContent.isEmpty else { return nil }
+        if let placeholder, !placeholder.isEmpty, rawContent == placeholder {
+            return nil
+        }
+        if cursorPosition == 0 { return nil }
+        return rawContent
     }
 
     // MARK: - Browser URL

@@ -165,6 +165,13 @@ public enum AXElementHelper {
         return stringValue(of: kAXValueAttribute, from: element)
     }
 
+    /// Read a field's placeholder text (e.g. "Post your reply"). An empty
+    /// web composer exposes its placeholder as its value, so this is how a
+    /// placeholder-as-value is told apart from text the user wrote.
+    public static func placeholderValue(of element: AXUIElement) -> String? {
+        return stringValue(of: kAXPlaceholderValueAttribute, from: element)
+    }
+
     /// Read the currently selected text in a text input element.
     public static func selectedText(of element: AXUIElement) -> String? {
         if let selected = stringValue(
